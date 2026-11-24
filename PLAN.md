@@ -5,7 +5,8 @@ Words follow [`GLOSSARY.md`](GLOSSARY.md). Decisions live in [`docs/adr/`](docs/
 Each ticket below is sized for one agent session. Tickets marked **(maintainer)** need something only the
 maintainer can give: an account to test with, an approval, or a change in another repository. Bridge tests use
 only accounts the maintainer provides for them; never another real account or phone number. Test notes, logs and
-ADR addenda never name the account, its number or its chats.
+ADR addenda never name the account, its number or its chats. A test ends by logging the bridge out of the network with
+the bridge's own logout, before the stack is deleted, so the network session ends with it.
 
 ## Phase 0: research and decisions (done)
 
