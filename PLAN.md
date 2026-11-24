@@ -7,9 +7,9 @@ maintainer can give: an account to test with, an approval, or a change in anothe
 only accounts the maintainer provides for them; never another real account or phone number. Test notes, logs and
 ADR addenda never name the account, its number or its chats.
 
-## Phase 0: research and decisions (awaiting maintainer review)
+## Phase 0: research and decisions (done)
 
-Discussed with the maintainer on 2026-11-24:
+Decided with the maintainer on 2026-11-24:
 
 | ADR | Decision |
 |---|---|
