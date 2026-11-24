@@ -23,7 +23,9 @@ async fn bridged_chats_carry_their_network_preview_and_unread_count() {
     inbox_until("the first inbox", &mut feed, &mut inbox, |_| Some(())).await;
 
     let name = unique("Bridged");
-    let bridge = json!({"protocol": {"id": "telegram", "displayname": "Telegram"}, "bridgebot": "@bot:example.org"});
+    // Ana stands in for the bridge bot: the event's sender (the room's creator) is the bot it names, on this server.
+    let ana_id = ana.session.client.user_id().unwrap().to_string();
+    let bridge = json!({"protocol": {"id": "telegram", "displayname": "Telegram"}, "bridgebot": ana_id});
     let room =
         within("the bridged room", create_room(&ana, &name, true, Some(ben_id), vec![state("m.bridge", "pingcraft.test://telegram/1", bridge)]))
             .await;
@@ -66,12 +68,17 @@ async fn a_bridge_added_later_changes_the_network_and_an_empty_state_key_does_no
     assert!(chat.network.is_matrix(), "{:?}", chat.network);
     assert!(!chat.encrypted);
 
-    // The older event type, added while the inbox is open.
-    let content = json!({"protocol": {"id": "signal"}});
-    ana.session.client.get_room(&room).unwrap().send_state_event_raw("uk.half-shot.bridge", "pingcraft.test://signal/1", content).await.unwrap();
+    // The older event type, added while the inbox is open. First one that names a bot other than its sender: it is
+    // ignored. Then one whose sender is the bot it names (ana stands in for it).
+    let matrix_room = ana.session.client.get_room(&room).unwrap();
+    let spoof = json!({"protocol": {"id": "whatsapp"}, "bridgebot": "@whatsappbot:example.org"});
+    matrix_room.send_state_event_raw("uk.half-shot.bridge", "pingcraft.test://a-spoof/1", spoof).await.unwrap();
+    let ana_id = ana.session.client.user_id().unwrap().to_string();
+    let content = json!({"protocol": {"id": "signal"}, "bridgebot": ana_id});
+    matrix_room.send_state_event_raw("uk.half-shot.bridge", "pingcraft.test://signal/1", content).await.unwrap();
     let chat =
         inbox_until("the chat to move to Signal", &mut feed, &mut inbox, |inbox| inbox.get(&id).filter(|c| !c.network.is_matrix()).cloned()).await;
-    assert_eq!(chat.network, Network::from_id("signal"));
+    assert_eq!(chat.network, Network::from_id("signal"), "the spoofed WhatsApp label was never shown");
 
     within("the sync to stop", connection.stop()).await;
     ana.sign_out().await;

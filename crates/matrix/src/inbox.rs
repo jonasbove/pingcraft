@@ -1,8 +1,10 @@
 //! The inbox: `matrix-sdk-ui`'s room list, mapped onto [`pingcraft_core::Chat`] and sent as [`InboxChange`]s.
 //!
 //! Which network a chat is on comes from the bridge-info state a bridge puts in its rooms (`m.bridge`, or the
-//! older `uk.half-shot.bridge`): `content.protocol.id` of an event with a non-empty state key. A room without one is
-//! a Matrix chat. [`crate::bridge_info`] gets that state into the local store and says which rooms changed.
+//! older `uk.half-shot.bridge`): `content.protocol.id` of an event with a non-empty state key. Anyone who can send
+//! state in a room can send such an event, so one counts only when its sender is the bridge bot it names
+//! (`content.bridgebot`) and that bot is on the user's own server, where the admin runs the bridges. A room without
+//! one is a Matrix chat. [`crate::bridge_info`] gets that state into the local store and says which rooms changed.
 
 use std::collections::{HashMap, HashSet};
 use std::pin::pin;
@@ -170,7 +172,7 @@ async fn bridge_changed(state: &mut State, room: Option<OwnedRoomId>) -> Vec<Inb
     let candidates: Vec<Room> = state.rooms.iter().filter(|r| room.as_ref().is_none_or(|id| r.room_id() == id)).map(|r| Room::clone(r)).collect();
     let mut changes = Vec::new();
     for room in candidates {
-        let network = network_of(&room).await;
+        let network = network_of(&room, state.own.as_deref()).await;
         if state.sent_network.get(room.room_id()) != Some(&network) {
             changes.push(InboxChange::Upsert(state.chat(&room).await));
         }
@@ -187,7 +189,7 @@ pub(crate) async fn chat_from_room(room: &Room, own: Option<&UserId>) -> Chat {
     Chat {
         id: ChatId(room.room_id().to_string()),
         account: None,
-        network: network_of(room).await,
+        network: network_of(room, own).await,
         name,
         last_message: preview(room, own).await,
         unread: u32::try_from(room.num_unread_messages()).unwrap_or(u32::MAX),
@@ -195,8 +197,10 @@ pub(crate) async fn chat_from_room(room: &Room, own: Option<&UserId>) -> Chat {
     }
 }
 
-/// The network a room's bridge says it is on, from the bridge-info state in the local store.
-pub(crate) async fn network_of(room: &Room) -> Network {
+/// The network a room's bridge says it is on, from the bridge-info state in the local store. `own` is the signed-in
+/// user; without one, no bridge is trusted.
+pub(crate) async fn network_of(room: &Room, own: Option<&UserId>) -> Network {
+    let Some(own) = own else { return Network::matrix() };
     let mut events = Vec::new();
     for kind in BRIDGE_STATE_TYPES {
         let Ok(found) = room.get_state_events(StateEventType::from(*kind)).await else { continue };
@@ -213,23 +217,37 @@ pub(crate) async fn network_of(room: &Room) -> Network {
         values.sort_by(|a, b| state_key(a).cmp(state_key(b)));
         events.extend(values);
     }
-    network_from_bridge_events(&events)
+    network_from_bridge_events(&events, own.server_name().as_str())
 }
 
 fn state_key(event: &Value) -> &str {
     event.get("state_key").and_then(Value::as_str).unwrap_or_default()
 }
 
-/// The network named by the first bridge-info event that has a non-empty state key and a protocol ID; Matrix when
-/// there is none. Events are taken as hostile input: anything missing or of the wrong type is skipped.
-pub(crate) fn network_from_bridge_events(events: &[Value]) -> Network {
+/// The network named by the first trusted bridge-info event that has a non-empty state key and a protocol ID; Matrix
+/// when there is none. Events are taken as hostile input: anything missing or of the wrong type is skipped, and so
+/// is an event that was not sent by a bridge bot on `own_server` ([`sent_by_a_local_bridge`]).
+pub(crate) fn network_from_bridge_events(events: &[Value], own_server: &str) -> Network {
     events
         .iter()
         .filter(|e| !state_key(e).is_empty())
+        .filter(|e| sent_by_a_local_bridge(e, own_server))
         .filter_map(|e| e.pointer("/content/protocol/id").and_then(Value::as_str))
         .map(Network::from_id)
         .find(|n| !n.is_matrix())
         .unwrap_or_else(Network::matrix)
+}
+
+/// Whether a bridge-info event was sent by the bridge bot it names, and that bot is on `own_server`. mautrix bridges
+/// always send it as their bot. Without this check anyone in a room (or a bridge on another server, once federation
+/// is on) could label a chat as any network: a Matrix chat could pass itself off as a family member's WhatsApp chat.
+fn sent_by_a_local_bridge(event: &Value, own_server: &str) -> bool {
+    let sender = event.get("sender").and_then(Value::as_str);
+    let bot = event.pointer("/content/bridgebot").and_then(Value::as_str);
+    match (sender, bot) {
+        (Some(sender), Some(bot)) if sender == bot => UserId::parse(bot).is_ok_and(|bot| bot.server_name().as_str() == own_server),
+        _ => false,
+    }
 }
 
 /// What a message's content shows as. `content` is an `m.room.message` content object.
@@ -295,30 +313,58 @@ async fn preview(room: &Room, own: Option<&UserId>) -> Option<MessagePreview> {
 mod tests {
     use super::{body_from_event, body_from_message_content, network_from_bridge_events};
     use pingcraft_core::{MessageBody, Network};
-    use serde_json::json;
+    use serde_json::{Value, json};
+
+    const SERVER: &str = "example.org";
+
+    /// A bridge-info event as a bridge on this server sends it: from its bot, naming its bot.
+    fn bridge_event(state_key: &str, protocol: Value) -> Value {
+        json!({"type": "m.bridge", "state_key": state_key, "sender": "@signalbot:example.org", "content": {"bridgebot": "@signalbot:example.org", "protocol": {"id": protocol}}})
+    }
 
     #[test]
     fn the_bridge_names_the_network() {
-        let e = json!({"type": "m.bridge", "state_key": "net.maunium.telegram://telegram/1", "content": {"protocol": {"id": "Telegram"}}});
-        assert_eq!(network_from_bridge_events(&[e]), Network::from_id("telegram"));
+        let e = json!({"type": "m.bridge", "state_key": "net.maunium.telegram://telegram/1", "sender": "@telegrambot:example.org", "content": {"bridgebot": "@telegrambot:example.org", "protocol": {"id": "Telegram"}}});
+        assert_eq!(network_from_bridge_events(&[e], SERVER), Network::from_id("telegram"));
     }
 
     #[test]
     fn an_empty_state_key_or_a_missing_protocol_means_matrix() {
-        let empty_key = json!({"state_key": "", "content": {"protocol": {"id": "telegram"}}});
-        let no_protocol = json!({"state_key": "x", "content": {}});
-        let wrong_type = json!({"state_key": "x", "content": {"protocol": {"id": 7}}});
-        let blank = json!({"state_key": "x", "content": {"protocol": {"id": "  "}}});
-        assert!(network_from_bridge_events(&[empty_key, no_protocol, wrong_type, blank]).is_matrix());
-        assert!(network_from_bridge_events(&[]).is_matrix());
+        let empty_key = bridge_event("", json!("telegram"));
+        let no_protocol = json!({"state_key": "x", "sender": "@signalbot:example.org", "content": {"bridgebot": "@signalbot:example.org"}});
+        let wrong_type = bridge_event("x", json!(7));
+        let blank = bridge_event("x", json!("  "));
+        assert!(network_from_bridge_events(&[empty_key, no_protocol, wrong_type, blank], SERVER).is_matrix());
+        assert!(network_from_bridge_events(&[], SERVER).is_matrix());
     }
 
     #[test]
     fn the_first_usable_event_wins() {
-        let skipped = json!({"state_key": "", "content": {"protocol": {"id": "discord"}}});
-        let signal = json!({"state_key": "a", "content": {"protocol": {"id": "signal"}}});
-        let whatsapp = json!({"state_key": "b", "content": {"protocol": {"id": "whatsapp"}}});
-        assert_eq!(network_from_bridge_events(&[skipped, signal, whatsapp]), Network::from_id("signal"));
+        let skipped = bridge_event("", json!("discord"));
+        let signal = bridge_event("a", json!("signal"));
+        let whatsapp = bridge_event("b", json!("whatsapp"));
+        assert_eq!(network_from_bridge_events(&[skipped, signal, whatsapp], SERVER), Network::from_id("signal"));
+    }
+
+    #[test]
+    fn only_a_bridge_bot_on_this_server_names_the_network() {
+        // Someone in the room names the real bot, and their event sorts ahead of the bridge's own.
+        let spoof = json!({"state_key": "a", "sender": "@mallory:example.org", "content": {"bridgebot": "@signalbot:example.org", "protocol": {"id": "whatsapp"}}});
+        let genuine = bridge_event("b", json!("signal"));
+        assert_eq!(network_from_bridge_events(&[spoof.clone(), genuine], SERVER), Network::from_id("signal"));
+        assert!(network_from_bridge_events(&[spoof], SERVER).is_matrix(), "the sender is not the bot it names");
+
+        // A bot naming itself, but on another server: not a bridge this server's admin runs.
+        let remote = json!({"state_key": "a", "sender": "@whatsappbot:evil.example", "content": {"bridgebot": "@whatsappbot:evil.example", "protocol": {"id": "whatsapp"}}});
+        let lookalike = json!({"state_key": "a", "sender": "@bot:example.org.evil", "content": {"bridgebot": "@bot:example.org.evil", "protocol": {"id": "whatsapp"}}});
+        assert!(network_from_bridge_events(&[remote, lookalike], SERVER).is_matrix());
+
+        // A missing or malformed sender or bot.
+        let no_sender = json!({"state_key": "a", "content": {"bridgebot": "@signalbot:example.org", "protocol": {"id": "signal"}}});
+        let no_bot = json!({"state_key": "a", "sender": "@signalbot:example.org", "content": {"protocol": {"id": "signal"}}});
+        let not_an_id = json!({"state_key": "a", "sender": "signalbot", "content": {"bridgebot": "signalbot", "protocol": {"id": "signal"}}});
+        let wrong_types = json!({"state_key": "a", "sender": 1, "content": {"bridgebot": ["@signalbot:example.org"], "protocol": {"id": "signal"}}});
+        assert!(network_from_bridge_events(&[no_sender, no_bot, not_an_id, wrong_types], SERVER).is_matrix());
     }
 
     #[test]
