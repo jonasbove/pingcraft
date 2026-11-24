@@ -3,6 +3,8 @@
 //! - `ci`: everything CI runs, in order, with an ok/FAIL summary.
 //! - `layers`: checks the crate layering (nothing below the UI depends on egui; the UI never sees Matrix SDK types).
 //! - `bump-images [--check]`: moves the digests pinned in `deploy/compose.yaml` to what each pinned tag points at now.
+//! - `version set <version>`: sets the workspace version (Cargo.toml and the workspace's own entries in Cargo.lock),
+//!   as craft-common-actions' release workflow asks every Craft app to.
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable))]
 
 use std::collections::BTreeMap;
@@ -19,8 +21,9 @@ fn main() -> ExitCode {
         Some("ci") => ci(),
         Some("layers") => layers(),
         Some("bump-images") => bump_images(args.iter().any(|a| a == "--check")),
+        Some("version") if args.get(1).map(String::as_str) == Some("set") && args.len() == 3 => set_version(&args[2]),
         _ => {
-            eprintln!("usage: cargo xtask <ci | layers | bump-images [--check]>");
+            eprintln!("usage: cargo xtask <ci | layers | bump-images [--check] | version set <version>>");
             return ExitCode::from(2);
         }
     };
@@ -240,9 +243,80 @@ fn bump_images(check: bool) -> Result<()> {
     Ok(())
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// version set
+
+/// A version as Cargo takes it: X.Y.Z, optionally with a pre-release such as `-rc.1`.
+fn valid_version(v: &str) -> bool {
+    let (core, pre) = v.split_once('-').unwrap_or((v, ""));
+    let parts: Vec<&str> = core.split('.').collect();
+    parts.len() == 3
+        && parts.iter().all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
+        && pre.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-')
+        && !(v.contains('-') && pre.is_empty())
+}
+
+/// Cargo.toml with `[workspace.package] version` set.
+fn with_workspace_version(toml: &str, version: &str) -> Result<String> {
+    let mut out = String::with_capacity(toml.len());
+    let (mut in_package, mut done) = (false, false);
+    for line in toml.split_inclusive('\n') {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_package = trimmed == "[workspace.package]";
+        } else if in_package && !done && trimmed.starts_with("version") && trimmed.contains('=') {
+            out.push_str(&format!("version = \"{version}\"\n"));
+            done = true;
+            continue;
+        }
+        out.push_str(line);
+    }
+    if done { Ok(out) } else { Err("Cargo.toml has no [workspace.package] version".into()) }
+}
+
+/// Cargo.lock with the version of every workspace package (an entry without a `source`) set.
+fn with_lock_versions(lock: &str, members: &[String], version: &str) -> String {
+    lock.split("\n[[package]]")
+        .map(|block| {
+            let name = block.lines().find_map(|l| l.strip_prefix("name = \"")).and_then(|n| n.strip_suffix('"'));
+            let ours = name.is_some_and(|n| members.iter().any(|m| m == n)) && !block.contains("\nsource = ");
+            if !ours {
+                return block.to_owned();
+            }
+            // Line by line, keeping every line ending (blocks end with the blank line before the next one).
+            block
+                .split_inclusive('\n')
+                .map(|l| {
+                    if l.starts_with("version = \"") {
+                        format!("version = \"{version}\"{}", if l.ends_with('\n') { "\n" } else { "" })
+                    } else {
+                        l.to_owned()
+                    }
+                })
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n[[package]]")
+}
+
+fn set_version(version: &str) -> Result<()> {
+    if !valid_version(version) {
+        return Err(format!("not a version: {version} (expected X.Y.Z or X.Y.Z-pre)"));
+    }
+    let toml_path = root().join("Cargo.toml");
+    let toml = std::fs::read_to_string(&toml_path).map_err(|e| format!("Cargo.toml: {e}"))?;
+    std::fs::write(&toml_path, with_workspace_version(&toml, version)?).map_err(|e| format!("Cargo.toml: {e}"))?;
+    let lock_path = root().join("Cargo.lock");
+    let lock = std::fs::read_to_string(&lock_path).map_err(|e| format!("Cargo.lock: {e}"))?;
+    let members: Vec<String> = LAYERS.iter().map(|(name, _)| (*name).to_owned()).collect();
+    std::fs::write(&lock_path, with_lock_versions(&lock, &members, version)).map_err(|e| format!("Cargo.lock: {e}"))?;
+    println!("version set to {version}");
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{PinnedImage, layer_problems, parse_pinned};
+    use super::{PinnedImage, layer_problems, parse_pinned, valid_version, with_lock_versions, with_workspace_version};
     use std::collections::BTreeMap;
 
     fn deps(pairs: &[(&str, &[&str])]) -> BTreeMap<String, Vec<String>> {
@@ -287,5 +361,23 @@ mod tests {
         assert_eq!(parse_pinned("    image: postgres:18"), None);
         assert_eq!(parse_pinned("    image: x@sha256:abc"), None);
         assert_eq!(parse_pinned("    # image: x"), None);
+    }
+
+    #[test]
+    fn version_set_touches_only_the_workspace() {
+        assert!(valid_version("0.2.0") && valid_version("1.2.3-rc.1"));
+        assert!(!valid_version("1.2") && !valid_version("v1.2.3") && !valid_version("1.2.3-") && !valid_version("1.2.3-a b"));
+        let toml = "[workspace]\nmembers = []\n\n[workspace.package]\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[workspace.dependencies]\nx = { version = \"1\" }\n";
+        let out = with_workspace_version(toml, "0.2.0").unwrap();
+        assert!(out.contains("[workspace.package]\nversion = \"0.2.0\"\n"), "{out}");
+        assert!(out.contains("x = { version = \"1\" }"), "dependencies keep theirs");
+        assert!(with_workspace_version("[package]\nversion = \"1\"\n", "0.2.0").is_err());
+
+        let lock = "version = 4\n\n[[package]]\nname = \"pingcraft-core\"\nversion = \"0.1.0\"\n\n[[package]]\nname = \"serde\"\nversion = \"0.1.0\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\n";
+        let out = with_lock_versions(lock, &["pingcraft-core".into()], "0.2.0");
+        assert!(out.contains("name = \"pingcraft-core\"\nversion = \"0.2.0\""), "{out}");
+        assert!(out.contains("name = \"serde\"\nversion = \"0.1.0\""), "a registry crate keeps its version: {out}");
+        assert!(out.starts_with("version = 4\n"), "the lock format version is not touched");
+        assert_eq!(with_lock_versions(&out, &["pingcraft-core".into()], "0.1.0"), lock, "setting it back gives the same file");
     }
 }

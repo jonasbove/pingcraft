@@ -9,6 +9,10 @@ Every asset in this repository, where it came from and under what terms (house r
 | `design/assets/logo/pingcraft-dolphin.png` | Cut out by `design/tools/logo.py` from an engraved dolphin drawing (black and white ink on a flat blue) supplied by the maintainer on 2026-11-24. **Origin and licence of the drawing: to be confirmed by the maintainer.** | to be confirmed |
 | `design/assets/logo/pingcraft-logo.pcraft`, `pingcraft-logo-*.png`, `pingcraft-logo.webp`, `pingcraft.ico`, `pingcraft.icns` | Made from the cut-out above by `design/tools/logo.py`: the dolphin on PingCraft's orchid tile | as the drawing, plus this repository's licence for the tile and composition |
 
+The app embeds `pingcraft-logo-128.png` (drawn in the window) and `pingcraft-logo-256.png` (the window icon),
+and the packages in `packaging/` carry the PNGs, `pingcraft.ico` and `pingcraft.icns` as the app icon. The
+drawing's licence must be confirmed before any of them is published.
+
 ## Design
 
 | Files | Source | Licence |

@@ -131,8 +131,29 @@ desktop target.
    - **Not built yet:** the ACCOUNTS and SETTINGS tabs, the network filter (a later decision), the chat header's
      account line and "…" menu, SAVE TO FILE for the recovery key, deleting a failed message, and the window's own
      title bar (the system's is used).
-10. **Packaging for every target in ADR 0009.** Releases are not published without the maintainer
+10. **Scripts done; most targets build only in CI, not run yet.** **Packaging for every target in ADR 0009.** Releases are not published without the maintainer
     (house rule 9).
+
+    `packaging/` follows CraftCloud's (itself craft-launcher's), for craft-common-actions' shared release
+    workflow: Linux (AppImage, deb, rpm, tar.gz, Flatpak; the shared workflow makes the Arch package from the
+    tarball), FreeBSD (tar.gz), macOS (universal dmg) and Windows (msi, portable zip), with the icons from
+    `design/assets/logo/`, plus a Nix flake and the `cargo xtask version set` the shared workflow calls.
+    `.github/workflows/release.yml` runs them by hand as a dry run
+    only: nothing is signed, drafted or uploaded. Every package is checked for a bundled SQLite older than
+    3.54.0 (`check_sqlite`); Linux, FreeBSD and macOS link the system's SQLite, and the Windows build compiles
+    the pinned SQLite 3.54.1 amalgamation in. Built here: the Linux x86_64 AppImage, deb, rpm and tar.gz, and
+    the FreeBSD layout (`--dry-run`). Open:
+    - the deb and rpm depend on the system SQLite without a minimum version: requiring 3.54.0 would make them
+      uninstallable on today's stable distributions (Ubuntu 24.04 has 3.45);
+    - the logo drawing's origin and licence are still to be confirmed (`ATTRIBUTION.md`), and every package
+      now carries the logo;
+    - `LICENSE-MIT` and `LICENSE-APACHE` were added for the packages ("the PingCraft contributors", as
+      CraftCloud's), for the maintainer to confirm;
+    - Windows, macOS, FreeBSD, riscv64, Flatpak and the Nix flake are untried until CI runs them; there is no
+      `flake.lock` yet.
+    - craft-common-actions' release workflow installs no SQLite to link against (no `libsqlite3-dev` on Linux and
+      riscv64, no `sqlite3` package on FreeBSD), so those jobs will fail to link until it does: a change for
+      craft-common-actions, not this repository (house rule 11).
 11. **Ignore accepted by the maintainer (2026-11-24); milestone 2 does not wait on it.** **SQLite advisory RUSTSEC-2026-0459.** `matrix-sdk` 0.19.1 locks a SQLite binding older than the fix, and
     `deny.toml` carries it as a reasoned ignore. Move to the first `matrix-sdk` release on `rusqlite` 0.41 or newer,
     drop the ignore, and make sure no package ships a bundled SQLite older than 3.54.0.

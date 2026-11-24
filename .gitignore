@@ -9,3 +9,5 @@ deploy/data/
 deploy/backups/
 # Local agent worktrees
 .claude/worktrees/
+# Release builds (packaging/)
+dist/

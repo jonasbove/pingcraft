@@ -1,2 +1,11 @@
 [alias]
 xtask = "run --quiet --package xtask --"
+
+# Windows: link the C runtime into the exe, as CraftCloud does. Without it pingcraft.exe needs
+# VCRUNTIME140.dll, which a fresh Windows doesn't have, and exits at once (0xC0000135) with no message.
+# packaging/windows/package.ps1 builds SQLite with /MT to match.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

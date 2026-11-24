@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Overrides for the setup wizard's WixUI strings, so its pages name the version being installed
+  ([PingCraftVersion] is the full version, pre-release tag included, set in pingcraft.wxs) and say what
+  PingCraft is for.
+-->
+<WixLocalization Culture="en-US" xmlns="http://wixtoolset.org/schemas/v4/wxl">
+  <String Id="WelcomeDlgTitle" Value="{\WixUI_Font_Bigger}Welcome to [ProductName] [PingCraftVersion]" />
+  <String Id="WelcomeDlgDescription" Value="PingCraft puts all your chats in one inbox, on a server you run yourself.&#13;&#10;&#13;&#10;It installs for you only, so no administrator rights are needed. Click Next to continue." />
+  <String Id="VerifyReadyDlgInstallTitle" Value="{\WixUI_Font_Title}Ready to install [ProductName] [PingCraftVersion]" />
+  <!-- Also shown after a repair or removal from the same wizard, so it doesn't say "installed". -->
+  <String Id="ExitDialogTitle" Value="{\WixUI_Font_Bigger}Completed the [ProductName] [PingCraftVersion] Setup Wizard" />
+</WixLocalization>

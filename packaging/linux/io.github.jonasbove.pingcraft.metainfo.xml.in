@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metadata. package.sh substitutes @VERSION@ and @DATE@. -->
+<component type="desktop-application">
+  <id>io.github.jonasbove.pingcraft</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT OR Apache-2.0</project_license>
+  <name>PingCraft</name>
+  <summary>All your chats in one inbox, on your own server</summary>
+  <description>
+    <p>
+      PingCraft puts the chats from the networks you connect in one inbox. It is a Matrix client: other
+      networks are reached through bridges on a server you run yourself, so your messages never pass through a
+      service you don't control.
+    </p>
+    <p>
+      Messages are end-to-end encrypted between your devices, with a recovery key for a new device. What
+      PingCraft keeps on this computer is encrypted with a key in the system keychain, or with a passphrase
+      where there is none.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.jonasbove.pingcraft.desktop</launchable>
+  <url type="homepage">https://github.com/jonasbove/pingcraft</url>
+  <url type="bugtracker">https://github.com/jonasbove/pingcraft/issues</url>
+  <developer id="io.github.jonasbove">
+    <name>jonasbove</name>
+  </developer>
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-chat">intense</content_attribute>
+  </content_rating>
+  <categories>
+    <category>Network</category>
+    <category>Chat</category>
+  </categories>
+  <releases>
+    <release version="@VERSION@" date="@DATE@"/>
+  </releases>
+</component>

@@ -1,0 +1,41 @@
+# Flatpak manifest for the single-file bundle (pingcraft-<version>-linux-<arch>.flatpak). Build it with
+# packaging/linux/flatpak-bundle.sh.
+#
+# It repackages the release's own Linux tarball (pingcraft-<version>-linux-<arch>.tar.gz, built by package.sh)
+# instead of compiling Rust inside flatpak-builder: no network and no vendored crate sources during the build,
+# and byte for byte the same binary as the AppImage, deb and rpm. The binary needs the build host's glibc and the
+# runtime's SQLite, and loads X11, Wayland, xkbcommon and Vulkan/EGL at runtime; the freedesktop runtime has all
+# of them, and the GPU driver comes from its org.freedesktop.Platform.GL extension.
+#
+# Structure adapted from CraftCloud's manifest, itself from craft-launcher's (MIT OR Apache-2.0).
+id: io.github.jonasbove.pingcraft
+runtime: org.freedesktop.Platform
+runtime-version: '26.08'
+sdk: org.freedesktop.Sdk
+command: pingcraft
+finish-args:
+  # Display: Wayland first; X11 only when no Wayland compositor is running.
+  - --socket=wayland
+  - --socket=fallback-x11
+  # X11 shared memory (MIT-SHM). Without it the X11 fallback is slow or fails.
+  - --share=ipc
+  # GPU access for egui's wgpu renderer (Vulkan, or GL as a fallback).
+  - --device=dri
+  # The user's own homeserver.
+  - --share=network
+  # The store key and the Matrix session go to the keychain (Secret Service: GNOME Keyring, KWallet,
+  # KeePassXC), ADR 0004 and ADR 0009's addendum. Without it PingCraft asks for an unlock passphrase. The
+  # Secret portal was not tried.
+  - --talk-name=org.freedesktop.secrets
+modules:
+  - name: pingcraft
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 bin/pingcraft /app/bin/pingcraft
+      - install -Dm644 share/applications/io.github.jonasbove.pingcraft.desktop /app/share/applications/io.github.jonasbove.pingcraft.desktop
+      # Already has the release's version and date substituted by package.sh.
+      - install -Dm644 share/metainfo/io.github.jonasbove.pingcraft.metainfo.xml /app/share/metainfo/io.github.jonasbove.pingcraft.metainfo.xml
+      - mkdir -p /app/share/icons /app/share/doc && cp -R share/icons/hicolor /app/share/icons/ && cp -R share/doc/pingcraft /app/share/doc/
+    sources:
+      - type: dir
+        path: stage

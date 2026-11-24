@@ -4,6 +4,8 @@
 //! or in `PINGCRAFT_DATA_DIR` when that is set. `PINGCRAFT_NO_KEYCHAIN=1` makes it use the unlock passphrase even
 //! where a keychain works, to try that path.
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable))]
+// A Windows GUI program: no console window opens with it (packaging/windows/package.ps1 checks this).
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -51,6 +53,11 @@ fn options() -> eframe::NativeOptions {
 }
 
 fn main() -> ExitCode {
+    // Answered without a display, so packaging can check that the binary starts.
+    if std::env::args().nth(1).is_some_and(|a| a == "--version" || a == "-V") {
+        println!("pingcraft {}", env!("CARGO_PKG_VERSION"));
+        return ExitCode::SUCCESS;
+    }
     let Some(data) = data_dir() else {
         eprintln!("pingcraft: this system has no data folder; set PINGCRAFT_DATA_DIR");
         return ExitCode::FAILURE;

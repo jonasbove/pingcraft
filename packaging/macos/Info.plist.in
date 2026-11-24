@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template: packaging/macos/package.sh substitutes @VERSION@ (full, e.g. 0.2.0-rc.1),
+     @SHORT_VERSION@ (numeric X.Y.Z) and @BUILD_SHA@.
+     PingCraft is a normal Dock app, so LSUIElement stays unset. -->
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleName</key>
+  <string>PingCraft</string>
+  <key>CFBundleDisplayName</key>
+  <string>PingCraft</string>
+  <key>CFBundleIdentifier</key>
+  <string>io.github.jonasbove.pingcraft</string>
+  <key>CFBundleExecutable</key>
+  <string>pingcraft</string>
+  <key>CFBundleIconFile</key>
+  <string>pingcraft</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleSignature</key>
+  <string>????</string>
+  <key>CFBundleShortVersionString</key>
+  <string>@SHORT_VERSION@</string>
+  <key>CFBundleVersion</key>
+  <string>@SHORT_VERSION@</string>
+  <key>PingCraftVersion</key>
+  <string>@VERSION@</string>
+  <key>PingCraftBuildCommit</key>
+  <string>@BUILD_SHA@</string>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.social-networking</string>
+  <!-- Must match MACOSX_DEPLOYMENT_TARGET in package.sh. -->
+  <key>LSMinimumSystemVersion</key>
+  <string>11.0</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <key>NSSupportsAutomaticGraphicsSwitching</key>
+  <true/>
+  <key>NSHumanReadableCopyright</key>
+  <string>Copyright © 2026 the PingCraft contributors. MIT OR Apache-2.0.</string>
+</dict>
+</plist>

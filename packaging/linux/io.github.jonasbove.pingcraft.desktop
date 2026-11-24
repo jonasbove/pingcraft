@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=PingCraft
+GenericName=Chat
+Comment=All your chats in one inbox, on your own server
+Exec=pingcraft
+TryExec=pingcraft
+Icon=io.github.jonasbove.pingcraft
+Terminal=false
+Categories=Network;Chat;InstantMessaging;
+Keywords=chat;messages;matrix;inbox;craft;
+StartupNotify=true
+StartupWMClass=io.github.jonasbove.pingcraft

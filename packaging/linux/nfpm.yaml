@@ -1,0 +1,77 @@
+# .deb and .rpm packages (nfpm: https://nfpm.goreleaser.com). Run by package.sh, which stages
+# the file tree, substitutes its path for ${STAGE} (nfpm doesn't expand env vars in `src`) and
+# exports VERSION, NFPM_ARCH, GLIBC_FLOOR (the build host's glibc) and PINGCRAFT_MAINTAINER.
+# Adapted from CraftCloud's packaging/linux/nfpm.yaml, itself from craft-launcher's (MIT OR Apache-2.0).
+name: pingcraft
+arch: ${NFPM_ARCH}
+platform: linux
+version: ${VERSION}
+# semver: 0.2.0-rc.1 becomes 0.2.0~rc.1 in deb/rpm, so pre-releases sort before the release.
+version_schema: semver
+release: 1
+section: net
+priority: optional
+maintainer: ${PINGCRAFT_MAINTAINER}
+vendor: PingCraft
+homepage: https://github.com/jonasbove/pingcraft
+license: MIT OR Apache-2.0
+description: |-
+  All your chats in one inbox, on your own server
+  PingCraft is a Matrix client that puts the chats from every network you
+  connect, through bridges on your own server, in one inbox. Messages are
+  end-to-end encrypted between your devices; what it keeps on this computer
+  is encrypted with a key in the system keychain.
+
+# The binary links glibc, libgcc_s and the system's SQLite directly (matrix-sdk's stores; never a bundled
+# copy, see deny.toml and RUSTSEC-2026-0459: the system SQLite should be 3.54.0 or newer). Windowing
+# (X11/Wayland, xkbcommon) and the GPU (Vulkan, EGL/GL) are loaded at runtime with dlopen, so they aren't ELF
+# NEEDED entries and the package tools can't find them: they are listed here. The keychain (Secret Service) is
+# reached over the session bus in pure Rust (zbus), so there is no libdbus dependency; without a Secret Service
+# PingCraft asks for an unlock passphrase instead.
+overrides:
+  deb:
+    depends:
+      - libc6 (>= ${GLIBC_FLOOR})
+      - libgcc-s1
+      - libsqlite3-0
+      - libxkbcommon0
+      - libxkbcommon-x11-0
+      - libwayland-client0
+      - libx11-6
+      - libx11-xcb1
+      - libxcb1
+      - libxcursor1
+      - libxi6
+      - libvulkan1 | libegl1
+    recommends:
+      - mesa-vulkan-drivers
+      - libegl-mesa0
+      - gnome-keyring | kwalletmanager | keepassxc
+  rpm:
+    # Soname provides, so the same requirements resolve on Fedora/RHEL and openSUSE.
+    depends:
+      - glibc >= ${GLIBC_FLOOR}
+      - libsqlite3.so.0()(64bit)
+      - libxkbcommon.so.0()(64bit)
+      - libxkbcommon-x11.so.0()(64bit)
+      - libwayland-client.so.0()(64bit)
+      - libX11.so.6()(64bit)
+      - libX11-xcb.so.1()(64bit)
+      - libxcb.so.1()(64bit)
+      - libXcursor.so.1()(64bit)
+      - libXi.so.6()(64bit)
+      - (libvulkan.so.1()(64bit) or libEGL.so.1()(64bit))
+    recommends:
+      - mesa-vulkan-drivers
+
+contents:
+  - src: ${STAGE}/usr/bin/pingcraft
+    dst: /usr/bin/pingcraft
+    file_info: { mode: 0755 }
+  - src: ${STAGE}/usr/share/
+    dst: /usr/share/
+    type: tree
+
+scripts:
+  postinstall: packaging/linux/postinst.sh
+  postremove: packaging/linux/postinst.sh
