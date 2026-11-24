@@ -38,3 +38,44 @@ before anything builds on it.
   networks, and history that only lived on the server is lost.
 - mautrix documents only Synapse, so bridge problems on tuwunel are ours to diagnose first.
 - tuwunel's 2.0 brought build and config changes; pin a version and read release notes on upgrade.
+
+## Addendum (2026-11-24): the milestone 1 spike
+
+tuwunel v2.0.0 and mautrix-telegram v0.2611.0, from `deploy/compose.yaml`, with a stock Matrix client (Element
+Desktop) over a private network. The decision stands.
+
+- **Registration:** tuwunel loaded the bridge's and the double-puppet registrations from `appservice_dir`, with
+  no admin-room command.
+- **Encryption:** the bridge bot's device got its identity keys, and the bridged room was encrypted
+  (`m.megolm.v1.aes-sha2`). Every message stored on the homeserver for that room was `m.room.encrypted`.
+- **Both directions:** a message sent from Matrix arrived on Telegram, and one sent from Telegram arrived on
+  Matrix.
+- **Only what the user asks for is bridged:** with automatic portal creation filtered, chat sync limits at zero
+  and backfill off, the login created no Matrix rooms. One chat was bridged with `start-chat`. The bridge still
+  keeps database rows for a few recent chats.
+- **Bridge-info state:** the bridged room carries both `m.bridge` and `uk.half-shot.bridge` with
+  `protocol.id = "telegram"`, under a **non-empty state key**. The client must read every state key of those
+  types (ADR 0003). The bridge also creates a space per login, which carries `m.bridge` with an empty state key.
+- **OpenID with federation off:** tuwunel answered `/_matrix/federation/v1/openid/userinfo` with the right user
+  while federation was disabled. Whether a bridge can reach it inside compose under the server name is still the
+  milestone 3 spike.
+- **Memory** (`docker stats`, idle → one logged-in account with one bridged chat):
+
+  | Container | Idle | One account, one chat |
+  |---|---|---|
+  | tuwunel | 71 MiB | 81 MiB |
+  | Postgres | 32 MiB | 36 MiB |
+  | mautrix-telegram | 9 MiB | 12 MiB |
+
+  These are small-scale figures, not a load test.
+
+Findings for later tickets:
+
+- **HTTPS is needed:** browsers, and Element Desktop, refuse a plain-`http://` homeserver at any address other
+  than `localhost` (mixed content). The deployment docs must require HTTPS (milestone 4), and a test from
+  another machine needs a tunnel to `localhost`.
+- **The bridge bot shows as unverified:** with `encryption.self_sign` off, clients flag its messages. Decide
+  whether to enable it; the bridge docs tie it to MSC4190.
+- **Bridge logs are sensitive:** even warning-level lines include network user IDs (ADR 0004).
+- **Copy-on-write filesystems:** on one, tuwunel warns that RocksDB's write-ahead log preallocation misbehaves,
+  and suggests turning `rocksdb_allow_fallocate` off. Document it for btrfs hosts.

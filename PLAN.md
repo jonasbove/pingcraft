@@ -39,7 +39,7 @@ Milestone 1 has no Rust code. Its gate is the end-to-end check below, written up
 Goal: tuwunel and mautrix-telegram, with encryption, in one compose project, checked end to end from a stock
 Matrix client.
 
-1. **Spike (maintainer: a Telegram account and an `api_id`).** Run tuwunel and mautrix-telegram with
+1. **Done (2026-11-24), see ADR 0001's addendum. Spike (maintainer: a Telegram account and an `api_id`).** Run tuwunel and mautrix-telegram with
    Matrix-side encryption required. Log in to the bridge, then send and receive text both ways from a stock
    Matrix client. Measure idle and active memory of tuwunel and the bridge (`docker stats`), then stop the
    containers. Record the findings as an addendum to ADR 0001, and stop if tuwunel cannot do it.
