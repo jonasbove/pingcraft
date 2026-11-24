@@ -395,10 +395,21 @@ fn chat_row(ui: &mut Ui, chat: &Chat, selected: bool) -> egui::Response {
     }
     ui.painter().hline(rect.x_range(), rect.bottom() - 0.5, t.hairline());
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(Vec2::new(16.0, 10.0))).layout(Layout::left_to_right(Align::Center)));
+    // The theme's tall interact height is for buttons and fields; here each line is only as tall as its text.
+    child.spacing_mut().interact_size.y = 0.0;
+    child.spacing_mut().item_spacing.y = 4.0;
+    // The row's text is not selectable, so a click anywhere on the row opens the chat.
+    child.style_mut().interaction.selectable_labels = false;
     avatar(&mut child, &chat.name, 36.0);
     child.add_space(4.0);
+    let two_lines = preview.is_some() || chat.unread > 0;
     child.vertical(|ui| {
         let strong = chat.unread > 0;
+        // Centre the one or two lines in the row by hand: a vertical block in a centred row starts at the top.
+        let name_h = ui.fonts_mut(|f| f.row_height(&egui::FontId::proportional(14.0)));
+        let preview_h = ui.fonts_mut(|f| f.row_height(&egui::FontId::proportional(12.5)));
+        let height = if two_lines { name_h + 4.0 + preview_h } else { name_h };
+        ui.add_space(((ui.available_height() - height) / 2.0).max(0.0));
         // Time and network tag first, from the right, so a long name truncates instead of pushing them down.
         ui.horizontal(|ui| {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -414,7 +425,7 @@ fn chat_row(ui: &mut Ui, chat: &Chat, selected: bool) -> egui::Response {
                 });
             });
         });
-        if preview.is_none() && chat.unread == 0 {
+        if !two_lines {
             return;
         }
         ui.horizontal(|ui| {

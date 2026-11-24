@@ -334,3 +334,20 @@ fn a_long_chat_name_truncates_and_keeps_its_network_tag_on_the_same_line() {
     let middle = (row.y0 + row.y1) / 2.0;
     assert!(tag.y0 < middle && tag.y1 > middle, "a row without a preview centres its one line: tag {tag:?}, row {row:?}");
 }
+
+#[test]
+fn a_chat_row_keeps_its_preview_inside_the_row() {
+    let fake = Fake::default();
+    let mut h = signed_in(&fake);
+    fake.tell([Event::Inbox(InboxChange::Upsert(chat("!admin", "m1.pingcraft.test Admin Room", "matrix", 0, Some(("You", "This works?")))))]);
+    h.run();
+    let row = h.get_by_label("m1.pingcraft.test Admin Room, on Matrix. You: This works?").accesskit_node().raw_bounds().unwrap();
+    for label in ["m1.pingcraft.test Admin Room", "You: This works?"] {
+        let r = h
+            .get_all_by_label(label)
+            .map(|n| n.accesskit_node().raw_bounds().unwrap())
+            .find(|r| r.x0 >= row.x0 && r.x1 <= row.x1 && r.y0 >= row.y0 - 40.0 && r.y0 <= row.y1)
+            .unwrap();
+        assert!(r.y0 >= row.y0 && r.y1 <= row.y1, "{label} spills out of its row: {r:?} vs {row:?}");
+    }
+}
