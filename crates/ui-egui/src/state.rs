@@ -47,6 +47,8 @@ pub struct RecoveryForms {
     /// A new key to show until the user has saved it.
     pub new_key: Option<RecoveryKey>,
     pub saved_ticked: bool,
+    /// The key was copied, so the Copy button says so.
+    pub copied: bool,
     /// The "enter your recovery key" sheet is open.
     pub entering: bool,
     pub typed: Zeroizing<String>,
@@ -134,6 +136,7 @@ impl State {
             Event::NewRecoveryKey(key) => {
                 self.recovery_forms.new_key = Some(key);
                 self.recovery_forms.saved_ticked = false;
+                self.recovery_forms.copied = false;
             }
             Event::Recovery(status) => {
                 self.recovery = status;

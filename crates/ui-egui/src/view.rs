@@ -282,7 +282,10 @@ fn inbox_list(ui: &mut Ui, state: &mut State, out: &mut Out) {
                     state.filter = filter;
                 }
             }
-            let search = egui::TextEdit::singleline(&mut state.search).hint_text(tl!("Search chats")).desired_width(f32::INFINITY);
+            let search = egui::TextEdit::singleline(&mut state.search)
+                .hint_text(tl!("Search chats"))
+                .align(egui::Align2::LEFT_CENTER)
+                .desired_width(f32::INFINITY);
             let search = ui.add(search);
             search.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, tl!("Search chats")));
         });
@@ -396,18 +399,24 @@ fn chat_row(ui: &mut Ui, chat: &Chat, selected: bool) -> egui::Response {
     child.add_space(4.0);
     child.vertical(|ui| {
         let strong = chat.unread > 0;
+        // Time and network tag first, from the right, so a long name truncates instead of pushing them down.
         ui.horizontal(|ui| {
-            let mut name = RichText::new(&chat.name).size(14.0).color(if strong { t.ink_strong } else { t.ink });
-            if strong {
-                name = name.strong();
-            }
-            ui.add(egui::Label::new(name).truncate());
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let when = chat.last_message.as_ref().map(|m| short_time(m.at)).unwrap_or_default();
                 ui.label(RichText::new(when).monospace().size(12.0).color(if strong { t.ink } else { t.muted }));
                 network_tag(ui, &chat.network);
+                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                    let mut name = RichText::new(&chat.name).size(14.0).color(if strong { t.ink_strong } else { t.ink });
+                    if strong {
+                        name = name.strong();
+                    }
+                    ui.add(egui::Label::new(name).truncate());
+                });
             });
         });
+        if preview.is_none() && chat.unread == 0 {
+            return;
+        }
         ui.horizontal(|ui| {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if chat.unread > 0 {
@@ -596,6 +605,7 @@ pub fn recovery_key(ctx: &egui::Context, state: &mut State, out: &mut Out) {
     let user = state.user.clone().unwrap_or_default();
     let caption = format!("{} · {user}", tl!("First sign-in").to_uppercase());
     let ticked = std::cell::Cell::new(state.recovery_forms.saved_ticked);
+    let copied = std::cell::Cell::new(state.recovery_forms.copied);
     let mut done = false;
     crate::widgets::sheet(
         ctx,
@@ -611,8 +621,10 @@ pub fn recovery_key(ctx: &egui::Context, state: &mut State, out: &mut Out) {
                     ui.label(RichText::new(row.join(" ")).monospace().size(22.0).color(t.ink_strong));
                 }
             });
-            if button(ui, tl!("Copy"), Kind::Secondary, true).clicked() {
+            let label = if copied.get() { tl!("Copied") } else { tl!("Copy") };
+            if button(ui, label, Kind::Secondary, true).clicked() {
                 ui.ctx().copy_text(key.expose().to_owned());
+                copied.set(true);
             }
             egui::Frame::new().stroke(t.hairline()).inner_margin(Margin::same(14)).show(ui, |ui| {
                 ui.set_width(ui.available_width());
@@ -631,9 +643,11 @@ pub fn recovery_key(ctx: &egui::Context, state: &mut State, out: &mut Out) {
         },
     );
     state.recovery_forms.saved_ticked = ticked.get();
+    state.recovery_forms.copied = copied.get();
     if done {
         state.recovery_forms.new_key = None;
         state.recovery_forms.saved_ticked = false;
+        state.recovery_forms.copied = false;
         out.push(Command::RecoveryKeySaved);
     }
 }

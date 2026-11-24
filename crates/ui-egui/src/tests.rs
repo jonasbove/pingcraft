@@ -308,3 +308,29 @@ fn verifying_compares_seven_named_symbols() {
     h.run();
     assert!(matches!(&fake.take()[..], [Command::CancelVerification]));
 }
+
+#[test]
+fn copying_the_recovery_key_says_so() {
+    let fake = Fake::default();
+    let mut h = signed_in(&fake);
+    fake.tell([Event::NewRecoveryKey(RecoveryKey::new("EsTc 8Jq2 Lm4P vR7x Wn3K hY6d Qa9B tF2s Zp5G kU8e Nr4V jD7w"))]);
+    h.run();
+    assert!(h.query_by_label("COPIED").is_none());
+    h.get_by_label("COPY").click();
+    h.run();
+    h.get_by_label("COPIED");
+}
+
+#[test]
+fn a_long_chat_name_truncates_and_keeps_its_network_tag_on_the_same_line() {
+    let fake = Fake::default();
+    let mut h = signed_in(&fake);
+    let long = "m1.pingcraft.test Admin Room with a much longer name than fits in the list";
+    fake.tell([Event::Inbox(InboxChange::Upsert(chat("!admin", long, "matrix", 0, None)))]);
+    h.run();
+    let row = h.get_by_label(&format!("{long}, on Matrix")).accesskit_node().raw_bounds().unwrap();
+    let tag = h.get_all_by_label("MATRIX").map(|n| n.accesskit_node().raw_bounds().unwrap()).find(|r| r.y0 >= row.y0 && r.y1 <= row.y1).unwrap();
+    assert!(tag.x1 <= row.x1, "the tag stays inside the row");
+    let middle = (row.y0 + row.y1) / 2.0;
+    assert!(tag.y0 < middle && tag.y1 > middle, "a row without a preview centres its one line: tag {tag:?}, row {row:?}");
+}
