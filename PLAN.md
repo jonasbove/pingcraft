@@ -187,8 +187,12 @@ Goal: a user connects Telegram, Signal and WhatsApp accounts from PingCraft, aft
    and WhatsApp showed a QR code, Telegram and WhatsApp asked for a phone number, each was cancelled, and no
    account was made.
 5. **Network of a chat:** read from the bridge-info room state, and shown in the inbox.
-6. **Risk screen:** shown before connecting, with an explicit confirmation. The text is written in our own words
-   from ADRs 0005–0008.
+6. **Done.** **Risk screen:** shown before connecting, with an explicit confirmation. The text is written in our own words
+   from ADRs 0005–0008. Built from `connect-risk`: the risk scale, the blocks for Telegram, Signal and WhatsApp, and
+   CONNECT stays off until the box is ticked. Then the bridge's login steps: choosing a way to log in when there are
+   several, a QR code (drawn with the `qrcode` crate, MIT OR Apache-2.0), a code, questions, and "not supported
+   yet". Differs from the design: WhatsApp's "keep your phone online" says the bridge warns at 12 days, since
+   PingCraft's own inbox warning is ticket 9.
 7. **Connect Telegram** from inside PingCraft. **(maintainer: an account)**
 8. **Bridge in compose: done (setup, NOTICE, docs/deploy.md section 9). Open: connecting from PingCraft.** **Signal:** bridge in compose, and connected from PingCraft. **(maintainer: an account)**
 9. **Bridge in compose: done with ticket 3 (docs/deploy.md section 10). Open: connecting from PingCraft, and the

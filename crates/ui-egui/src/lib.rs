@@ -5,6 +5,7 @@
 //! side through [`pingcraft_core::app::Backend`], so its tests run against a fake one.
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable))]
 
+mod accounts;
 pub mod i18n;
 mod state;
 mod theme;
@@ -18,7 +19,7 @@ mod tests;
 use egui::{Frame, Margin};
 use pingcraft_core::app::Backend;
 
-pub use state::{Screen, State};
+pub use state::{Screen, State, Tab};
 pub use theme::Tokens;
 
 /// The logo as drawn in the window (the design's `pingcraft-logo-128.png`).
@@ -51,7 +52,7 @@ impl PingCraftApp {
         let ctx = ui.ctx().clone();
         let t = Tokens::get(&ctx);
         let mut out = Vec::new();
-        egui::Panel::top("header").exact_size(48.0).frame(Frame::new().fill(t.bg)).show(ui, |ui| view::header(ui, &self.state));
+        egui::Panel::top("header").exact_size(48.0).frame(Frame::new().fill(t.bg)).show(ui, |ui| view::header(ui, &mut self.state, &mut out));
         egui::Panel::bottom("footer").exact_size(34.0).frame(Frame::new().fill(t.bg)).show(ui, |ui| view::footer(ui, &self.state));
         egui::CentralPanel::default().frame(Frame::new().fill(t.sunken).inner_margin(Margin::ZERO)).show(ui, |ui| {
             view::problem_bar(ui, &mut self.state);
@@ -61,7 +62,11 @@ impl PingCraftApp {
                 Screen::Locked { first } => view::unlock(&ctx, &mut self.state, first, &mut out),
                 Screen::SignIn => view::sign_in(&ctx, &mut self.state, &mut out),
                 Screen::Inbox => {
-                    view::inbox(ui, &mut self.state, &mut out);
+                    match self.state.tab {
+                        Tab::Inbox => view::inbox(ui, &mut self.state, &mut out),
+                        Tab::Accounts => accounts::accounts(ui, &mut self.state),
+                    }
+                    accounts::connect_sheet(&ctx, &mut self.state, &mut out);
                     view::recovery_key(&ctx, &mut self.state, &mut out);
                     view::enter_recovery_key(&ctx, &mut self.state, &mut out);
                     view::verification(&ctx, &self.state, &mut out);

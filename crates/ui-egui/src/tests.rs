@@ -381,3 +381,5 @@ fn the_chat_header_centres_the_name_and_network_on_the_avatar() {
     let line = (badge.y0 + badge.y1) / 2.0;
     assert!((block - line).abs() <= 2.0, "name and tag centred at {block}, the header's centre line is {line}");
 }
+
+mod accounts;

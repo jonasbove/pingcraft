@@ -19,6 +19,8 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 # Decoding the logo PNG.
 image = { version = "0.25", default-features = false, features = ["png"] }
 zeroize = "1.9"
+# QR codes a bridge shows when linking a network's app (MIT OR Apache-2.0). Drawn with egui, so no image features.
+qrcode = { version = "0.15", default-features = false, features = ["std"] }
 
 # The browser's clock and time zone on the web.
 [target.'cfg(target_arch = "wasm32")'.dependencies]

@@ -1,9 +1,15 @@
 //! What the interface knows, built only from the backend's [`Event`]s. No egui here, so it is tested on its own.
 
+use std::collections::BTreeMap;
+
 use pingcraft_core::app::{Event, SignInProblem};
+use pingcraft_core::bridge::{BridgeError, BridgedNetwork, LoginStep};
 use pingcraft_core::encryption::{RecoveryKey, RecoveryStatus, Verification};
-use pingcraft_core::{ChatId, ConnectionState, Filter, Inbox, InboxChange, Message};
+use pingcraft_core::{Account, ChatId, ConnectionState, Filter, Inbox, InboxChange, Message, Network};
 use zeroize::Zeroizing;
+
+use crate::i18n::fmt;
+use crate::tl;
 
 /// Which main screen is up.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -57,6 +63,85 @@ pub struct RecoveryForms {
     pub wrong: bool,
 }
 
+/// The tabs in the header, once signed in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Tab {
+    #[default]
+    Inbox,
+    Accounts,
+}
+
+/// What a network's bridge said, for the ACCOUNTS tab.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NetworkEntry {
+    Loading,
+    Ready(BridgedNetwork),
+    Failed(BridgeError),
+}
+
+/// Connecting one network, from the risk screen to the last login step.
+#[derive(Debug, Clone)]
+pub enum Connect {
+    /// The risk screen; `understood` once the user ticked that they accept it.
+    Risk {
+        network: Network,
+        understood: bool,
+    },
+    /// Choosing one of the bridge's ways to log in.
+    Choose {
+        network: Network,
+    },
+    /// Waiting for the bridge's first step.
+    Starting {
+        network: Network,
+    },
+    /// A login step; `typed` holds what the user typed into its fields (wiped when dropped), `sent` once answered.
+    Step {
+        step: LoginStep,
+        typed: BTreeMap<String, Zeroizing<String>>,
+        sent: bool,
+    },
+    Failed {
+        network: Network,
+        error: BridgeError,
+    },
+}
+
+impl Connect {
+    pub fn network(&self) -> Option<&Network> {
+        match self {
+            Self::Risk { network, .. } | Self::Choose { network } | Self::Starting { network } | Self::Failed { network, .. } => Some(network),
+            Self::Step { step, .. } => step.step().map(|s| &s.network),
+        }
+    }
+}
+
+/// The ACCOUNTS tab's state.
+#[derive(Debug, Clone, Default)]
+pub struct AccountsState {
+    pub networks: BTreeMap<Network, NetworkEntry>,
+    pub connect: Option<Connect>,
+    /// The account the user asked to remove, while they confirm it.
+    pub removing: Option<Account>,
+    /// The removal was confirmed and sent.
+    pub remove_sent: bool,
+    /// A line about what just happened (connected, removed, or why not).
+    pub notice: Option<String>,
+}
+
+impl AccountsState {
+    /// Every connected account, in the order of the networks.
+    pub fn count(&self) -> usize {
+        self.networks
+            .values()
+            .map(|n| match n {
+                NetworkEntry::Ready(n) => n.accounts.len(),
+                _ => 0,
+            })
+            .sum()
+    }
+}
+
 /// The open chat.
 pub struct OpenChat {
     pub id: ChatId,
@@ -68,6 +153,9 @@ pub struct OpenChat {
 #[derive(Default)]
 pub struct State {
     pub screen: Screen,
+    /// The header's tab, once signed in.
+    pub tab: Tab,
+    pub accounts: AccountsState,
     pub user: Option<String>,
     pub connection: ConnectionState,
     pub inbox: Inbox,
@@ -150,11 +238,56 @@ impl State {
             }
             Event::WrongRecoveryKey => self.recovery_forms.wrong = true,
             Event::Verification(v) => self.verification = v,
-            // The accounts screen comes with milestone 3's tickets 6 and 10.
-            Event::Network { .. } | Event::Login(_) | Event::LoginFailed { .. } | Event::AccountRemoved { .. } | Event::RemoveFailed { .. } => {}
+            Event::Network { network, found } => {
+                let entry = match found {
+                    Ok(n) => NetworkEntry::Ready(n),
+                    Err(e) => NetworkEntry::Failed(e),
+                };
+                self.accounts.networks.insert(network, entry);
+            }
+            Event::Login(step) => self.login_step(step),
+            Event::LoginFailed { network, error } => {
+                // Only the login on screen; one the user cancelled has nothing to show.
+                if self.accounts.connect.as_ref().and_then(Connect::network) == Some(&network) {
+                    self.accounts.connect = Some(Connect::Failed { network, error });
+                }
+            }
+            Event::AccountRemoved { network, account } => {
+                self.accounts.removing = None;
+                self.accounts.remove_sent = false;
+                if let Some(NetworkEntry::Ready(n)) = self.accounts.networks.get_mut(&network) {
+                    n.accounts.retain(|a| a.id != account);
+                }
+                self.accounts.notice = Some(tl!("The account was removed.").to_owned());
+            }
+            Event::RemoveFailed { error, .. } => {
+                self.accounts.removing = None;
+                self.accounts.remove_sent = false;
+                self.accounts.notice = Some(fmt(tl!("The account was not removed: {why}"), &[("why", &crate::accounts::failure(&error))]));
+            }
             Event::Problem(p) => {
                 self.sign_in.busy = false;
                 self.problem = Some(p);
+            }
+        }
+    }
+
+    /// The next step of the login on screen. A step for a login that is not on screen (cancelled) is dropped.
+    fn login_step(&mut self, step: LoginStep) {
+        let on_screen = self.accounts.connect.as_ref().and_then(Connect::network).cloned();
+        match step {
+            LoginStep::Done { network, .. } => {
+                if on_screen.as_ref() == Some(&network) {
+                    self.accounts.connect = None;
+                    let name = crate::widgets::network_name(&network);
+                    self.accounts.notice =
+                        Some(fmt(tl!("{network} is connected. Its chats show up in your inbox as messages arrive."), &[("network", &name)]));
+                }
+            }
+            step => {
+                if step.step().map(|s| &s.network) == on_screen.as_ref() {
+                    self.accounts.connect = Some(Connect::Step { step, typed: BTreeMap::new(), sent: false });
+                }
             }
         }
     }

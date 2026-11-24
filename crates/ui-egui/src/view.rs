@@ -9,7 +9,7 @@ use pingcraft_core::{Chat, ChatId, ConnectionState, Filter, Message, MessageBody
 use zeroize::Zeroizing;
 
 use crate::i18n::{fmt, trn};
-use crate::state::{OpenChat, Screen, State};
+use crate::state::{NetworkEntry, OpenChat, Screen, State, Tab};
 use crate::theme::Tokens;
 use crate::time::{day_label, short_time};
 use crate::tl;
@@ -18,7 +18,7 @@ use crate::widgets::{Kind, avatar, button, field, hud, mark, network_name, netwo
 /// The commands the screens collected in one frame.
 pub type Out = Vec<Command>;
 
-pub fn header(ui: &mut Ui, state: &State) {
+pub fn header(ui: &mut Ui, state: &mut State, out: &mut Out) {
     let t = Tokens::get(ui.ctx());
     ui.horizontal_centered(|ui| {
         ui.add_space(16.0);
@@ -28,9 +28,15 @@ pub fn header(ui: &mut Ui, state: &State) {
         ui.label(RichText::new("Craft").size(18.0).strong().color(t.accent_ink));
         if state.screen == Screen::Inbox {
             ui.add_space(24.0);
-            egui::Frame::new().fill(t.invert_bg).inner_margin(Margin::symmetric(8, 3)).show(ui, |ui| {
-                ui.label(RichText::new(tl!("Inbox").to_uppercase()).monospace().size(11.0).color(t.invert_fg));
-            });
+            ui.spacing_mut().item_spacing.x = 2.0;
+            if nav_cell(ui, tl!("Inbox"), state.tab == Tab::Inbox, true).clicked() {
+                state.tab = Tab::Inbox;
+            }
+            if nav_cell(ui, tl!("Accounts"), state.tab == Tab::Accounts, true).clicked() && state.tab != Tab::Accounts {
+                open_accounts(state, out);
+            }
+            // Settings has no screen yet.
+            nav_cell(ui, tl!("Settings"), false, false);
         }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.add_space(16.0);
@@ -40,6 +46,28 @@ pub fn header(ui: &mut Ui, state: &State) {
             ui.painter().circle_filled(rect.center(), 4.0, dot);
         });
     });
+}
+
+/// One of the header's tabs: inverted when it is the one shown. Its accessible name is the label; it says whether
+/// it is selected.
+fn nav_cell(ui: &mut Ui, label: &str, on: bool, enabled: bool) -> egui::Response {
+    let t = Tokens::get(ui.ctx());
+    let ink = if on { t.invert_fg } else { t.muted };
+    let cell = egui::Button::new(RichText::new(label.to_uppercase()).monospace().size(11.0).color(ink))
+        .fill(if on { t.invert_bg } else { Color32::TRANSPARENT })
+        .stroke(Stroke::NONE)
+        .corner_radius(egui::CornerRadius::ZERO)
+        .selected(on);
+    ui.add_enabled(enabled, cell)
+}
+
+/// Shows the ACCOUNTS tab, and asks the bridges what they offer and which accounts the user has.
+pub fn open_accounts(state: &mut State, out: &mut Out) {
+    state.tab = Tab::Accounts;
+    for id in crate::accounts::NETWORKS {
+        state.accounts.networks.entry(pingcraft_core::Network::from_id(id)).or_insert(NetworkEntry::Loading);
+    }
+    out.push(Command::LoadNetworks);
 }
 
 /// The word and the dot colour for the header's status cell.
@@ -66,6 +94,7 @@ pub fn footer(ui: &mut Ui, state: &State) {
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.add_space(20.0);
             let right = match state.screen {
+                Screen::Inbox if state.tab == Tab::Accounts => trn(state.accounts.count() as u64, "{n} account", "{n} accounts"),
                 Screen::Inbox => trn(state.inbox.len() as u64, "{n} chat", "{n} chats"),
                 Screen::Locked { .. } => tl!("Locked").to_owned(),
                 _ => tl!("Your server, your messages").to_owned(),
@@ -283,7 +312,7 @@ pub fn inbox(ui: &mut Ui, state: &mut State, out: &mut Out) {
             let chat = state.inbox.get(&open.id).cloned();
             chat_view(ui, open, chat.as_ref(), out);
         }
-        None => empty_chat(ui, state),
+        None => empty_chat(ui, state, out),
     });
 }
 
@@ -465,7 +494,7 @@ fn chat_row(ui: &mut Ui, chat: &Chat, selected: bool) -> egui::Response {
     response
 }
 
-fn empty_chat(ui: &mut Ui, state: &State) {
+fn empty_chat(ui: &mut Ui, state: &mut State, out: &mut Out) {
     let t = Tokens::get(ui.ctx());
     ui.add_space(ui.available_height() / 3.0);
     ui.vertical_centered(|ui| {
@@ -473,6 +502,7 @@ fn empty_chat(ui: &mut Ui, state: &State) {
             ui.label(RichText::new(tl!("Your chats, one inbox.")).size(26.0).strong().color(t.ink_strong));
             ui.add_space(8.0);
             note(ui, tl!("Networks are connected through bridges, small programs on your server. Connecting them from inside PingCraft comes in a later version."));
+            let _ = out;
         } else {
             note(ui, tl!("Choose a chat on the left."));
         }

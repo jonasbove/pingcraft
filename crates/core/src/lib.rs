@@ -38,6 +38,29 @@ impl Network {
     pub fn is_matrix(&self) -> bool {
         self.0 == "matrix"
     }
+
+    /// How likely the network is to restrict or ban an account for being connected through a bridge, as decided
+    /// in its ADR (0005 to 0008). `None` for Matrix and for networks PingCraft has not assessed. Discord's is for
+    /// logging in as yourself; its bot login is low.
+    pub fn risk_level(&self) -> Option<RiskLevel> {
+        match self.0.as_str() {
+            "telegram" => Some(RiskLevel::Low),
+            "signal" => Some(RiskLevel::Medium),
+            "whatsapp" => Some(RiskLevel::MediumHigh),
+            "discord" => Some(RiskLevel::High),
+            _ => None,
+        }
+    }
+}
+
+/// How likely a network is to restrict or ban an account for being connected through a bridge. Shown to the user
+/// before they connect one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum RiskLevel {
+    Low,
+    Medium,
+    MediumHigh,
+    High,
 }
 
 /// Whether PingCraft is keeping up with the server, for the line at the top of the inbox.
@@ -167,6 +190,17 @@ mod tests {
         assert!(Network::matrix().is_matrix());
         assert!(Network::from_id("  ").is_matrix());
         assert!(!Network::from_id("telegram").is_matrix());
+    }
+
+    #[test]
+    fn risk_levels_follow_the_network_adrs() {
+        use super::RiskLevel;
+        assert_eq!(Network::from_id("Telegram").risk_level(), Some(RiskLevel::Low));
+        assert_eq!(Network::from_id("signal").risk_level(), Some(RiskLevel::Medium));
+        assert_eq!(Network::from_id("whatsapp").risk_level(), Some(RiskLevel::MediumHigh));
+        assert_eq!(Network::matrix().risk_level(), None);
+        assert_eq!(Network::from_id("somewhere-new").risk_level(), None);
+        assert!(RiskLevel::Low < RiskLevel::MediumHigh);
     }
 
     #[test]
