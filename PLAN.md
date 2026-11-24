@@ -163,9 +163,14 @@ desktop target.
 Goal: a user connects Telegram, Signal and WhatsApp accounts from PingCraft, after seeing each network's risk.
 
 1. **The bridge provider interface** in `pingcraft-core` (ADR 0003).
-2. **Spike: OpenID with federation off.** Does tuwunel serve the OpenID userinfo endpoint the bridges use to
+2. **Done (2026-11-24), see ADR 0003's addendum.** **Spike: OpenID with federation off.** Does tuwunel serve the OpenID userinfo endpoint the bridges use to
    check a token when federation is off? If not, make only that endpoint reachable to the bridges over the
    internal compose network (ADR 0003).
+
+   tuwunel serves it, but the bridges reach it only the federation way: HTTPS to the server name, never at a
+   private address. The fix, built with ticket 3: inside the stack, the reverse proxy answers to the server name with
+   a certificate the bridges trust, on a network outside RFC 1918, and forwards only that endpoint. Open, for the
+   maintainer: proposing upstream that a bridge checks its own server's tokens at `homeserver.address`.
 3. **Route each bridge's `/_matrix/provision`** through the reverse proxy, and document it.
 4. **The mautrix bridge provider:** uses the bridgev2 provisioning API, authenticated with a Matrix OpenID token.
 5. **Network of a chat:** read from the bridge-info room state, and shown in the inbox.

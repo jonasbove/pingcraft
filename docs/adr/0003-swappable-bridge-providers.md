@@ -50,3 +50,52 @@ Two mautrix interfaces matter to a client:
 - The provisioning API is a mautrix-go interface, not a Matrix standard. Another provider either implements the
   same API or gets its own implementation of the interface.
 - A bridge that sets no bridge-info state shows its chats under the Matrix network.
+
+## Addendum (2026-11-24): OpenID with federation off, the milestone 3 spike
+
+Run against a throwaway compose project built from `deploy/` (tuwunel v2.0.0, mautrix-signal v0.2611.0 built on
+mautrix-go v0.33.0, the pinned digests), with federation off and a throwaway user. No network account was used.
+
+Findings:
+
+- **tuwunel serves the endpoint.** `GET /_matrix/federation/v1/openid/userinfo` answered 200 with the right
+  `sub` for a token from `/_matrix/client/v3/user/{userId}/openid/request_token`, and 401 for a wrong token, while
+  every other federation endpoint answered 403 "Federation is disabled".
+- **The bridge does not ask the homeserver it is configured with.** It checks an `openid:` token with mautrix-go's
+  federation client (`bridgev2/matrix/provisioning.go`, `federation/httpclient.go`), which:
+  - resolves the user's server name the federation way (`.well-known/matrix/server`, SRV, then port 8448);
+  - connects over HTTPS with ordinary certificate checks;
+  - refuses private addresses (`federation.DefaultAllowIP`: RFC 1918, loopback and link-local).
+
+  So the compose network alone is not enough: the server name did not resolve there ("no such host"), and once it
+  did, the bridge refused the container's address ("refusing to connect to 172.26.0.3").
+- **It works with three additions inside the stack.**
+  1. The server name resolves, on a network outside RFC 1918, to a TLS front.
+  2. The front forwards only the userinfo endpoint to tuwunel.
+  3. The bridge trusts the front's certificate in addition to the system's roots.
+
+  With those, `GET /_matrix/provision/v3/login/flows` with `Authorization: Bearer openid:<token>` answered 200.
+- **The bridge logs the token when a check fails:** the error line includes the userinfo URL with the token in
+  it. An OpenID token only proves who the user is, and tuwunel's last an hour, but it ends up in the bridge's
+  container log.
+
+Decision, within point 4 above:
+
+- Federation stays off. No bridge image changes (ADR 0002).
+- The compose project gets one reverse proxy (Caddy, Apache-2.0, pinned by digest).
+  - On an internal network `openid`, in 198.18.0.0/24 (RFC 2544's benchmarking range: not private by the
+    bridges' definition, and never routed on the internet), it answers to the server name on port 8448.
+  - It uses a certificate `setup.sh` makes, self-signed and valid for 100 years. Its private key is given to the
+    proxy only.
+  - It forwards only `/_matrix/federation/v1/openid/userinfo`, and serves `.well-known/matrix/server` on port 443
+    of the same network, so the bridge never follows a public SRV record.
+- Each bridge joins `openid` and adds that certificate to its trusted roots with `SSL_CERT_DIR`. The system's own
+  roots are still read.
+
+For the maintainer:
+
+- **The bridges' guard against private addresses no longer applies to one name.** Inside the stack, it does not
+  apply to the server name, on purpose.
+- **The clean fix is upstream.** A bridge could check tokens for its own server against the `homeserver.address`
+  it is configured with. Proposing that to mautrix-go is a public contribution, so it waits for the maintainer.
+- **Ruled out:** handing the bridge the user's access token (point 4), and turning federation on (ADR 0010).
