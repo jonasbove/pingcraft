@@ -44,25 +44,25 @@ Matrix client.
    Matrix-side encryption required. Log in to the bridge, then send and receive text both ways from a stock
    Matrix client. Measure idle and active memory of tuwunel and the bridge (`docker stats`), then stop the
    containers. Record the findings as an addendum to ADR 0001, and stop if tuwunel cannot do it.
-2. **`compose.yaml`** for the `pingcraft` project:
+2. **Done.** **`compose.yaml`** for the `pingcraft` project:
    - tuwunel, Postgres for the bridges, and the Telegram bridge;
    - images pinned by version and digest;
    - bridge registrations loaded from tuwunel's appservice directory;
    - one double-puppet registration shared by all bridges;
    - federation off, and no open registration.
-3. **Setup checks.** Starting fails without an explicit server name. Generated secrets (`as_token`, `hs_token`,
+3. **Done.** **Setup checks.** Starting fails without an explicit server name. Generated secrets (`as_token`, `hs_token`,
    the bridge's `pickle_key`) go into git-ignored files, never into the repository or the logs.
-4. **Bridge configuration template:** encryption allowed, on by default and required, sync-based, with
+4. **Done.** **Bridge configuration template:** encryption allowed, on by default and required, sync-based, with
    `pickle_key: generate`.
-5. **`NOTICE`** naming each bridge, its licence and its source (ADR 0002).
-6. **`docs/deploy.md`:**
+5. **Done.** **`NOTICE`** naming each bridge, its licence and its source (ADR 0002).
+6. **Done.** **`docs/deploy.md`:**
    - setup, and the permanent server name;
    - adding users;
    - what the volumes contain;
    - registering a Telegram `api_id`.
-7. **`docs/backup.md`:** back up and restore, tested by restoring into a throwaway stack. Say plainly that the
+7. **Done.** **`docs/backup.md`:** back up and restore, tested by restoring into a throwaway stack. Say plainly that the
    archive is a secret.
-8. **`cargo xtask bump-images`:** move the pinned image digests forward and report stale ones.
+8. **Moved to milestone 2, ticket 1** (it needs the Rust workspace). **`cargo xtask bump-images`:** move the pinned image digests forward and report stale ones.
 
 ## Milestone 2: the client
 
@@ -73,6 +73,7 @@ desktop target.
    - the crates and layers from ADR 0009;
    - `rust-toolchain.toml` and `deny.toml`;
    - `cargo xtask ci` and `cargo xtask layers`;
+   - `cargo xtask bump-images`, from milestone 1: move the pinned image digests forward and report stale ones;
    - craft-libs pinned at one revision.
 2. **CI:** a workflow calling `craft-common-actions`, in its own pull request (house rule 11).
 3. **Spike: targets.**
