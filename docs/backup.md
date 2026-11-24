@@ -6,7 +6,8 @@
 
 - the homeserver's database (users, rooms, and the stored messages, most of them encrypted);
 - every bridge's database, including the logins to each network and the bridges' encryption keys;
-- `data/`, which holds the bridge configuration, the registrations and the generated secrets;
+- `data/`, which holds the bridge configuration, the registrations, the generated secrets and the stack's internal
+  certificate with its private key;
 - `.env`, which holds the server name and network API values.
 
 **Anyone holding the archive can read the bridged chats and act on the connected accounts** (ADR 0004). The

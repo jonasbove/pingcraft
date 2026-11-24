@@ -1,0 +1,64 @@
+# PingCraft's reverse proxy, the one way into the stack (docs/deploy.md, ADR 0003 and its addendum).
+#
+# - Port 8008, plain HTTP, published on PINGCRAFT_BIND:PINGCRAFT_PORT: the homeserver, and each bridge's
+#   provisioning API under /_pingcraft/bridges/<network>/, which PingCraft uses to connect networks. Put an
+#   HTTPS reverse proxy in front of it for anything but this computer.
+# - Ports 443 and 8448, HTTPS, inside the stack only: the server name, for the bridges' check of a user's OpenID
+#   token. Federation stays off; only that one endpoint is forwarded.
+
+{
+	admin off
+	# No certificates from the internet: the only HTTPS here is the stack's own certificate below.
+	auto_https off
+}
+
+:8008 {
+	# A bridge's provisioning API, and nothing else of it: never its appservice API (/_matrix/app), debug
+	# endpoints or public media. Each bridge checks the user's OpenID token itself.
+	handle_path /_pingcraft/bridges/telegram/* {
+		handle /_matrix/provision/v3/* {
+			reverse_proxy telegram:29317
+		}
+		handle {
+			respond 404
+		}
+	}
+	handle_path /_pingcraft/bridges/signal/* {
+		handle /_matrix/provision/v3/* {
+			reverse_proxy signal:29328
+		}
+		handle {
+			respond 404
+		}
+	}
+	handle_path /_pingcraft/bridges/whatsapp/* {
+		handle /_matrix/provision/v3/* {
+			reverse_proxy whatsapp:29318
+		}
+		handle {
+			respond 404
+		}
+	}
+	handle /_pingcraft/* {
+		respond 404
+	}
+	handle {
+		reverse_proxy homeserver:8008
+	}
+}
+
+# Only the bridges reach this: on the `openid` network the server name resolves to this proxy, and the bridges
+# trust its certificate (setup.sh makes it). A bridge checks an OpenID token the federation way, over HTTPS at the
+# server name, and refuses private addresses, so the homeserver's own address would not do.
+https://{$PINGCRAFT_SERVER_NAME}:443, https://{$PINGCRAFT_SERVER_NAME}:8448 {
+	tls /run/pingcraft-openid-tls/cert.pem /run/pingcraft-openid-tls/key.pem
+	handle /_matrix/federation/v1/openid/userinfo {
+		reverse_proxy homeserver:8008
+	}
+	# Points the bridge at port 8448 here, so it never follows a public SRV record for the server name.
+	handle /.well-known/matrix/server {
+		header Content-Type application/json
+		respond `{"m.server": "{$PINGCRAFT_SERVER_NAME}:8448"}`
+	}
+	respond 404
+}

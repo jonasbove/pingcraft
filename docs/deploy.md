@@ -2,8 +2,9 @@
 
 The server side is one Docker Compose project in [`deploy/`](../deploy/):
 
+- **a reverse proxy (Caddy):** the one way in, for the homeserver and for connecting networks from PingCraft;
 - **tuwunel:** the Matrix homeserver (ADR 0001);
-- **one container per bridge:** today, Telegram and Signal;
+- **one container per bridge:** today, Telegram, Signal and WhatsApp;
 - **Postgres:** the bridges' database.
 
 Everything below runs from the `deploy/` folder. You need Docker with Compose v2.
@@ -23,7 +24,8 @@ networks. Run it on a machine you trust, and treat backups the same way ([backup
 ## 1. Choose the server name
 
 Every user ID ends in the server name (`@you:example.com`). **It can never change** without starting over with an
-empty server. Use a domain you own. If the homeserver will live on a subdomain (`matrix.example.com`) but you want
+empty server. Use a domain you own, as a plain host name: no port, and not `localhost` or an IP address, or the
+bridges cannot check who is connecting a network (see "How PingCraft reaches the bridges" below). If the homeserver will live on a subdomain (`matrix.example.com`) but you want
 IDs on the bare domain, set up `.well-known` delegation on the bare domain (see step 6).
 
 ## 2. Fill in `.env`
@@ -37,7 +39,8 @@ chmod 600 .env
 |---|---|
 | `PINGCRAFT_SERVER_NAME` | the permanent server name from step 1. Required |
 | `PINGCRAFT_ADMIN_LOCALPART` | the first user's name, who gets admin rights on the bridges (default `admin`) |
-| `PINGCRAFT_BIND`, `PINGCRAFT_PORT` | where the homeserver listens on the host (default `127.0.0.1:8008`) |
+| `PINGCRAFT_BIND`, `PINGCRAFT_PORT` | where the stack listens on the host (default `127.0.0.1:8008`) |
+| `PINGCRAFT_OPENID_SUBNET` | optional: the internal network the bridges use to check sign-ins (default `198.18.0.0/24`). Change it only if the host already uses that range |
 | `PINGCRAFT_UID`, `PINGCRAFT_GID` | the host user that owns `data/`, from `id -u` and `id -g` |
 | `TELEGRAM_API_ID`, `TELEGRAM_API_HASH` | from an application you register at <https://my.telegram.org> under "API development tools". Secret (ADR 0005) |
 
@@ -52,8 +55,10 @@ chmod 600 .env
 It stops with an error if the server name or the Telegram values are missing. Otherwise it:
 
 - generates the secrets into `data/secrets/`;
-- writes each bridge's configuration to `data/<bridge>/` (`data/telegram/`, `data/signal/`), starting from the
-  bridge's own defaults;
+- makes the stack's own certificate for the server name in `data/openid-tls/` (with its private key) and
+  `data/openid-ca/` (the certificate alone, for the bridges); this needs `openssl` once;
+- writes each bridge's configuration to `data/<bridge>/` (`data/telegram/`, `data/signal/`, `data/whatsapp/`),
+  starting from the bridge's own defaults;
 - writes the registrations tuwunel loads from `data/appservices/`.
 
 It never prints a secret, and it never overwrites anything that exists, so it is safe to run again.
@@ -102,7 +107,42 @@ ssh -N -L 8008:127.0.0.1:8008 <server>
 
 The client then uses `http://localhost:8008`. Running next to CraftCloud is covered in milestone 4.
 
-## 7. Connect Telegram
+## 7. How PingCraft reaches the bridges
+
+PingCraft connects a network through that network's bridge, with the bridge's provisioning API (ADR 0003). The
+proxy serves it next to the homeserver, one path per bridge:
+
+| Path on the stack's address | Goes to |
+|---|---|
+| `/_pingcraft/bridges/telegram/_matrix/provision/v3/…` | the Telegram bridge |
+| `/_pingcraft/bridges/signal/_matrix/provision/v3/…` | the Signal bridge |
+| `/_pingcraft/bridges/whatsapp/_matrix/provision/v3/…` | the WhatsApp bridge |
+| everything else | the homeserver |
+
+Only the provisioning API is passed on, never a bridge's other endpoints. An HTTPS reverse proxy in front (step 6)
+needs nothing extra: it forwards everything to `PINGCRAFT_PORT`, these paths included.
+
+PingCraft never gives a bridge your password or your access token. It asks the homeserver for an OpenID token,
+which only proves who you are, and the bridge checks it with the homeserver. A bridge does that check the way
+servers check each other, over HTTPS at the server name, and refuses private addresses. Federation stays off, so
+the stack answers that one check itself:
+
+- the proxy also sits on a second internal network, `openid` (`PINGCRAFT_OPENID_SUBNET`), where the server name
+  points at it;
+- there it shows the certificate from `data/openid-tls/`, which the bridges trust through `data/openid-ca/`;
+- it forwards only the OpenID check, `/_matrix/federation/v1/openid/userinfo`, to the homeserver.
+
+Nothing outside the stack reaches that network. ADR 0003's addendum says why it is built this way.
+
+**A stack set up before the proxy and WhatsApp were added** needs these steps once:
+
+1. Create the WhatsApp bridge's database with `docker compose exec bridge-db createdb -U bridges whatsapp`.
+2. Run `./setup.sh`. It makes the certificate and the WhatsApp bridge's configuration, and keeps everything that
+   exists.
+3. Run `docker compose up -d`. The proxy now takes over `PINGCRAFT_PORT` from the homeserver, so the address
+   clients use does not change.
+
+## 8. Connect Telegram
 
 Until PingCraft's own client can do this (milestone 3), use any Matrix client.
 
@@ -114,7 +154,7 @@ Until PingCraft's own client can do this (milestone 3), use any Matrix client.
 
 Read ADR 0005 for what Telegram allows and what can get an account restricted.
 
-## 8. Connect Signal
+## 9. Connect Signal
 
 Signal has no separate login: the bridge becomes a linked device of the Signal app on your phone, like Signal's
 own desktop app. Read ADR 0006 first.
@@ -130,6 +170,21 @@ To disconnect, send `logout` in the bridge's room, or remove "PingCraft" under L
 
 A stack created before Signal was added has no `signal` database. Create it once with
 `docker compose exec bridge-db createdb -U bridges signal`, then run `./setup.sh` and `docker compose up -d`.
+
+## 10. Connect WhatsApp
+
+Like Signal, the bridge becomes a linked device of WhatsApp on your phone. Read ADR 0007 first: WhatsApp's terms
+do not allow unofficial apps, and it bans accounts it finds suspicious. Your phone must come online at least every
+14 days, or the link drops.
+
+1. **Open the bridge's room:** start a direct message with `@whatsappbot:<server name>`, and check that the room
+   is encrypted.
+2. **Log in:** send `login qr`. The bridge answers with a QR code. On your phone, open WhatsApp, then Linked
+   devices, Link a device, and scan it. The device shows up on the phone as "PingCraft". `login phone` gives an
+   eight-character code to type on the phone instead.
+3. **Chats:** a chat appears in Matrix when a message arrives in it.
+
+To disconnect, send `logout` in the bridge's room, or remove "PingCraft" under Linked devices on the phone.
 
 ## Updates
 

@@ -1,14 +1,56 @@
-# PingCraft server stack: the homeserver, the bridges, and Postgres for the bridges.
+# PingCraft server stack: a reverse proxy, the homeserver, the bridges, and Postgres for the bridges.
 #
 # Run `./setup.sh` once before the first `docker compose up`: it refuses to continue without a server name,
 # generates the secrets into the git-ignored `.env` and `data/`, and registers the bridges with the homeserver.
-# See ADR 0001 (homeserver), 0002 (bridges run unmodified), 0004 (secrets) and 0010 (deployment).
+# See ADR 0001 (homeserver), 0002 (bridges run unmodified), 0003 (bridge providers, and the OpenID addendum),
+# 0004 (secrets) and 0010 (deployment).
 #
 # Images are pinned by version and digest (ADR 0010). Bridges are upstream images, unmodified (ADR 0002, NOTICE).
 
 name: ${COMPOSE_PROJECT_NAME:-pingcraft}
 
+# Every bridge gets these: the `openid` network, and the stack's own certificate among its trusted roots
+# (`SSL_CERT_DIR` adds a directory; the image's own roots are still read). See Caddyfile.
+x-bridge: &bridge
+  restart: unless-stopped
+  networks:
+    default:
+    openid:
+  depends_on:
+    bridge-db:
+      condition: service_healthy
+    homeserver:
+      condition: service_started
+    proxy:
+      condition: service_started
+
+x-bridge-env: &bridge-env
+  UID: ${PINGCRAFT_UID:-1000}
+  GID: ${PINGCRAFT_GID:-1000}
+  SSL_CERT_DIR: /run/pingcraft-openid
+
 services:
+  proxy:
+    image: caddy:2.11.9-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
+    restart: unless-stopped
+    environment:
+      PINGCRAFT_SERVER_NAME: "${PINGCRAFT_SERVER_NAME:?set PINGCRAFT_SERVER_NAME in .env and run ./setup.sh}"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # The stack's own certificate for the server name, and its private key (setup.sh). Only the proxy has the key.
+      - ./data/openid-tls:/run/pingcraft-openid-tls:ro
+    ports:
+      # Loopback only by default. Put a reverse proxy with TLS in front for anything else.
+      - ${PINGCRAFT_BIND:-127.0.0.1}:${PINGCRAFT_PORT:-8008}:8008
+    networks:
+      default:
+      openid:
+        # The bridges find the server name here, and nowhere else (ADR 0003 addendum).
+        aliases:
+          - ${PINGCRAFT_SERVER_NAME}
+    depends_on:
+      - homeserver
+
   homeserver:
     image: ghcr.io/matrix-construct/tuwunel:v2.0.0@sha256:3dde1e9b3503c68218f95415ec3ebff522bd945065ba76019d408543540d1730
     restart: unless-stopped
@@ -23,9 +65,7 @@ services:
       - ./data/appservices:/etc/tuwunel/appservices:ro
       - ./data/secrets/registration_token:/run/secrets/registration_token:ro
       - homeserver:/var/lib/tuwunel
-    ports:
-      # Loopback only by default. Put a reverse proxy with TLS in front for anything else.
-      - ${PINGCRAFT_BIND:-127.0.0.1}:${PINGCRAFT_PORT:-8008}:8008
+    # No port of its own: clients reach it through the proxy.
 
   bridge-db:
     image: postgres:18.2-alpine3.23@sha256:035b9ab53cfa147d7202b61f5f7782b939ae815b7d6bc81c96b7b42ff1fca950
@@ -45,36 +85,44 @@ services:
       retries: 10
 
   telegram:
+    <<: *bridge
     image: dock.mau.dev/mautrix/telegram:v0.2611.0@sha256:fe78dbce96dca82f077371f429776ab1fee3b65ddc83924a257279b142160945
-    restart: unless-stopped
-    environment:
-      # The image's start script hands /data to this user and drops root before starting the bridge.
-      UID: ${PINGCRAFT_UID:-1000}
-      GID: ${PINGCRAFT_GID:-1000}
+    # UID and GID: the image's start script hands /data to this user and drops root before starting the bridge.
+    environment: *bridge-env
     volumes:
       # config.yaml and registration.yaml live here; both hold secrets and are git-ignored.
       - ./data/telegram:/data
-    depends_on:
-      bridge-db:
-        condition: service_healthy
-      homeserver:
-        condition: service_started
+      - ./data/openid-ca:/run/pingcraft-openid:ro
 
   signal:
+    <<: *bridge
     image: dock.mau.dev/mautrix/signal:v0.2611.0@sha256:5e6e8f4a9b840e71484e330538a73994a8b31bc11a10054ef662971019bc2d2f
-    restart: unless-stopped
-    environment:
-      UID: ${PINGCRAFT_UID:-1000}
-      GID: ${PINGCRAFT_GID:-1000}
+    environment: *bridge-env
     volumes:
       # config.yaml and registration.yaml live here; both hold secrets and are git-ignored. The bridge's database
       # holds the linked device's Signal keys (ADR 0006).
       - ./data/signal:/data
-    depends_on:
-      bridge-db:
-        condition: service_healthy
-      homeserver:
-        condition: service_started
+      - ./data/openid-ca:/run/pingcraft-openid:ro
+
+  whatsapp:
+    <<: *bridge
+    image: dock.mau.dev/mautrix/whatsapp:v0.2611.0@sha256:0f44d561ea591072182ea99bebd463fa8acd0af8400eb3f9c88a90a8cc569805
+    environment: *bridge-env
+    volumes:
+      # config.yaml and registration.yaml live here; both hold secrets and are git-ignored. The bridge's database
+      # holds the linked device's WhatsApp keys (ADR 0007).
+      - ./data/whatsapp:/data
+      - ./data/openid-ca:/run/pingcraft-openid:ro
+
+networks:
+  default:
+  # Only the proxy and the bridges. Outside RFC 1918 on purpose: the bridges refuse private addresses when they
+  # check an OpenID token (ADR 0003 addendum). 198.18.0.0/15 is reserved for benchmarking and never routed on the
+  # internet; change PINGCRAFT_OPENID_SUBNET if this host already uses it.
+  openid:
+    ipam:
+      config:
+        - subnet: ${PINGCRAFT_OPENID_SUBNET:-198.18.0.0/24}
 
 volumes:
   homeserver:

@@ -173,14 +173,21 @@ Goal: a user connects Telegram, Signal and WhatsApp accounts from PingCraft, aft
    private address. The fix, built with ticket 3: inside the stack, the reverse proxy answers to the server name with
    a certificate the bridges trust, on a network outside RFC 1918, and forwards only that endpoint. Open, for the
    maintainer: proposing upstream that a bridge checks its own server's tokens at `homeserver.address`.
-3. **Route each bridge's `/_matrix/provision`** through the reverse proxy, and document it.
+3. **Done.** **Route each bridge's `/_matrix/provision`** through the reverse proxy, and document it.
+   A Caddy proxy is now the stack's one way in (`deploy/Caddyfile`, docs/deploy.md section 7): the homeserver, and
+   each bridge's `/_matrix/provision/v3/` under `/_pingcraft/bridges/<network>/`, nothing else of a bridge. Inside
+   the stack it also answers the bridges' OpenID check (ticket 2). The WhatsApp bridge is in compose too (setup,
+   NOTICE, docs/deploy.md section 10), without a login. Checked on a throwaway stack: `whoami` with an OpenID
+   token through the proxy answered for all three bridges; other bridge paths, a path with `..`, no token and
+   another user's ID were refused.
 4. **The mautrix bridge provider:** uses the bridgev2 provisioning API, authenticated with a Matrix OpenID token.
 5. **Network of a chat:** read from the bridge-info room state, and shown in the inbox.
 6. **Risk screen:** shown before connecting, with an explicit confirmation. The text is written in our own words
    from ADRs 0005–0008.
 7. **Connect Telegram** from inside PingCraft. **(maintainer: an account)**
-8. **Bridge in compose: done (setup, NOTICE, docs/deploy.md section 8). Open: connecting from PingCraft.** **Signal:** bridge in compose, and connected from PingCraft. **(maintainer: an account)**
-9. **WhatsApp:** bridge in compose, connected from PingCraft, with the bridge's "phone offline" warning shown in
+8. **Bridge in compose: done (setup, NOTICE, docs/deploy.md section 9). Open: connecting from PingCraft.** **Signal:** bridge in compose, and connected from PingCraft. **(maintainer: an account)**
+9. **Bridge in compose: done with ticket 3 (docs/deploy.md section 10). Open: connecting from PingCraft, and the
+   warning.** **WhatsApp:** bridge in compose, connected from PingCraft, with the bridge's "phone offline" warning shown in
    the inbox. **(maintainer: an account)**
 10. **Accounts screen:** list a user's accounts and remove one.
 

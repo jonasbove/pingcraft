@@ -11,5 +11,9 @@ given.
   Source: https://github.com/mautrix/telegram
 - mautrix-signal, Matrix-Signal bridge. AGPL-3.0. It includes libsignal (AGPL-3.0).
   Source: https://github.com/mautrix/signal and https://github.com/signalapp/libsignal
+- mautrix-whatsapp, Matrix-WhatsApp bridge. AGPL-3.0. It includes whatsmeow (MPL-2.0).
+  Source: https://github.com/mautrix/whatsapp and https://github.com/tulir/whatsmeow
+- Caddy, reverse proxy. Apache-2.0.
+  Source: https://github.com/caddyserver/caddy
 - PostgreSQL, database for the bridges. PostgreSQL License.
   Source: https://www.postgresql.org/ftp/source/

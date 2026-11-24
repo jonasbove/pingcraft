@@ -31,6 +31,23 @@ new_secret_file data/secrets/bridge_db_password
 new_secret_file data/secrets/doublepuppet_as_token
 new_secret_file data/secrets/doublepuppet_hs_token
 
+# The stack's own certificate for the server name (ADR 0003 addendum): the proxy shows it to the bridges when they
+# check a user's OpenID token, and only the bridges trust it. Self-signed, P-256, valid for 100 years: it never
+# leaves the stack. The key goes to the proxy only.
+case "$PINGCRAFT_SERVER_NAME" in
+	*:*|localhost|*[!A-Za-z0-9.-]*) fail "PINGCRAFT_SERVER_NAME must be a plain host name, such as example.org: the bridges cannot check sign-ins for '$PINGCRAFT_SERVER_NAME'" ;;
+esac
+if [ ! -s data/openid-tls/key.pem ]; then
+	command -v openssl >/dev/null 2>&1 || fail "openssl is needed once, to make the stack's internal certificate"
+	echo "setup: making the stack's internal certificate for $PINGCRAFT_SERVER_NAME"
+	mkdir -p data/openid-tls data/openid-ca
+	openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 36500 \
+		-subj "/CN=$PINGCRAFT_SERVER_NAME" -addext "subjectAltName=DNS:$PINGCRAFT_SERVER_NAME" \
+		-addext "basicConstraints=critical,CA:FALSE" -addext "extendedKeyUsage=serverAuth" \
+		-keyout data/openid-tls/key.pem -out data/openid-tls/cert.pem 2>/dev/null
+	cp data/openid-tls/cert.pem data/openid-ca/pingcraft-openid.crt
+fi
+
 # Runs a bridge image as the current user, with the given entrypoint, without starting anything else.
 #   run_bridge <service> <entrypoint> [args...]
 run_bridge() {
@@ -105,6 +122,11 @@ setup_bridge signal /usr/bin/mautrix-signal '
 		.network.device_name = "PingCraft" |
 		.network.note_to_self_avatar = "" |
 		.network.location_format = "geo:%[1]s,%[2]s"'
+
+# WhatsApp (ADR 0007): the linked device is named PingCraft on the phone, and status updates are not bridged.
+setup_bridge whatsapp /usr/bin/mautrix-whatsapp '
+		.network.os_name = "PingCraft" |
+		.network.enable_status_broadcast = false'
 
 # One registration lets every bridge act as each local user's own Matrix account (double puppeting).
 server_re=$(printf '%s' "$PINGCRAFT_SERVER_NAME" | sed 's/[.]/\\./g')
