@@ -14,3 +14,17 @@ workspace = true
 [dependencies]
 pingcraft-core = { workspace = true }
 egui = { workspace = true }
+# Times in the inbox and the chat (house rule 5).
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+# Decoding the logo PNG.
+image = { version = "0.25", default-features = false, features = ["png"] }
+zeroize = "1.9"
+
+# The browser's clock and time zone on the web.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock", "std", "wasmbind"] }
+
+[dev-dependencies]
+# egui 0.37 no longer bundles its fallback faces by default; the tests install them.
+egui = { workspace = true, features = ["default_fonts"] }
+egui_kittest = { version = "0.37" }

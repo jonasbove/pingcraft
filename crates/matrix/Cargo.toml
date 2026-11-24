@@ -23,6 +23,8 @@ tokio = { version = "1", default-features = false, features = ["sync"] }
 # Desktop: SQLite stores encrypted with a key from the OS keychain (ADR 0004), and rustls.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 pingcraft-keychain = { path = "../keychain" }
+# The desktop engine's own runtime, on a thread of its own.
+tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros", "time", "sync"] }
 matrix-sdk = { workspace = true, features = ["e2e-encryption", "automatic-room-key-forwarding", "sqlite", "rustls-aws-lc-rs"] }
 matrix-sdk-ui = { workspace = true, features = ["rustls-aws-lc-rs"] }
 

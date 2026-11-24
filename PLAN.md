@@ -103,7 +103,7 @@ desktop target.
 7. **Done.** **Chat:** the timeline, reading and sending text: `matrix-sdk-ui`'s `Timeline` mapped onto core messages
    (with "waiting for the key" for undecryptable ones and the send state), a failed message sent again, and older
    messages loaded back to the start of the chat. Tested against tuwunel.
-8. **Done in `pingcraft-matrix`; the screens are ticket 9's.** **Encryption:**
+8. **Done** (the screens with ticket 9). **Encryption:**
    - cross-signing, key backup, and the recovery key screen;
    - verifying another device by emoji (SAS).
 
@@ -113,7 +113,24 @@ desktop target.
    (`pingcraft_core::encryption`) is what the interface renders. Tested against tuwunel with fresh users. Open,
    for the maintainer: what to offer when the recovery key is lost (resetting it loses the encrypted history);
    an account with a key backup but no secret storage (made by another client); verifying other people; QR codes.
-9. **UI:** the window and app icon from `design/assets/logo/`, the orchid theme from `design/tools/lib.py`, and the sign-in, inbox and chat screens in `pingcraft-ui-egui`, with i18n and `egui_kittest` AccessKit tests.
+9. **Done, with gaps below.** **UI:** the window and app icon from `design/assets/logo/`, the orchid theme from `design/tools/lib.py`, and the sign-in, inbox and chat screens in `pingcraft-ui-egui`, with i18n and `egui_kittest` AccessKit tests.
+
+   Built: the sign-in, unlock (and choosing a passphrase), inbox, chat (every message state, retry, older
+   messages), recovery key, entering the recovery key and verify-device sheets, over
+   `pingcraft_core::app::Backend`; the desktop app runs them on `pingcraft_matrix::engine`, which is tested
+   end to end against tuwunel. Open:
+   - **i18n:** `craft-i18n` cannot be linked next to `matrix-sdk` 0.19.1: its ICU crates turn on `zerovec`'s
+     `serde` feature, and `ruma-common` 0.20.2 then fails to compile (E0275 on `Box::deserialize`). The UI uses a
+     stand-in with the same call shape (`tl!`, `fmt`, `trn`) and no catalogs until ruma or craft-i18n changes.
+   - **Fonts:** Archivo, Inter and Geist Mono are not bundled (house rule 3 puts fonts in craft-fonts, and
+     PingCraft does not use it yet); egui's own faces stand in. egui's emoji face lacks some of the SAS symbols.
+   - **Design gaps** (built in the design's language, for the maintainer to review): choosing a passphrase, the
+     "this device can't read earlier messages" notice, entering the recovery key, and a confirmation before
+     signing out from the unlock sheet clears this computer. White on the orchid (unread counts) is 4.47:1, a
+     hair under the 4.5:1 the design states.
+   - **Not built yet:** the ACCOUNTS and SETTINGS tabs, the network filter (a later decision), the chat header's
+     account line and "…" menu, SAVE TO FILE for the recovery key, deleting a failed message, and the window's own
+     title bar (the system's is used).
 10. **Packaging for every target in ADR 0009.** Releases are not published without the maintainer
     (house rule 9).
 11. **Ignore accepted by the maintainer (2026-11-24); milestone 2 does not wait on it.** **SQLite advisory RUSTSEC-2026-0459.** `matrix-sdk` 0.19.1 locks a SQLite binding older than the fix, and

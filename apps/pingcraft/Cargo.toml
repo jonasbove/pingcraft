@@ -12,3 +12,9 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+pingcraft-ui-egui = { workspace = true }
+pingcraft-matrix = { path = "../../crates/matrix" }
+pingcraft-keychain = { path = "../../crates/keychain" }
+craft-settings = { workspace = true }
+egui = { workspace = true }
+eframe = { workspace = true, features = ["default_fonts", "clipboard", "wgpu", "accesskit", "wayland", "x11"] }

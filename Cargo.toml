@@ -28,7 +28,10 @@ pingcraft-ui-egui = { path = "crates/ui-egui" }
 matrix-sdk = { version = "=0.19.1", default-features = false }
 matrix-sdk-ui = { version = "=0.19.1", default-features = false }
 egui = { version = "0.37", features = ["monochrome_emoji_fonts"] }
+eframe = { version = "0.37", default-features = false }
 serde_json = "1"
+# craft-libs, pinned at one revision (bump deliberately), on the same egui fork commit as below.
+craft-settings = { version = "=0.1.0", git = "https://github.com/storytold/craft-libs", rev = "cdee9b8ab61832314609563d8a5b6fc19b555b72" }
 
 [profile.dev.package."*"]
 opt-level = 2

@@ -56,6 +56,7 @@ exceptions = [
     { allow = ["MPL-2.0"], crate = "imbl-sized-chunks" }, # MPL-2.0+; via imbl
     { allow = ["MPL-2.0"], crate = "readlock" }, # via eyeball
     { allow = ["MPL-2.0"], crate = "readlock-tokio" }, # via eyeball
+    { allow = ["MPL-2.0"], crate = "option-ext" }, # via dirs (craft-settings), as in CraftCloud
 ]
 
 [bans]
