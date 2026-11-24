@@ -1,0 +1,5 @@
+CLAUDE.local.md
+plan/
+target/
+.env
+*.db
