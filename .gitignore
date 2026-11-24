@@ -3,3 +3,6 @@ plan/
 target/
 .env
 *.db
+# Server stack secrets and data (ADR 0004)
+deploy/.env
+deploy/data/

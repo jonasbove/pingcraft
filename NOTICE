@@ -1,0 +1,13 @@
+PingCraft
+
+PingCraft's server stack (deploy/compose.yaml) runs the following programs as separate, unmodified upstream
+container images. None of their code is part of PingCraft, and PingCraft does not build or redistribute them
+(docs/adr/0002-agpl-bridges-at-arms-length.md). Each is under its own licence; its source is at the address
+given.
+
+- tuwunel, Matrix homeserver. Apache-2.0.
+  Source: https://github.com/matrix-construct/tuwunel
+- mautrix-telegram, Matrix-Telegram bridge. AGPL-3.0.
+  Source: https://github.com/mautrix/telegram
+- PostgreSQL, database for the bridges. PostgreSQL License.
+  Source: https://www.postgresql.org/ftp/source/

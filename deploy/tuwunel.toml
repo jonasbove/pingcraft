@@ -1,0 +1,27 @@
+# tuwunel 2.0 configuration for PingCraft (ADR 0001, ADR 0010).
+#
+# `server_name` comes from PINGCRAFT_SERVER_NAME in `.env` (compose passes it as TUWUNEL_SERVER_NAME), and the
+# registration token from a git-ignored file. Every other option keeps tuwunel's default; the reference is
+# `tuwunel-example.toml` in the tuwunel repository at the pinned version.
+
+[global]
+database_path = "/var/lib/tuwunel"
+# The bridges' registration files, written by setup.sh. Read at startup only.
+appservice_dir = "/etc/tuwunel/appservices"
+
+[global.http.listen]
+# Inside the container; compose maps it to loopback on the host.
+address = ["0.0.0.0"]
+port = 8008
+
+[global.federation]
+# Off by default (ADR 0010). Turning it on later is a separate decision.
+enable = false
+
+[global.registration]
+# Only someone holding the admin's registration token can create a user. No open registration.
+enable = true
+
+[global.logging]
+# Warnings and errors only, so message metadata stays out of the logs (ADR 0004).
+filter = "warn"
