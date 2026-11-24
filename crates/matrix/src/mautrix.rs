@@ -256,7 +256,9 @@ fn error_for(status: u16, json: Option<&Value>) -> BridgeError {
         (401, _) | (_, "M_UNKNOWN_TOKEN" | "M_MISSING_TOKEN") => BridgeError::NotAuthorized,
         (_, "FI.MAU.BRIDGE.LOGIN_CANCELLED" | "FI.MAU.BRIDGE.LOGIN_TIMED_OUT" | "FI.MAU.BRIDGE.LOGIN_ALREADY_FINISHED") => BridgeError::LoginGone,
         (404, "M_NOT_FOUND") if message.to_ascii_lowercase().contains("login") => BridgeError::LoginGone,
-        (404, "") | (502..=504, _) => BridgeError::NotAvailable,
+        (404, "") | (502 | 503, _) => BridgeError::NotAvailable,
+        // A proxy in front gave up waiting (a shown QR code waits for minutes): the bridge is there.
+        (504, _) => BridgeError::Unreachable("it did not answer in time".into()),
         (_, _) if !message.is_empty() => BridgeError::Refused(message),
         (status, _) => BridgeError::Unreachable(format!("the bridge answered {status}")),
     }

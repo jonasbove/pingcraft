@@ -105,6 +105,7 @@ fn errors_say_what_happened() {
     assert_eq!(error_for(401, Some(&json!({"errcode": "M_UNKNOWN_TOKEN", "error": "Invalid auth token"}))), BridgeError::NotAuthorized);
     assert_eq!(error_for(404, None), BridgeError::NotAvailable, "the proxy has no bridge for that network");
     assert_eq!(error_for(502, None), BridgeError::NotAvailable, "the bridge is not running");
+    assert_eq!(error_for(504, None), BridgeError::Unreachable("it did not answer in time".into()), "a proxy gave up, the bridge is there");
     assert_eq!(error_for(404, Some(&json!({"errcode": "M_NOT_FOUND", "error": "Login not found"}))), BridgeError::LoginGone);
     assert_eq!(
         error_for(410, Some(&json!({"errcode": "FI.MAU.BRIDGE.LOGIN_TIMED_OUT", "error": "Login process timed out"}))),

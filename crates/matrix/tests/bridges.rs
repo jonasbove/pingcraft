@@ -106,6 +106,10 @@ async fn until(engine: &mut Engine, later: &mut Vec<Event>, what: &str, check: i
             later.drain(..at);
             return found;
         }
+        // A failure says why at once, instead of waiting out the time.
+        if let Some(failed) = later.iter().find(|e| matches!(e, Event::SignInFailed(_) | Event::Problem(_))) {
+            panic!("waiting for {what}: {failed:?}");
+        }
         assert!(start.elapsed() < common::PATIENCE, "timed out waiting for {what}");
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
