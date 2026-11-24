@@ -2,8 +2,9 @@
 //!
 //! Each sign-in is a *profile*: a random ID that names its store folder and its two keychain entries, the store
 //! key and the Matrix session (which holds the access token). The folder name says nothing about the account. The
-//! stores are encrypted with the store key (ADR 0004); the session and key live only in the keychain. Nothing here
-//! logs a password, a token or a key.
+//! stores are encrypted with the store key (ADR 0004); the session and key live only in the keychain, or, where
+//! there is none, in a `PassphraseVault` the user unlocks with a passphrase. Nothing here logs a password, a token
+//! or a key.
 
 use std::path::{Path, PathBuf};
 
@@ -162,7 +163,7 @@ mod tests {
     //! `PINGCRAFT_TEST_HOMESERVER=http://127.0.0.1:8008 PINGCRAFT_TEST_USER=… PINGCRAFT_TEST_PASSWORD=…`.
     //! Without them, the tests that need a server are skipped and say so.
     use super::{SessionError, SignIn, restore, sign_in, sign_out};
-    use pingcraft_keychain::{MemoryStore, SecretStore, store_key_name};
+    use pingcraft_keychain::{KdfParams, MemoryStore, PassphraseVault, SecretStore, store_key_name};
     use zeroize::Zeroizing;
 
     fn server() -> Option<(String, String, String)> {
@@ -193,6 +194,33 @@ mod tests {
         sign_out(data.path(), &secrets, back).await.unwrap();
         assert!(secrets.get(&store_key_name(&profile)).unwrap().is_none(), "the store key is gone");
         assert!(!data.path().join("profiles").join(&profile).exists(), "the store is gone");
+    }
+
+    #[tokio::test]
+    async fn without_a_keychain_the_unlock_passphrase_keeps_the_session() {
+        let Some((hs, user, password)) = server() else {
+            eprintln!("skipped: PINGCRAFT_TEST_HOMESERVER, _USER and _PASSWORD are not set");
+            return;
+        };
+        let data = tempfile::tempdir().unwrap();
+        let vault_path = data.path().join("vault");
+        let cheap = KdfParams { memory_kib: 8 * 1024, iterations: 1, lanes: 1 };
+        let vault = PassphraseVault::create_with(&vault_path, "an unlock passphrase", cheap).unwrap();
+        let request = SignIn { server: hs, username: user, password: Zeroizing::new(password.clone()) };
+        let session = sign_in(data.path(), &vault, &request).await.unwrap();
+        let profile = session.profile.clone();
+        drop(session);
+        drop(vault);
+
+        // Nothing secret is readable in the vault file.
+        let file = std::fs::read(&vault_path).unwrap();
+        assert!(!file.windows(profile.len()).any(|w| w == profile.as_bytes()), "not even the profile's name");
+
+        assert!(PassphraseVault::unlock(&vault_path, "not it").is_err());
+        let vault = PassphraseVault::unlock(&vault_path, "an unlock passphrase").unwrap();
+        let back = restore(data.path(), &vault, &profile).await.unwrap();
+        sign_out(data.path(), &vault, back).await.unwrap();
+        assert!(vault.get(&store_key_name(&profile)).unwrap().is_none());
     }
 
     #[tokio::test]

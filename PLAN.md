@@ -81,7 +81,13 @@ desktop target.
    - Does `keyring` work on FreeBSD and inside Flatpak?
    - Write down the answer and any workaround.
 4. **Done.** **`pingcraft-core` model:** network, account, chat, inbox and message, with tests.
-5. **Mostly done:** password sign-in, session restore and sign-out, with the store key and session in the keychain, tested against tuwunel. The unlock-passphrase fallback is still open. **Sign-in:**
+5. **Done.** Password sign-in, session restore and sign-out, with the store key and session in the keychain, tested
+   against tuwunel. Without a keychain, the same secrets go in a `PassphraseVault`: one file encrypted with
+   XChaCha20-Poly1305 under a key derived from the unlock passphrase with Argon2id. The store key itself stays
+   random and is kept in the vault, rather than derived from the passphrase directly, so a passphrase can later be
+   changed without re-encrypting the stores. The craft-libs proposal is drafted in
+   [`docs/proposals/craft-libs-secrets.md`](docs/proposals/craft-libs-secrets.md), not opened anywhere. The unlock
+   screen is ticket 9's. **Sign-in:**
    - Password sign-in and session restore in `pingcraft-matrix`.
    - Stores encrypted with a key kept in the OS keychain, or derived from an unlock passphrase where there is no
      keychain; never a plain file (ADR 0004).

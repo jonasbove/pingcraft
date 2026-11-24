@@ -1,8 +1,9 @@
 //! The OS keychain, for the secrets PingCraft keeps on a desktop: the key that encrypts its local stores and the
 //! Matrix session (ADR 0004).
 //!
-//! Secrets are never written to a plain file. When there is no working keychain, [`store_key`] fails with
-//! [`KeychainError::Unavailable`], and the app asks for an unlock passphrase instead. Nothing here logs or prints
+//! Secrets are never written to a plain file. When there is no working keychain ([`OsKeychain::probe`] fails, or
+//! [`store_key`] fails with [`KeychainError::Unavailable`]), the app asks for an unlock passphrase and keeps the
+//! same secrets in a [`PassphraseVault`] instead: one file, encrypted under a key derived from the passphrase. Nothing here logs or prints
 //! a secret: [`StoreKey`]'s `Debug` is redacted and its bytes are wiped when it is dropped.
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable))]
 
@@ -10,6 +11,10 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use zeroize::Zeroizing;
+
+mod vault;
+
+pub use vault::{KdfParams, PassphraseVault, VaultError};
 
 /// The keychain "service" every PingCraft secret is filed under.
 pub const SERVICE: &str = "PingCraft";
@@ -128,6 +133,12 @@ pub struct OsKeychain;
 
 #[cfg(not(target_arch = "wasm32"))]
 impl OsKeychain {
+    /// Checks that the keychain answers, without changing anything in it: looks up a name PingCraft never
+    /// writes. An error means the app should use a [`PassphraseVault`].
+    pub fn probe(&self) -> Result<(), KeychainError> {
+        self.get("probe").map(|_| ())
+    }
+
     fn entry(name: &str) -> Result<keyring::Entry, KeychainError> {
         keyring::Entry::new(SERVICE, name).map_err(|e| KeychainError::Unavailable(e.to_string()))
     }
