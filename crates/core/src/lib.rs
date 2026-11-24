@@ -7,7 +7,7 @@
 
 mod inbox;
 
-pub use inbox::{Filter, Inbox};
+pub use inbox::{Filter, Inbox, InboxChange};
 
 /// A chat service a user can connect, such as Telegram. Matrix itself is also a network.
 ///
@@ -35,6 +35,22 @@ impl Network {
     pub fn is_matrix(&self) -> bool {
         self.0 == "matrix"
     }
+}
+
+/// Whether PingCraft is keeping up with the server, for the line at the top of the inbox.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum ConnectionState {
+    /// Started, the first answer has not come yet.
+    #[default]
+    Connecting,
+    /// Syncing.
+    Online,
+    /// The server cannot be reached; PingCraft keeps trying and shows what it has.
+    Offline,
+    /// Stopped on purpose (signing out, closing).
+    Stopped,
+    /// Syncing stopped with an error, in the adapter's words, for the log.
+    Error(String),
 }
 
 /// A point in time, in milliseconds since the Unix epoch (Matrix's `origin_server_ts`). Turning it into a
@@ -95,8 +111,11 @@ impl Chat {
 /// The line the inbox shows under a chat's name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MessagePreview {
+    /// The sender's display name, or their ID when they have none.
     pub sender: String,
-    pub text: String,
+    /// Whether the signed-in user sent it, so the interface can say "You".
+    pub own: bool,
+    pub body: MessageBody,
     pub at: Timestamp,
 }
 
@@ -136,7 +155,7 @@ pub enum SendState {
 
 #[cfg(test)]
 mod tests {
-    use super::{Chat, ChatId, MessagePreview, Network, Timestamp};
+    use super::{Chat, ChatId, MessageBody, MessagePreview, Network, Timestamp};
 
     #[test]
     fn network_ids_are_case_insensitive_and_empty_means_matrix() {
@@ -158,7 +177,7 @@ mod tests {
             encrypted: true,
         };
         assert_eq!(chat.last_activity(), Timestamp(0));
-        chat.last_message = Some(MessagePreview { sender: "Ana".into(), text: "hi".into(), at: Timestamp(5) });
+        chat.last_message = Some(MessagePreview { sender: "Ana".into(), own: false, body: MessageBody::Text("hi".into()), at: Timestamp(5) });
         assert_eq!(chat.last_activity(), Timestamp(5));
     }
 }

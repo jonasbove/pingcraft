@@ -2909,6 +2909,7 @@ dependencies = [
 name = "pingcraft-matrix"
 version = "0.1.0"
 dependencies = [
+ "futures-util",
  "matrix-sdk",
  "matrix-sdk-ui",
  "pingcraft-core",

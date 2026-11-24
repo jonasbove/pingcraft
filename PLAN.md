@@ -87,7 +87,10 @@ desktop target.
      keychain; never a plain file (ADR 0004).
    - Draft a proposal for a craft-libs secrets crate from this code (house rule 16). Nothing is opened on GitHub
      without the maintainer.
-6. **Inbox:** `SyncService` and `RoomListService` mapped onto the core model.
+6. **Done.** **Inbox:** `SyncService` and `RoomListService` mapped onto the core model, over simplified sliding
+   sync: name, unread count, last-message preview, encryption, and the network from bridge-info state (a second,
+   small sliding sync connection asks for it, since the room list's required state is fixed). Tested against
+   tuwunel. Still open: `Chat.account` is always `None` until milestone 3's bridge provider knows the accounts.
 7. **Chat:** the timeline, reading and sending text.
 8. **Encryption:**
    - cross-signing, key backup, and the recovery key screen;

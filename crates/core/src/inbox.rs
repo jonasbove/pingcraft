@@ -2,6 +2,18 @@
 
 use crate::{Chat, ChatId};
 
+/// One change to the inbox, as the Matrix adapter reports it. The adapter sends a [`InboxChange::Reset`] first,
+/// then changes; [`Inbox::apply`] keeps the order, so the adapter does not have to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InboxChange {
+    /// Every chat, replacing what was there.
+    Reset(Vec<Chat>),
+    /// A chat is new or changed.
+    Upsert(Chat),
+    /// A chat left the inbox (the user left it, or it was upgraded or forgotten).
+    Remove(ChatId),
+}
+
 /// Which chats the inbox shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Filter {
@@ -31,6 +43,17 @@ impl Inbox {
         self.chats.retain(|c| c.id != chat.id);
         let at = self.chats.partition_point(|c| Self::before(c, &chat));
         self.chats.insert(at, chat);
+    }
+
+    /// Applies one change from the adapter.
+    pub fn apply(&mut self, change: InboxChange) {
+        match change {
+            InboxChange::Reset(chats) => *self = Self::new(chats),
+            InboxChange::Upsert(chat) => self.upsert(chat),
+            InboxChange::Remove(id) => {
+                self.remove(&id);
+            }
+        }
     }
 
     pub fn remove(&mut self, id: &ChatId) -> Option<Chat> {
@@ -76,8 +99,8 @@ impl Inbox {
 
 #[cfg(test)]
 mod tests {
-    use super::{Filter, Inbox};
-    use crate::{Chat, ChatId, MessagePreview, Network, Timestamp};
+    use super::{Filter, Inbox, InboxChange};
+    use crate::{Chat, ChatId, MessageBody, MessagePreview, Network, Timestamp};
 
     fn chat(id: &str, name: &str, at: u64, unread: u32) -> Chat {
         Chat {
@@ -85,7 +108,7 @@ mod tests {
             account: None,
             network: Network::from_id("telegram"),
             name: name.into(),
-            last_message: (at > 0).then(|| MessagePreview { sender: "x".into(), text: "y".into(), at: Timestamp(at) }),
+            last_message: (at > 0).then(|| MessagePreview { sender: "x".into(), own: false, body: MessageBody::Text("y".into()), at: Timestamp(at) }),
             unread,
             encrypted: true,
         }
@@ -125,5 +148,16 @@ mod tests {
         assert!(inbox.remove(&ChatId("1".into())).is_some());
         assert!(inbox.remove(&ChatId("1".into())).is_none());
         assert!(inbox.is_empty());
+    }
+
+    #[test]
+    fn changes_apply_in_order() {
+        let mut inbox = Inbox::default();
+        inbox.apply(InboxChange::Reset(vec![chat("1", "A", 1, 0), chat("2", "B", 2, 0)]));
+        inbox.apply(InboxChange::Upsert(chat("3", "C", 3, 1)));
+        inbox.apply(InboxChange::Remove(ChatId("1".into())));
+        assert_eq!(names(inbox.visible(Filter::All, "")), ["C", "B"]);
+        inbox.apply(InboxChange::Reset(vec![chat("9", "Z", 1, 0)]));
+        assert_eq!(names(inbox.visible(Filter::All, "")), ["Z"]);
     }
 }
