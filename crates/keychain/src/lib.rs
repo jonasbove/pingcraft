@@ -63,14 +63,14 @@ impl std::fmt::Debug for StoreKey {
     }
 }
 
-/// The keychain name of the store key for one signed-in account on one server.
-pub fn store_key_name(user_id: &str) -> String {
-    format!("store-key:{user_id}")
+/// The keychain name of the store key for one profile (one sign-in, with its own store folder).
+pub fn store_key_name(profile: &str) -> String {
+    format!("store-key:{profile}")
 }
 
-/// Returns the store key for `user_id`, creating and saving a new random one the first time.
-pub fn store_key(store: &dyn SecretStore, user_id: &str) -> Result<StoreKey, KeychainError> {
-    let name = store_key_name(user_id);
+/// Returns the store key for `profile`, creating and saving a new random one the first time.
+pub fn store_key(store: &dyn SecretStore, profile: &str) -> Result<StoreKey, KeychainError> {
+    let name = store_key_name(profile);
     if let Some(found) = store.get(&name)? {
         let bytes: [u8; STORE_KEY_LEN] = found.as_slice().try_into().map_err(|_| KeychainError::Corrupt("store key has the wrong length"))?;
         return Ok(StoreKey(Zeroizing::new(bytes)));
@@ -79,6 +79,14 @@ pub fn store_key(store: &dyn SecretStore, user_id: &str) -> Result<StoreKey, Key
     getrandom::fill(bytes.as_mut()).map_err(|e| KeychainError::Random(e.to_string()))?;
     store.set(&name, bytes.as_ref())?;
     Ok(StoreKey(bytes))
+}
+
+/// A new random profile name: 32 hex digits. It names a store folder and its keychain entries, and says nothing
+/// about the account.
+pub fn new_profile_id() -> Result<String, KeychainError> {
+    let mut bytes = [0u8; 16];
+    getrandom::fill(&mut bytes).map_err(|e| KeychainError::Random(e.to_string()))?;
+    Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
 }
 
 /// Secret name -> secret, wiped when removed or dropped.

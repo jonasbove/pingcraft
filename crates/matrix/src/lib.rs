@@ -4,5 +4,8 @@
 
 pub use pingcraft_core as core;
 
+#[cfg(not(target_arch = "wasm32"))]
+pub mod session;
+
 /// The SDK version this adapter is written against, for the about screen and bug reports.
 pub const MATRIX_SDK_VERSION: &str = "0.19.1";

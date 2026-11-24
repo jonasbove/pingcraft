@@ -2912,6 +2912,12 @@ dependencies = [
  "matrix-sdk",
  "matrix-sdk-ui",
  "pingcraft-core",
+ "pingcraft-keychain",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "zeroize",
 ]
 
 [[package]]

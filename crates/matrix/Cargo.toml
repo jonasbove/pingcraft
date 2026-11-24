@@ -13,13 +13,21 @@ workspace = true
 
 [dependencies]
 pingcraft-core = { workspace = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = { workspace = true }
+zeroize = "1.9"
 
-# Desktop: SQLite stores (encrypted with a key from the OS keychain, ADR 0004) and rustls.
+# Desktop: SQLite stores encrypted with a key from the OS keychain (ADR 0004), and rustls.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+pingcraft-keychain = { path = "../keychain" }
 matrix-sdk = { workspace = true, features = ["e2e-encryption", "automatic-room-key-forwarding", "sqlite", "rustls-aws-lc-rs"] }
 matrix-sdk-ui = { workspace = true, features = ["rustls-aws-lc-rs"] }
 
-# Web: IndexedDB stores (encrypted with the unlock passphrase, ADR 0004) and the browser's fetch.
+# Web: IndexedDB stores encrypted with the unlock passphrase (ADR 0004), and the browser's fetch.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 matrix-sdk = { workspace = true, features = ["e2e-encryption", "automatic-room-key-forwarding", "js", "indexeddb"] }
 matrix-sdk-ui = { workspace = true, features = ["js"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tempfile = "3"

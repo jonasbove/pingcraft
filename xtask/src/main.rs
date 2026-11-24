@@ -88,7 +88,7 @@ fn ci() -> Result<()> {
 /// fails the check, so a new crate has to be placed deliberately.
 const LAYERS: &[(&str, u8)] = &[
     ("pingcraft-core", 0),
-    ("pingcraft-keychain", 1),
+    ("pingcraft-keychain", 0),
     ("pingcraft-matrix", 1),
     ("pingcraft-ui-egui", 2),
     ("pingcraft", 3),

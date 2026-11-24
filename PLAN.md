@@ -81,7 +81,7 @@ desktop target.
    - Does `keyring` work on FreeBSD and inside Flatpak?
    - Write down the answer and any workaround.
 4. **Done.** **`pingcraft-core` model:** network, account, chat, inbox and message, with tests.
-5. **Sign-in:**
+5. **Mostly done:** password sign-in, session restore and sign-out, with the store key and session in the keychain, tested against tuwunel. The unlock-passphrase fallback is still open. **Sign-in:**
    - Password sign-in and session restore in `pingcraft-matrix`.
    - Stores encrypted with a key kept in the OS keychain, or derived from an unlock passphrase where there is no
      keychain; never a plain file (ADR 0004).
