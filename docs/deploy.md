@@ -3,7 +3,7 @@
 The server side is one Docker Compose project in [`deploy/`](../deploy/):
 
 - **tuwunel:** the Matrix homeserver (ADR 0001);
-- **one container per bridge:** today, the Telegram bridge;
+- **one container per bridge:** today, Telegram and Signal;
 - **Postgres:** the bridges' database.
 
 Everything below runs from the `deploy/` folder. You need Docker with Compose v2.
@@ -52,7 +52,8 @@ chmod 600 .env
 It stops with an error if the server name or the Telegram values are missing. Otherwise it:
 
 - generates the secrets into `data/secrets/`;
-- writes the Telegram bridge's configuration to `data/telegram/`, starting from the bridge's own defaults;
+- writes each bridge's configuration to `data/<bridge>/` (`data/telegram/`, `data/signal/`), starting from the
+  bridge's own defaults;
 - writes the registrations tuwunel loads from `data/appservices/`.
 
 It never prints a secret, and it never overwrites anything that exists, so it is safe to run again.
@@ -112,6 +113,23 @@ Until PingCraft's own client can do this (milestone 3), use any Matrix client.
 3. **Bridge one chat:** send `start-chat <Telegram username>`. Nothing is bridged until you do this for a chat.
 
 Read ADR 0005 for what Telegram allows and what can get an account restricted.
+
+## 8. Connect Signal
+
+Signal has no separate login: the bridge becomes a linked device of the Signal app on your phone, like Signal's
+own desktop app. Read ADR 0006 first.
+
+1. **Open the bridge's room:** start a direct message with `@signalbot:<server name>`, and check that the room is
+   encrypted.
+2. **Log in:** send `login`. The bridge answers with a QR code. On your phone, open Signal, then Settings, Linked
+   devices, Link new device, and scan it. The device shows up on the phone as "PingCraft".
+3. **Chats:** a chat appears in Matrix when a message arrives in it. To message someone first, send
+   `start-chat <phone number with country code>`.
+
+To disconnect, send `logout` in the bridge's room, or remove "PingCraft" under Linked devices on the phone.
+
+A stack created before Signal was added has no `signal` database. Create it once with
+`docker compose exec bridge-db createdb -U bridges signal`, then run `./setup.sh` and `docker compose up -d`.
 
 ## Updates
 

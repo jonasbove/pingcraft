@@ -2,7 +2,7 @@
 # One-time setup for the PingCraft server stack. Safe to run again: it never overwrites existing secrets or
 # bridge configuration.
 #
-# Generates the secrets into git-ignored files (ADR 0004), creates the Telegram bridge's configuration from the
+# Generates the secrets into git-ignored files (ADR 0004), creates each bridge's configuration from the
 # bridge's own defaults plus the overrides below, and writes the registration files the homeserver loads.
 # It never prints a secret.
 set -eu
@@ -21,7 +21,7 @@ fail() { printf 'setup: %s\n' "$1" >&2; exit 1; }
 ADMIN_LOCALPART="${PINGCRAFT_ADMIN_LOCALPART:-admin}"
 
 umask 077
-mkdir -p data/secrets data/appservices data/telegram
+mkdir -p data/secrets data/appservices
 
 secret() { head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 48; }
 new_secret_file() { [ -s "$1" ] || secret > "$1"; }
@@ -31,35 +31,30 @@ new_secret_file data/secrets/bridge_db_password
 new_secret_file data/secrets/doublepuppet_as_token
 new_secret_file data/secrets/doublepuppet_hs_token
 
-# Runs the Telegram bridge image as the current user, with the given entrypoint, without starting anything else.
-tg() {
-	entry="$1"; shift
+# Runs a bridge image as the current user, with the given entrypoint, without starting anything else.
+#   run_bridge <service> <entrypoint> [args...]
+run_bridge() {
+	service="$1"; entry="$2"; shift 2
 	docker compose run --rm --no-deps --user "$(id -u):$(id -g)" \
 		-e SN="$PINGCRAFT_SERVER_NAME" -e ADMIN="@$ADMIN_LOCALPART:$PINGCRAFT_SERVER_NAME" \
 		-e TG_API_ID="$TELEGRAM_API_ID" -e TG_API_HASH="$TELEGRAM_API_HASH" \
 		-e DB_PW="$(cat data/secrets/bridge_db_password)" \
 		-e DP="$(cat data/secrets/doublepuppet_as_token)" \
-		--entrypoint "$entry" telegram "$@"
+		--entrypoint "$entry" "$service" "$@"
 }
 
-if [ ! -s data/telegram/config.yaml ]; then
-	echo "setup: writing the Telegram bridge configuration"
-	tg /usr/bin/mautrix-telegram -c /data/config.yaml -e >/dev/null
-	# PingCraft's overrides of the bridge's defaults. ADR 0004: encryption required, keys pickled, quiet logs.
-	# Privacy: no portals are created automatically, no chats are synced at login, and history is not imported;
-	# a chat is bridged only when the user starts it from Matrix.
-	tg yq -i '
+# PingCraft's overrides of every bridge's defaults (all bridges are mautrix bridgev2), with the bridge's service
+# name, which is also its Postgres database. ADR 0004: encryption required, keys pickled, quiet logs.
+# Privacy: no portals are created automatically and history is not imported; a chat is bridged only when the user
+# starts it from Matrix.
+common_overrides() {
+	cat <<YQ
 		.homeserver.address = "http://homeserver:8008" |
 		.homeserver.domain = strenv(SN) |
 		.appservice.hostname = "0.0.0.0" |
-		.appservice.address = "http://telegram:" + (.appservice.port | tostring) |
+		.appservice.address = "http://$1:" + (.appservice.port | tostring) |
 		.database.type = "postgres" |
-		.database.uri = "postgres://bridges:" + strenv(DB_PW) + "@bridge-db/telegram?sslmode=disable" |
-		.network.api_id = env(TG_API_ID) |
-		.network.api_hash = strenv(TG_API_HASH) |
-		.network.sync.create_limit = 0 |
-		.network.sync.login_sync_limit = 0 |
-		.network.sync.direct_chats = false |
+		.database.uri = "postgres://bridges:" + strenv(DB_PW) + "@bridge-db/$1?sslmode=disable" |
 		.bridge.portal_create_filter.mode = "allow" |
 		.bridge.portal_create_filter.list = [] |
 		.bridge.permissions = {"*": "relay"} |
@@ -75,14 +70,41 @@ if [ ! -s data/telegram/config.yaml ]; then
 		.double_puppet.secrets[strenv(SN)] = "as_token:" + strenv(DP) |
 		.provisioning.shared_secret = "generate" |
 		.logging = {"min_level": "warn", "writers": [{"type": "stdout", "format": "pretty"}]}
-	' /data/config.yaml
-fi
+YQ
+}
 
-if [ ! -s data/telegram/registration.yaml ]; then
-	echo "setup: generating the Telegram bridge registration"
-	tg /usr/bin/mautrix-telegram -g -c /data/config.yaml -r /data/registration.yaml >/dev/null
-fi
-cp data/telegram/registration.yaml data/appservices/telegram.yaml
+# Writes a bridge's configuration (defaults, then the common overrides, then the network's own) and its
+# registration, once, and hands the registration to the homeserver.
+#   setup_bridge <service> <binary> <network overrides>
+setup_bridge() {
+	service="$1"; binary="$2"; network="$3"
+	mkdir -p "data/$service"
+	if [ ! -s "data/$service/config.yaml" ]; then
+		echo "setup: writing the $service bridge configuration"
+		run_bridge "$service" "$binary" -c /data/config.yaml -e >/dev/null
+		run_bridge "$service" yq -i "$(common_overrides "$service") | $network" /data/config.yaml
+	fi
+	if [ ! -s "data/$service/registration.yaml" ]; then
+		echo "setup: generating the $service bridge registration"
+		run_bridge "$service" "$binary" -g -c /data/config.yaml -r /data/registration.yaml >/dev/null
+	fi
+	cp "data/$service/registration.yaml" "data/appservices/$service.yaml"
+}
+
+# Telegram (ADR 0005): no chats are synced at login.
+setup_bridge telegram /usr/bin/mautrix-telegram '
+		.network.api_id = env(TG_API_ID) |
+		.network.api_hash = strenv(TG_API_HASH) |
+		.network.sync.create_limit = 0 |
+		.network.sync.login_sync_limit = 0 |
+		.network.sync.direct_chats = false'
+
+# Signal (ADR 0006): the linked device is named PingCraft on the phone, and nothing is fetched from other servers
+# (the upstream note-to-self avatar lives on a federated server, and locations would link to an online map).
+setup_bridge signal /usr/bin/mautrix-signal '
+		.network.device_name = "PingCraft" |
+		.network.note_to_self_avatar = "" |
+		.network.location_format = "geo:%[1]s,%[2]s"'
 
 # One registration lets every bridge act as each local user's own Matrix account (double puppeting).
 server_re=$(printf '%s' "$PINGCRAFT_SERVER_NAME" | sed 's/[.]/\\./g')

@@ -9,5 +9,7 @@ given.
   Source: https://github.com/matrix-construct/tuwunel
 - mautrix-telegram, Matrix-Telegram bridge. AGPL-3.0.
   Source: https://github.com/mautrix/telegram
+- mautrix-signal, Matrix-Signal bridge. AGPL-3.0. It includes libsignal (AGPL-3.0).
+  Source: https://github.com/mautrix/signal and https://github.com/signalapp/libsignal
 - PostgreSQL, database for the bridges. PostgreSQL License.
   Source: https://www.postgresql.org/ftp/source/

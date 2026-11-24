@@ -172,7 +172,7 @@ Goal: a user connects Telegram, Signal and WhatsApp accounts from PingCraft, aft
 6. **Risk screen:** shown before connecting, with an explicit confirmation. The text is written in our own words
    from ADRs 0005–0008.
 7. **Connect Telegram** from inside PingCraft. **(maintainer: an account)**
-8. **Signal:** bridge in compose, and connected from PingCraft. **(maintainer: an account)**
+8. **Bridge in compose: done (setup, NOTICE, docs/deploy.md section 8). Open: connecting from PingCraft.** **Signal:** bridge in compose, and connected from PingCraft. **(maintainer: an account)**
 9. **WhatsApp:** bridge in compose, connected from PingCraft, with the bridge's "phone offline" warning shown in
    the inbox. **(maintainer: an account)**
 10. **Accounts screen:** list a user's accounts and remove one.

@@ -36,6 +36,7 @@ services:
       POSTGRES_DB: telegram
     volumes:
       - ./data/secrets/bridge_db_password:/run/secrets/bridge_db_password:ro
+      - ./initdb:/docker-entrypoint-initdb.d:ro
       - bridge-db:/var/lib/postgresql
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "bridges", "-d", "telegram"]
@@ -53,6 +54,22 @@ services:
     volumes:
       # config.yaml and registration.yaml live here; both hold secrets and are git-ignored.
       - ./data/telegram:/data
+    depends_on:
+      bridge-db:
+        condition: service_healthy
+      homeserver:
+        condition: service_started
+
+  signal:
+    image: dock.mau.dev/mautrix/signal:v0.2611.0@sha256:5e6e8f4a9b840e71484e330538a73994a8b31bc11a10054ef662971019bc2d2f
+    restart: unless-stopped
+    environment:
+      UID: ${PINGCRAFT_UID:-1000}
+      GID: ${PINGCRAFT_GID:-1000}
+    volumes:
+      # config.yaml and registration.yaml live here; both hold secrets and are git-ignored. The bridge's database
+      # holds the linked device's Signal keys (ADR 0006).
+      - ./data/signal:/data
     depends_on:
       bridge-db:
         condition: service_healthy
