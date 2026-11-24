@@ -11,5 +11,9 @@ publish.workspace = true
 [lints]
 workspace = true
 
+[dependencies]
+getrandom = "0.4"
+zeroize = "1.9"
+
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 keyring = { version = "=4.2.0" }
