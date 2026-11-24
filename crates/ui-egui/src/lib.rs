@@ -67,6 +67,7 @@ impl PingCraftApp {
                         Tab::Accounts => accounts::accounts(ui, &mut self.state),
                     }
                     accounts::connect_sheet(&ctx, &mut self.state, &mut out);
+                    accounts::remove_sheet(&ctx, &mut self.state, &mut out);
                     view::recovery_key(&ctx, &mut self.state, &mut out);
                     view::enter_recovery_key(&ctx, &mut self.state, &mut out);
                     view::verification(&ctx, &self.state, &mut out);

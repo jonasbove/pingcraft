@@ -501,8 +501,11 @@ fn empty_chat(ui: &mut Ui, state: &mut State, out: &mut Out) {
         if state.inbox_loaded && state.inbox.is_empty() {
             ui.label(RichText::new(tl!("Your chats, one inbox.")).size(26.0).strong().color(t.ink_strong));
             ui.add_space(8.0);
-            note(ui, tl!("Networks are connected through bridges, small programs on your server. Connecting them from inside PingCraft comes in a later version."));
-            let _ = out;
+            note(ui, tl!("Networks are connected through bridges, small programs on your server. Connect one, and its chats show up here."));
+            ui.add_space(8.0);
+            if button(ui, tl!("Connect a network"), Kind::Primary, true).clicked() {
+                open_accounts(state, out);
+            }
         } else {
             note(ui, tl!("Choose a chat on the left."));
         }

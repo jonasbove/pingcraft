@@ -5,7 +5,7 @@
 use egui::{Align, Color32, Layout, Margin, RichText, ScrollArea, Sense, Stroke, Ui, Vec2};
 use pingcraft_core::app::Command;
 use pingcraft_core::bridge::{Answers, BridgeError, Display, FieldKind, LoginStep};
-use pingcraft_core::{Network, RiskLevel};
+use pingcraft_core::{Account, AccountState, Network, RiskLevel};
 use zeroize::Zeroizing;
 
 use crate::i18n::{fmt, trn};
@@ -13,7 +13,7 @@ use crate::state::{Connect, NetworkEntry, State};
 use crate::theme::Tokens;
 use crate::tl;
 use crate::view::Out;
-use crate::widgets::{Kind, button, field, hud, network_name, note, problem};
+use crate::widgets::{Kind, button, field, hud, network_name, network_tag, note, problem};
 
 /// The networks the screen offers, in the design's order. Discord waits for its bridge (ADR 0008).
 pub const NETWORKS: &[&str] = &["telegram", "signal", "whatsapp", "discord"];
@@ -134,6 +134,8 @@ pub fn accounts(ui: &mut Ui, state: &mut State) {
                     }
                 });
             }
+            ui.add_space(24.0);
+            your_accounts(ui, state);
         });
     });
 }
@@ -222,6 +224,91 @@ fn badge(ui: &mut Ui, text: &str, color: Color32) {
     egui::Frame::new().stroke(Stroke::new(1.0, color)).inner_margin(Margin::symmetric(6, 2)).show(ui, |ui| {
         ui.label(RichText::new(text.to_uppercase()).monospace().size(10.0).color(color));
     });
+}
+
+/// Every connected account, by network, each with a way to remove it.
+fn your_accounts(ui: &mut Ui, state: &mut State) {
+    let t = Tokens::get(ui.ctx());
+    let accounts: Vec<Account> = NETWORKS
+        .iter()
+        .filter_map(|id| match state.accounts.networks.get(&Network::from_id(id)) {
+            Some(NetworkEntry::Ready(n)) => Some(n.accounts.clone()),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    hud(ui, &format!("{} · {}", tl!("Your accounts"), trn(accounts.len() as u64, "{n} account", "{n} accounts")), t.muted);
+    if accounts.is_empty() {
+        note(ui, tl!("No network is connected yet. Your Matrix chats are in the inbox either way."));
+        return;
+    }
+    for account in accounts {
+        egui::Frame::new().stroke(t.hairline()).inner_margin(Margin::symmetric(16, 10)).show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                network_tag(ui, &account.network);
+                ui.label(RichText::new(&account.name).size(14.0).color(t.ink_strong));
+                let (word, color) = match &account.state {
+                    AccountState::Connected => (tl!("Connected").to_owned(), t.good),
+                    AccountState::Connecting => (tl!("Connecting…").to_owned(), t.warn),
+                    AccountState::LoggedOut => (tl!("Logged out: connect it again").to_owned(), t.bad),
+                    AccountState::Error(why) => (fmt(tl!("Not working: {why}"), &[("why", why)]), t.bad),
+                };
+                ui.label(RichText::new(word).size(12.5).color(color));
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let label = fmt(tl!("Remove {account}"), &[("account", &account.name)]);
+                    let remove = egui::Button::new(RichText::new(tl!("Remove").to_uppercase()).monospace().strong().size(11.0).color(t.ink))
+                        .fill(Color32::TRANSPARENT)
+                        .stroke(Stroke::new(1.0, t.line_strong))
+                        .min_size(Vec2::new(0.0, 30.0));
+                    let response = ui.add_enabled(state.accounts.removing.is_none(), remove);
+                    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, state.accounts.removing.is_none(), &label));
+                    if response.clicked() {
+                        state.accounts.removing = Some(account.clone());
+                    }
+                });
+            });
+        });
+    }
+}
+
+/// Asks before an account is removed: the bridge logs it out of its network.
+pub fn remove_sheet(ctx: &egui::Context, state: &mut State, out: &mut Out) {
+    let Some(account) = state.accounts.removing.clone() else { return };
+    if state.accounts.remove_sent {
+        return;
+    }
+    let name = network_name(&account.network);
+    let mut cancel = false;
+    let mut remove = false;
+    crate::widgets::sheet(
+        ctx,
+        "remove-account",
+        560.0,
+        (tl!("Remove this account?"), &format!("{} · {}", name, account.name)),
+        |ui| {
+            ui.label(
+                RichText::new(fmt(
+                    tl!("The bridge logs {account} out of {network} and stops carrying its messages."),
+                    &[("account", &account.name), ("network", &name)],
+                ))
+                .size(14.0),
+            );
+            note(ui, tl!("Depending on how your server is set up, its chats may leave your inbox. You can connect the account again later."));
+        },
+        |ui| {
+            cancel = button(ui, tl!("Cancel"), Kind::Secondary, true).clicked();
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                remove = button(ui, tl!("Remove account"), Kind::Primary, true).clicked();
+            });
+        },
+    );
+    if cancel {
+        state.accounts.removing = None;
+    } else if remove {
+        state.accounts.remove_sent = true;
+        out.push(Command::RemoveAccount { network: account.network.clone(), account: account.id.clone() });
+    }
 }
 
 /// Connecting a network: the risk screen, then choosing how to log in, then the bridge's steps.

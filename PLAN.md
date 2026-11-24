@@ -128,7 +128,7 @@ desktop target.
      "this device can't read earlier messages" notice, entering the recovery key, and a confirmation before
      signing out from the unlock sheet clears this computer. White on the orchid (unread counts) is 4.47:1, a
      hair under the 4.5:1 the design states.
-   - **Not built yet:** the ACCOUNTS and SETTINGS tabs, the network filter (a later decision), the chat header's
+   - **Not built yet:** the SETTINGS tab (ACCOUNTS came with milestone 3), the network filter (a later decision), the chat header's
      account line and "…" menu, SAVE TO FILE for the recovery key, deleting a failed message, and the window's own
      title bar (the system's is used).
 10. **Scripts done; most targets build only in CI, not run yet.** **Packaging for every target in ADR 0009.** Releases are not published without the maintainer
@@ -198,7 +198,11 @@ Goal: a user connects Telegram, Signal and WhatsApp accounts from PingCraft, aft
 9. **Bridge in compose: done with ticket 3 (docs/deploy.md section 10). Open: connecting from PingCraft, and the
    warning.** **WhatsApp:** bridge in compose, connected from PingCraft, with the bridge's "phone offline" warning shown in
    the inbox. **(maintainer: an account)**
-10. **Accounts screen:** list a user's accounts and remove one.
+10. **Done.** **Accounts screen:** list a user's accounts and remove one.
+    The header's INBOX and ACCOUNTS tabs (SETTINGS shows, disabled, until it has a screen); the network cards from
+    `connect-network`, with each card's accounts and whether its bridge answers; the user's accounts with their state
+    and REMOVE, which asks first; and "Connect a network" from the empty inbox. Not checked against a real account
+    (tickets 7 to 9), and the screens were checked through their AccessKit tree only, not by eye.
 
 ## Milestone 4: web build and the CraftCloud option
 

@@ -71,7 +71,8 @@ fn a_complete_login_names_the_new_account() {
 fn whoami_gives_flows_and_accounts_and_skips_what_is_malformed() {
     let whoami = json!({
         "network": {"displayname": "Signal", "network_id": "signal"},
-        "login_flows": [{"name": "QR", "description": "Scan a QR code", "id": "qr"}, {"name": "no id"}, 7],
+        "login_flows": [{"name": "QR", "description": "Scan a QR code", "id": "qr"}, {"name": "no id"}, 7,
+            {"name": "Manual", "description": "Log in using existing session credentials (advanced, do not use)", "id": "manual"}],
         "logins": [
             {"id": "u1", "name": "+45 12 34 56 78", "state": {"state_event": "CONNECTED"}, "profile": {}},
             {"id": "u2", "name": "", "state": {"state_event": "BAD_CREDENTIALS"}, "profile": {"username": "ana"}},

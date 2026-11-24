@@ -4,9 +4,9 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
 use pingcraft_core::app::{Command, Event};
 use pingcraft_core::bridge::{BridgeError, BridgedNetwork, Display, FieldKind, InputField, LoginFlow, LoginStep, StepRef};
-use pingcraft_core::{Account, AccountId, Network};
+use pingcraft_core::{Account, AccountId, AccountState, InboxChange, Network};
 
-use super::{Fake, signed_in, type_into};
+use super::{Fake, harness, signed_in, type_into};
 use crate::PingCraftApp;
 
 fn flow(id: &str, name: &str) -> LoginFlow {
@@ -189,6 +189,47 @@ fn a_failed_login_says_why() {
     h.get_by_label("CLOSE").click();
     h.run();
     assert!(h.query_by_label_contains("could not confirm who you are").is_none());
+}
+
+#[test]
+fn removing_an_account_asks_first() {
+    let fake = Fake::default();
+    let account =
+        Account { id: AccountId("u1".into()), network: Network::from_id("signal"), name: "+45 12 34 56 78".into(), state: AccountState::Connected };
+    let mut h = on_accounts(&fake, vec![account]);
+    h.get_by_label("YOUR ACCOUNTS · 1 ACCOUNT");
+    h.get_by_label("+45 12 34 56 78");
+    h.get_by_label("Remove +45 12 34 56 78").click();
+    h.run();
+    h.get_by_label("Remove this account?");
+    assert!(fake.take().is_empty(), "nothing is removed before it is confirmed");
+    h.get_by_label("CANCEL").click();
+    h.run();
+    assert!(h.query_by_label("Remove this account?").is_none());
+    assert!(fake.take().is_empty());
+
+    h.get_by_label("Remove +45 12 34 56 78").click();
+    h.run();
+    h.get_by_label("REMOVE ACCOUNT").click();
+    h.run();
+    assert!(matches!(&fake.take()[..], [Command::RemoveAccount { network, account }] if network.id() == "signal" && account.0 == "u1"));
+    fake.tell([Event::AccountRemoved { network: Network::from_id("signal"), account: AccountId("u1".into()) }]);
+    h.run();
+    h.get_by_label("The account was removed.");
+    assert!(h.query_by_label("Remove +45 12 34 56 78").is_none());
+}
+
+#[test]
+fn an_empty_inbox_leads_to_connecting_a_network() {
+    let fake = Fake::default();
+    let mut h = harness(&fake);
+    fake.tell([Event::SignedIn { user: "@ana:example.org".into() }, Event::Inbox(InboxChange::Reset(vec![]))]);
+    h.run();
+    h.get_by_label("Your chats, one inbox.");
+    h.get_by_label("CONNECT A NETWORK").click();
+    h.run();
+    assert!(matches!(&fake.take()[..], [Command::LoadNetworks]));
+    h.get_by_label("Connect Telegram");
 }
 
 #[test]

@@ -279,6 +279,8 @@ fn items<'a>(value: &'a Value, key: &str) -> impl Iterator<Item = &'a Value> {
 fn bridged_network(network: &Network, whoami: &Value) -> BridgedNetwork {
     let flows = items(whoami, "login_flows")
         .filter(|f| !text(f, "id").is_empty())
+        // mautrix's "manual" flow takes a session copied from elsewhere; its bridges call it "advanced, do not use".
+        .filter(|f| text(f, "id") != "manual")
         .map(|f| LoginFlow { id: text(f, "id"), name: text(f, "name"), description: text(f, "description") })
         .collect();
     let accounts = items(whoami, "logins")
