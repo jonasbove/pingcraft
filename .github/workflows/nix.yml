@@ -1,0 +1,22 @@
+name: Nix
+
+# Evaluates the Nix flake (no build): the package and the dev shell, through craft-common-actions' shared
+# check (house rule 11). It catches a flake that Cargo.lock or the workspace has outgrown.
+on:
+  push:
+    branches: [main]
+    paths: ["flake.nix", "flake.lock", "Cargo.lock", ".github/workflows/nix.yml"]
+  pull_request:
+    paths: ["flake.nix", "flake.lock", "Cargo.lock", ".github/workflows/nix.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  nix:
+    uses: storytold/craft-common-actions/.github/workflows/nix.yml@main

@@ -1,0 +1,37 @@
+name: Release builds
+
+# Builds every desktop target in ADR 0009 through craft-common-actions' shared release workflow (house rule
+# 11), with the scripts in packaging/: Linux x86_64 and aarch64 (AppImage, deb, rpm, tar.gz, Flatpak, Arch
+# package), Linux riscv64 (deb, rpm, tar.gz), Windows x64 and arm64 (msi, portable zip) and FreeBSD x86_64 and
+# aarch64 (tar.gz). The files are kept as the run's artifacts.
+#
+# By hand only, and always a dry run: no signing, no release, no draft and nothing uploaded anywhere
+# (house rule 9). Publishing a release is the maintainer's decision; it means a `release` environment, a tag
+# and turning dry-run off here, in a pull request of its own. A dry run skips macOS (its runner is paid for);
+# packaging/macos/package.sh builds the dmg on a Mac.
+on:
+  workflow_dispatch:
+
+# What the shared workflow's jobs declare (GitHub checks it before the run, even for jobs a dry run skips):
+# `release` (contents: write, for a draft) and `flatpak` (packages: write, for an OCI push) are both off in a
+# dry run.
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    uses: storytold/craft-common-actions/.github/workflows/release.yml@main
+    with:
+      app-name: pingcraft
+      app-title: PingCraft
+      # PingCraft ships no craft-fonts yet.
+      craft-fonts-ref: ""
+      # The web build is milestone 4's.
+      has-web: false
+      dry-run: true
+      publish: false
