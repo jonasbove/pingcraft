@@ -9,8 +9,13 @@ database_path = "/var/lib/tuwunel"
 # The bridges' registration files, written by setup.sh. Read at startup only.
 appservice_dir = "/etc/tuwunel/appservices"
 
+[global.http]
+# Every request comes through the stack's proxy, which writes the address that connected to it into X-Real-IP
+# (Caddyfile). Without this, all users would share the proxy's one budget of password attempts.
+ip_source = "x_real_ip"
+
 [global.http.listen]
-# Inside the container; compose maps it to loopback on the host.
+# Inside the container, reached only through the proxy.
 address = ["0.0.0.0"]
 port = 8008
 

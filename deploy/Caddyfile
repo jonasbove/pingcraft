@@ -5,45 +5,45 @@
 #   HTTPS reverse proxy in front of it for anything but this computer.
 # - Ports 443 and 8448, HTTPS, inside the stack only: the server name, for the bridges' check of a user's OpenID
 #   token. Federation stays off; only that one endpoint is forwarded.
-
 {
 	admin off
 	# No certificates from the internet: the only HTTPS here is the stack's own certificate below.
 	auto_https off
 }
 
+# One bridge's provisioning API, and nothing else of it: never its appservice API (/_matrix/app), debug endpoints
+# or public media. Only requests that prove who the user is with an OpenID token pass; the bridge checks the token.
+# The bridges would also take their admin's shared secret or a user's access token, which PingCraft never sends,
+# so neither gets through from outside.
+#   import bridge <network> <service:port>
+(bridge) {
+	handle_path /_pingcraft/bridges/{args[0]}/* {
+		@provision {
+			path /_matrix/provision/v3/*
+			header Authorization "Bearer openid:*"
+		}
+		handle @provision {
+			reverse_proxy {args[1]}
+		}
+		handle {
+			respond 404
+		}
+	}
+}
+
 :8008 {
-	# A bridge's provisioning API, and nothing else of it: never its appservice API (/_matrix/app), debug
-	# endpoints or public media. Each bridge checks the user's OpenID token itself.
-	handle_path /_pingcraft/bridges/telegram/* {
-		handle /_matrix/provision/v3/* {
-			reverse_proxy telegram:29317
-		}
-		handle {
-			respond 404
-		}
-	}
-	handle_path /_pingcraft/bridges/signal/* {
-		handle /_matrix/provision/v3/* {
-			reverse_proxy signal:29328
-		}
-		handle {
-			respond 404
-		}
-	}
-	handle_path /_pingcraft/bridges/whatsapp/* {
-		handle /_matrix/provision/v3/* {
-			reverse_proxy whatsapp:29318
-		}
-		handle {
-			respond 404
-		}
-	}
+	import bridge telegram telegram:29317
+	import bridge signal signal:29328
+	import bridge whatsapp whatsapp:29318
 	handle /_pingcraft/* {
 		respond 404
 	}
 	handle {
-		reverse_proxy homeserver:8008
+		reverse_proxy homeserver:8008 {
+			# The address that connected to this proxy, for the homeserver's per-address sign-in limits (its
+			# `ip_source`). Set here, so a client cannot choose it.
+			header_up X-Real-IP {remote_host}
+		}
 	}
 }
 
@@ -53,7 +53,9 @@
 https://{$PINGCRAFT_SERVER_NAME}:443, https://{$PINGCRAFT_SERVER_NAME}:8448 {
 	tls /run/pingcraft-openid-tls/cert.pem /run/pingcraft-openid-tls/key.pem
 	handle /_matrix/federation/v1/openid/userinfo {
-		reverse_proxy homeserver:8008
+		reverse_proxy homeserver:8008 {
+			header_up X-Real-IP {remote_host}
+		}
 	}
 	# Points the bridge at port 8448 here, so it never follows a public SRV record for the server name.
 	handle /.well-known/matrix/server {

@@ -119,8 +119,14 @@ proxy serves it next to the homeserver, one path per bridge:
 | `/_pingcraft/bridges/whatsapp/_matrix/provision/v3/…` | the WhatsApp bridge |
 | everything else | the homeserver |
 
-Only the provisioning API is passed on, never a bridge's other endpoints. An HTTPS reverse proxy in front (step 6)
-needs nothing extra: it forwards everything to `PINGCRAFT_PORT`, these paths included.
+Only the provisioning API is passed on, and only with an OpenID token (below), never a bridge's other endpoints.
+An HTTPS reverse proxy in front (step 6) forwards everything to `PINGCRAFT_PORT`, these paths included. Give it a
+read timeout of at least ten minutes for `/_pingcraft/bridges/`: while PingCraft shows a QR code, it waits for
+the bridge in one long request. (Not tested with a proxy in front yet.)
+
+The homeserver counts password attempts per address. The proxy tells it which address connected to the stack
+(`X-Real-IP`, `ip_source` in `tuwunel.toml`). With an HTTPS reverse proxy in front, that address is the reverse
+proxy's, so all users share one allowance, as they did before the stack had a proxy of its own.
 
 PingCraft never gives a bridge your password or your access token. It asks the homeserver for an OpenID token,
 which only proves who you are, and the bridge checks it with the homeserver. A bridge does that check the way

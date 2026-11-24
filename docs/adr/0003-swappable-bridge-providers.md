@@ -79,7 +79,8 @@ Findings:
   it. An OpenID token only proves who the user is, and tuwunel's last an hour, but it ends up in the bridge's
   container log.
 
-Decision, within point 4 above:
+The fix chosen, within point 4 above. It is built (milestone 3, ticket 3) but **waits for the maintainer's
+approval**: it adds a reverse proxy to the server side that CLAUDE.md's "Decided" list and ADR 0010 describe.
 
 - Federation stays off. No bridge image changes (ADR 0002).
 - The compose project gets one reverse proxy (Caddy, Apache-2.0, pinned by digest).
@@ -91,6 +92,8 @@ Decision, within point 4 above:
     of the same network, so the bridge never follows a public SRV record.
 - Each bridge joins `openid` and adds that certificate to its trusted roots with `SSL_CERT_DIR`. The system's own
   roots are still read.
+- On the client side, the same proxy passes a bridge's `/_matrix/provision/v3/` only with `Bearer openid:`, so the
+  bridges' other ways in (their shared secret, a user's access token) are closed from outside the stack.
 
 For the maintainer:
 

@@ -45,6 +45,11 @@ broken stack:
 It puts back `.env`, unless one is already there, in which case the two must match. Then it puts back `data/`,
 loads the homeserver's database into a new volume, restores each bridge database, and starts the stack.
 
+To try a restore on the same machine as the running server, give the copy another compose project name, port
+and `PINGCRAFT_OPENID_SUBNET` (for example `198.18.1.0/24`): two stacks cannot share the internal `openid`
+network's range. `restore.sh` refuses a `.env` that differs from the backup's, so set them in the environment of
+the commands instead. (The test below was run before that network existed; this was not tried.)
+
 ## What was tested
 
 On 2026-11-24, with throwaway data and a fake Telegram application:
