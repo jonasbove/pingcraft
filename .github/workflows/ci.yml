@@ -1,0 +1,34 @@
+name: CI
+
+# The quality gates on every push to main and every pull request: `cargo xtask ci` runs fmt, clippy -D warnings,
+# the tests, the layer check, the wasm clippy and cargo deny (ADR 0009). Through the suite's shared gate workflow in
+# craft-common-actions, as the other Craft apps (house rule 11); change CI there, not in a feature pull request.
+#
+# Linux only for now: the desktop build links the system SQLite (deny.toml, RUSTSEC-2026-0459), which Windows
+# runners do not have. The packaging builds for every target in ADR 0009 come with milestone 2's packaging ticket.
+# The tests that need a homeserver skip themselves here (crates/matrix/tests/common/mod.rs).
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  gate:
+    uses: storytold/craft-common-actions/.github/workflows/gate.yml@main
+    with:
+      os: '["ubuntu-24.04"]'
+      # PingCraft ships no craft-fonts yet.
+      craft-fonts-ref: ""
+      # `cargo xtask ci` ends with cargo deny.
+      tools: cargo-deny@0.20.2
+      targets: wasm32-unknown-unknown
+      # SQLite for matrix-sdk's stores (linked, not bundled), and the egui/winit headers, as the Craft apps.
+      packages: libsqlite3-dev libxkbcommon-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev

@@ -75,7 +75,10 @@ desktop target.
    - `cargo xtask ci` and `cargo xtask layers`;
    - `cargo xtask bump-images`, from milestone 1: move the pinned image digests forward and report stale ones;
    - craft-libs pinned at one revision.
-2. **CI:** a workflow calling `craft-common-actions`, in its own pull request (house rule 11).
+2. **Done, not run yet** (it runs on GitHub once pushed). **CI:** a workflow calling `craft-common-actions`, in
+   its own pull request (house rule 11): `ci.yml` runs `cargo xtask ci` through the shared `gate.yml`, on Linux
+   (Windows runners have no system SQLite to link), and `house-rules.yml` checks `AGENTS.md`. The tests that need
+   a homeserver skip there; a job that starts a throwaway tuwunel for them is still open.
 3. **Done, see ADR 0009's addendum.** **Spike: targets.**
    - Does `matrix-sdk`'s `aws-lc` TLS build on FreeBSD, riscv64 and Windows arm64?
    - Does `keyring` work on FreeBSD and inside Flatpak?
