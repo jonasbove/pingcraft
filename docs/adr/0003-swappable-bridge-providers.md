@@ -28,8 +28,9 @@ Two mautrix interfaces matter to a client:
    OpenID token only proves who the user is and cannot act for them. The provisioning API accepts one when it is
    sent as `openid:<token>` and `allow_matrix_auth` is on. The bridge then checks it against the homeserver's
    federation OpenID userinfo endpoint (`bridgev2/matrix/provisioning.go`). Whether tuwunel serves that endpoint
-   with federation off is not yet verified, and is a spike in milestone 3. If it does not, the fallback is an
-   open question for the maintainer, because the alternative means handing the bridge the user's access token.
+   with federation off is not yet verified, and is a spike in milestone 3. If it does not, federation stays off
+   and only that endpoint is made reachable to the bridges, over the internal compose network. The user's
+   access token is never handed to a bridge.
 5. On the server, each network's bridge is a compose service chosen by configuration: its image, its
    registration file and its provider.
 

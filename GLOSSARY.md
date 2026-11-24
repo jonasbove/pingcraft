@@ -31,6 +31,10 @@ _Avoid_: room, conversation, thread, channel
 All of a user's chats from all their accounts, together in one list.
 _Avoid_: unified inbox, feed, chat list
 
+**Message**:
+One thing sent in a chat: text, media, or a reaction to another message.
+_Avoid_: event, post
+
 ## Server side
 
 **Bridge**:

@@ -1,7 +1,6 @@
 # ADR 0002: The AGPL bridges run unmodified, at arm's length
 
-- **Status:** proposed. The maintainer agreed to the rule on 2026-11-24; it stays proposed until the
-  maintainer formally approves the licensing question (house rule 9)
+- **Status:** accepted by the maintainer (2026-11-24), as the licensing decision house rule 9 reserves for them
 
 ## Context
 

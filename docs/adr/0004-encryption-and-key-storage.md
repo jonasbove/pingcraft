@@ -23,8 +23,8 @@ passphrase the application supplies. Browsers have no equivalent of an OS keycha
    `pickle_key: generate` so the bridge's own Matrix keys are encrypted in its database. Bridges use the default
    sync-based encryption, not the sync-less appservice mode.
 2. **Desktop client:** every store is encrypted with a random 32-byte key kept in the OS keychain (the `keyring`
-   crate, MIT OR Apache-2.0). It never stores the key in a plain file. What happens on a system without a
-   keychain is an open question for the maintainer.
+   crate, MIT OR Apache-2.0). On a system without a working keychain, the key is derived from a passphrase the
+   user types to unlock PingCraft, as on the web. The key is never stored in a plain file.
 3. **Web client:** the IndexedDB store is encrypted with a passphrase the user types to unlock PingCraft. Nothing
    secret stays in browser storage between visits.
 4. **First sign-in** sets up cross-signing, key backup and a recovery key, and asks the user to save the recovery

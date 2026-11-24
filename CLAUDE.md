@@ -14,7 +14,7 @@ maintainer approves.
 
 - **Matrix underneath.** PingCraft is a Matrix client. Other networks are reached through Matrix bridges, the
   same design Beeper uses, so each network is a bridge you can add or leave out.
-- **The server side** is a Rust Matrix homeserver (Apache-2.0; continuwuity is the starting candidate) plus the
+- **The server side** is a Rust Matrix homeserver (Apache-2.0; tuwunel, see [ADR 0001](docs/adr/0001-homeserver-tuwunel.md)) plus the
   mautrix bridges, each in its own container.
 - **The client** is Rust and egui on `matrix-rust-sdk` (Apache-2.0), desktop first, with a web build (Trunk)
   so CraftCloud can serve it like its other apps.

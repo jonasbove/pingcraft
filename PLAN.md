@@ -13,7 +13,7 @@ Discussed with the maintainer on 2026-11-24:
 | ADR | Decision |
 |---|---|
 | [0001](docs/adr/0001-homeserver-tuwunel.md) | tuwunel is the homeserver, confirmed by a spike in milestone 1 |
-| [0002](docs/adr/0002-agpl-bridges-at-arms-length.md) | the AGPL bridges run unmodified at arm's length (**proposed** until formal approval) |
+| [0002](docs/adr/0002-agpl-bridges-at-arms-length.md) | the AGPL bridges run unmodified at arm's length |
 | [0003](docs/adr/0003-swappable-bridge-providers.md) | bridges sit behind a swappable bridge provider |
 | [0004](docs/adr/0004-encryption-and-key-storage.md) | encryption, and where plaintext lives |
 | [0005](docs/adr/0005-network-telegram.md) | Telegram, risk level low |
@@ -40,7 +40,8 @@ Matrix client.
 
 1. **Spike (maintainer: a Telegram test account and an `api_id`).** Run tuwunel and mautrix-telegram with
    Matrix-side encryption required. Log in to the bridge, then send and receive text both ways from a stock
-   Matrix client. Record the findings as an addendum to ADR 0001, and stop if tuwunel cannot do it.
+   Matrix client. Measure idle and active memory of tuwunel and the bridge (`docker stats`), then stop the
+   containers. Record the findings as an addendum to ADR 0001, and stop if tuwunel cannot do it.
 2. **`compose.yaml`** for the `pingcraft` project:
    - tuwunel, Postgres for the bridges, and the Telegram bridge;
    - images pinned by version and digest;
@@ -79,7 +80,10 @@ desktop target.
 4. **`pingcraft-core` model:** network, account, chat, inbox and message, with tests.
 5. **Sign-in:**
    - Password sign-in and session restore in `pingcraft-matrix`.
-   - Stores encrypted with a key kept in the OS keychain, never a plain file (ADR 0004).
+   - Stores encrypted with a key kept in the OS keychain, or derived from an unlock passphrase where there is no
+     keychain; never a plain file (ADR 0004).
+   - Draft a proposal for a craft-libs secrets crate from this code (house rule 16). Nothing is opened on GitHub
+     without the maintainer.
 6. **Inbox:** `SyncService` and `RoomListService` mapped onto the core model.
 7. **Chat:** the timeline, reading and sending text.
 8. **Encryption:**
@@ -95,7 +99,8 @@ Goal: a user connects Telegram, Signal and WhatsApp accounts from PingCraft, aft
 
 1. **The bridge provider interface** in `pingcraft-core` (ADR 0003).
 2. **Spike: OpenID with federation off.** Does tuwunel serve the OpenID userinfo endpoint the bridges use to
-   check a token when federation is off? Stop and ask the maintainer if it does not (ADR 0003).
+   check a token when federation is off? If not, make only that endpoint reachable to the bridges over the
+   internal compose network (ADR 0003).
 3. **Route each bridge's `/_matrix/provision`** through the reverse proxy, and document it.
 4. **The mautrix bridge provider:** uses the bridgev2 provisioning API, authenticated with a Matrix OpenID token.
 5. **Network of a chat:** read from the bridge-info room state, and shown in the inbox.
