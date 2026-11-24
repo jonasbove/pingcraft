@@ -1,0 +1,7 @@
+# The Rust every build uses: local and CI. Move it in its own pull request.
+# `rust-version` in Cargo.toml stays the oldest Rust that builds PingCraft.
+[toolchain]
+channel = "1.100.0"
+components = ["clippy", "rustfmt"]
+targets = ["wasm32-unknown-unknown"]
+profile = "minimal"

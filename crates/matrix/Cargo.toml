@@ -1,0 +1,25 @@
+[package]
+name = "pingcraft-matrix"
+description = "PingCraft's adapter onto matrix-sdk and matrix-sdk-ui, and the mautrix bridge provider. No egui."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+pingcraft-core = { workspace = true }
+
+# Desktop: SQLite stores (encrypted with a key from the OS keychain, ADR 0004) and rustls.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+matrix-sdk = { workspace = true, features = ["e2e-encryption", "automatic-room-key-forwarding", "sqlite", "rustls-aws-lc-rs"] }
+matrix-sdk-ui = { workspace = true, features = ["rustls-aws-lc-rs"] }
+
+# Web: IndexedDB stores (encrypted with the unlock passphrase, ADR 0004) and the browser's fetch.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+matrix-sdk = { workspace = true, features = ["e2e-encryption", "automatic-room-key-forwarding", "js", "indexeddb"] }
+matrix-sdk-ui = { workspace = true, features = ["js"] }

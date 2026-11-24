@@ -1,0 +1,16 @@
+[package]
+name = "pingcraft-ui-egui"
+description = "PingCraft's interface in egui. Depends on pingcraft-core only, never on Matrix SDK types."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+pingcraft-core = { workspace = true }
+egui = { workspace = true }

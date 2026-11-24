@@ -1,0 +1,74 @@
+# cargo-deny configuration, as in the Craft apps. `cargo deny check` (part of `cargo xtask ci`).
+# Only PingCraft's own Rust programs are checked here. The homeserver and the bridges are not Cargo dependencies:
+# they run as unmodified upstream images (ADR 0002, NOTICE).
+
+[graph]
+all-features = true
+
+[advisories]
+yanked = "deny"
+# Each entry says why it is carried and what removes it. Review them whenever matrix-sdk or keyring moves.
+ignore = [
+    # SQLite before 3.54.0 can return uninitialised page-cache memory when it opens a database together with a
+    # crafted `-wal` file. matrix-sdk 0.19.1 locks rusqlite 0.40 and so libsqlite3-sys 0.38, before the fix
+    # (0.39). PingCraft does not enable the `bundled` feature: desktop builds link the system SQLite, which must be
+    # 3.54.0 or newer to be safe. Exploiting it needs write access to the user's data folder. Goes when matrix-sdk
+    # moves to rusqlite 0.41 or newer. Windows packaging must not ship a bundled SQLite older than 3.54.0.
+    { id = "RUSTSEC-2026-0459", reason = "libsqlite3-sys bundled SQLite < 3.54; not bundled here; waits on matrix-sdk" },
+    # Unmaintained, no fixed version; they come in through matrix-sdk-ui and go when it drops them.
+    { id = "RUSTSEC-2026-0319", reason = "anymap2: via matrix-sdk-ui" },
+    { id = "RUSTSEC-2024-0388", reason = "derivative: via matrix-sdk-ui" },
+    { id = "RUSTSEC-2026-0543", reason = "chrono: via matrix-sdk and ruma; the Craft time rule (house rule 5) still names chrono" },
+    # zvariant, zvariant_derive and zbus_names were folded into zbus 6 (2026-10); keyring's Secret Service store
+    # uses zbus 5. Not vulnerabilities; they go when keyring moves to zbus 6.
+    { id = "RUSTSEC-2026-0370", reason = "zvariant: merged into zbus 6; via keyring" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names: merged into zbus 6; via keyring" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive: merged into zbus 6; via keyring" },
+]
+
+[licenses]
+# The Craft allowlist (AGENTS.md). Dual-licensed crates pass through their permissive option.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "0BSD",
+    "Unicode-3.0",
+    "BSL-1.0",
+    "CDLA-Permissive-2.0",
+    "OFL-1.1",         # egui's embedded default fonts (epaint_default_fonts)
+    "Ubuntu-font-1.0", # same crate
+]
+confidence-threshold = 0.9
+# MPL-2.0 is file-level copyleft: allowed only for named crates, used unmodified (AGENTS.md). `MPL-2.0+` counts as
+# MPL-2.0.
+exceptions = [
+    { allow = ["MPL-2.0"], crate = "as_variant" }, # via ruma and matrix-sdk
+    { allow = ["MPL-2.0"], crate = "async-rx" }, # via matrix-sdk-ui
+    { allow = ["MPL-2.0"], crate = "eyeball" }, # matrix-sdk's observables
+    { allow = ["MPL-2.0"], crate = "eyeball-im" }, # same
+    { allow = ["MPL-2.0"], crate = "eyeball-im-util" }, # same
+    { allow = ["MPL-2.0"], crate = "imbl" }, # MPL-2.0+; via eyeball-im
+    { allow = ["MPL-2.0"], crate = "imbl-sized-chunks" }, # MPL-2.0+; via imbl
+    { allow = ["MPL-2.0"], crate = "readlock" }, # via eyeball
+    { allow = ["MPL-2.0"], crate = "readlock-tokio" }, # via eyeball
+]
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+# The egui and winit forks the Craft apps share ([patch.crates-io]), and craft-libs pinned by rev.
+allow-git = [
+    "https://github.com/storytold/craft-libs",
+    "https://github.com/storytold/egui.git",
+    "https://github.com/storytold/winit.git",
+]

@@ -69,14 +69,14 @@ Matrix client.
 Goal: sign in, see the inbox, read and send text, with end-to-end encryption and a recovery key, on every
 desktop target.
 
-1. **Workspace:**
+1. **Done.** **Workspace:**
    - the crates and layers from ADR 0009;
    - `rust-toolchain.toml` and `deny.toml`;
    - `cargo xtask ci` and `cargo xtask layers`;
    - `cargo xtask bump-images`, from milestone 1: move the pinned image digests forward and report stale ones;
    - craft-libs pinned at one revision.
 2. **CI:** a workflow calling `craft-common-actions`, in its own pull request (house rule 11).
-3. **Spike: targets.**
+3. **Done, see ADR 0009's addendum.** **Spike: targets.**
    - Does `matrix-sdk`'s `aws-lc` TLS build on FreeBSD, riscv64 and Windows arm64?
    - Does `keyring` work on FreeBSD and inside Flatpak?
    - Write down the answer and any workaround.
@@ -95,6 +95,9 @@ desktop target.
 9. **UI:** sign-in, inbox and chat screens in `pingcraft-ui-egui`, with i18n and `egui_kittest` AccessKit tests.
 10. **Packaging for every target in ADR 0009.** Releases are not published without the maintainer
     (house rule 9).
+11. **SQLite advisory RUSTSEC-2026-0459.** `matrix-sdk` 0.19.1 locks a SQLite binding older than the fix, and
+    `deny.toml` carries it as a reasoned ignore. Move to the first `matrix-sdk` release on `rusqlite` 0.41 or newer,
+    drop the ignore, and make sure no package ships a bundled SQLite older than 3.54.0.
 
 ## Milestone 3: connecting networks from inside PingCraft
 
@@ -143,3 +146,9 @@ Starts when mautrix-discord releases its bridgev2 rewrite (ADR 0008).
 3. Media: images and files, over authenticated media.
 4. Reactions, edits and replies.
 5. Inbox filters by network and account.
+
+## Later, not yet planned
+
+- **MailCraft integration** (raised by the maintainer, 2026-11-24). What it means is still open: for example,
+  mail as one more network in the inbox, or PingCraft chats shown in MailCraft. It needs its own ADR before any
+  ticket.

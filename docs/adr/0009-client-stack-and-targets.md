@@ -21,6 +21,7 @@ CraftCloud releases its desktop app for Linux, Windows, macOS and FreeBSD, plus 
    |---|---|---|
    | `pingcraft-core` | the domain model (network, account, chat, inbox, message) and the bridge provider interface (ADR 0003) | neither `matrix-sdk` nor egui |
    | `pingcraft-matrix` | the adapter onto `matrix-sdk` / `matrix-sdk-ui`, and the mautrix bridge provider | `core` |
+   | `pingcraft-keychain` | the store key in the OS keychain (ADR 0004); desktop only; a candidate for a craft-libs secrets crate | nothing in the workspace |
    | `pingcraft-ui-egui` | the interface | `core` only; never `matrix-sdk` types |
    | apps: `pingcraft` (desktop) and `pingcraft-web` (Trunk) | — | everything below |
 
@@ -66,3 +67,31 @@ CraftCloud releases its desktop app for Linux, Windows, macOS and FreeBSD, plus 
     checking.
 - `matrix-sdk-ui` on wasm is compile-checked upstream, not tested, so the web build has its own spike in
   milestone 4.
+
+## Addendum (2026-11-24): the milestone 2 targets spike
+
+`cargo check` of `pingcraft-matrix` (`matrix-sdk` and `matrix-sdk-ui` 0.19.1 with SQLite, encryption and
+`rustls-aws-lc-rs`) and of `pingcraft-keychain` (`keyring` 4.2.0), on Linux x86_64 with Rust 1.100.0. A check
+compiles the C parts (`aws-lc-sys`, SQLite) for the target, but links nothing and runs nothing.
+
+| Target | `matrix-sdk` with aws-lc | `keyring` | How |
+|---|---|---|---|
+| x86_64-unknown-linux-gnu | builds | builds | native |
+| aarch64-unknown-linux-gnu | builds | not run | zig 0.16 as the C cross-compiler |
+| riscv64gc-unknown-linux-gnu | builds | not run | zig 0.16 |
+| x86_64-unknown-freebsd | builds | builds | zig 0.16 |
+| wasm32-unknown-unknown | builds (`js`, `indexeddb`, encryption; `matrix-sdk-ui` with `js`) | not used on the web | native |
+| Windows x64 and arm64 (MSVC), macOS | not run | not run | needs Microsoft's or Apple's toolchain; CI |
+
+Findings:
+
+- **`aws-lc` is not a blocker on Linux or FreeBSD.** Its C code cross-compiles with an ordinary C toolchain. The
+  `cc` crate passes `--target=<rust triple>`, which zig rejects, so a zig wrapper must drop that flag. CI on each
+  native runner needs no wrapper.
+- **`keyring` 4.2.0's default store on FreeBSD** (and on every Unix except macOS) is the Secret Service over
+  D-Bus, the same as on Linux. It never falls back to a plain file: without a running Secret Service it returns an
+  error, and that is when PingCraft asks for an unlock passphrase (ADR 0004).
+- **Flatpak:** the Secret Service is reached over D-Bus, so the Flatpak manifest needs
+  `--talk-name=org.freedesktop.secrets`. Whether `keyring` can use the Secret portal instead was not checked.
+  This was not built or run in a Flatpak here.
+- **Still open:** the Windows and macOS targets, and linking and running on every target, wait for CI.

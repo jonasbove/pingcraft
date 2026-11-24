@@ -1,0 +1,9 @@
+# Tests may unwrap, expect, panic and index: a failing assertion is the point of a test. The rest is the
+# workspace lints in Cargo.toml, as in the Craft apps.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true
+cognitive-complexity-threshold = 30
+# The Craft apps use craft_ui's ComboBox instead of egui's (egui#5225).
+disallowed-types = [{ path = "egui::ComboBox", reason = "use craft_ui::ComboBox" }]
