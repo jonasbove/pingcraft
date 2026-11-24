@@ -7,7 +7,12 @@
 //!
 //! The passphrase is never stored. A wrong one is reported as [`VaultError::WrongPassphrase`] and changes nothing
 //! on disk; a vault is never created over an existing one. The file is replaced whole (written next to it, then
-//! renamed), so a crash leaves the old or the new version, never half of one.
+//! renamed), so a crash leaves the old or the new version, never half of one. Writing keeps to the same limits
+//! reading enforces (1 MiB, 4096 secrets), so the vault never writes a file it would refuse to open.
+//!
+//! A vault in memory is the only copy of what it holds that this process trusts: it writes its whole map, not a
+//! merge with the file. Two processes with the same vault open would lose each other's changes, so the app holds
+//! an [`crate::InstanceLock`] on the data folder for as long as it runs.
 //!
 //! File layout, all integers little-endian:
 //!
@@ -35,6 +40,8 @@ const SALT_LEN: usize = 16;
 const NONCE_LEN: usize = 24;
 const HEADER_LEN: usize = MAGIC.len() + 12 + SALT_LEN;
 const KEY_LEN: usize = 32;
+/// XChaCha20-Poly1305's authentication tag, added to the ciphertext.
+const TAG_LEN: usize = 16;
 /// A vault holds a few keys and sessions; anything much bigger is not one of ours.
 const MAX_FILE: u64 = 1024 * 1024;
 const MAX_ENTRIES: usize = 4096;
@@ -75,6 +82,8 @@ pub enum VaultError {
     Corrupt(&'static str),
     /// Reading or writing the file failed.
     Io(String),
+    /// The secrets would not fit in a vault (1 MiB, 4096 secrets); nothing was written.
+    TooLarge,
     /// The key could not be derived or the system had no random numbers.
     Crypto(String),
 }
@@ -88,6 +97,7 @@ impl std::fmt::Display for VaultError {
             Self::WrongPassphrase => f.write_str("that passphrase does not unlock PingCraft"),
             Self::Corrupt(what) => write!(f, "the PingCraft vault is damaged: {what}"),
             Self::Io(why) => write!(f, "the PingCraft vault could not be read or written: {why}"),
+            Self::TooLarge => f.write_str("the PingCraft vault has no room for more secrets"),
             Self::Crypto(why) => write!(f, "the PingCraft vault could not be encrypted: {why}"),
         }
     }
@@ -176,13 +186,22 @@ impl PassphraseVault {
         h
     }
 
-    /// Encrypts `secrets` with a new nonce and replaces the file.
+    /// Encrypts `secrets` with a new nonce and replaces the file. Refuses, changing nothing, when the file would be
+    /// one [`PassphraseVault::unlock`] does not open.
     fn save(&self, secrets: &Secrets) -> Result<(), VaultError> {
+        if secrets.len() > MAX_ENTRIES {
+            return Err(VaultError::TooLarge);
+        }
+        // Counted before anything is copied, so an oversized secret is refused without a second copy of it.
+        let plain_len = secrets.iter().fold(4usize, |n, (name, secret)| n.saturating_add(8).saturating_add(name.len()).saturating_add(secret.len()));
+        if plain_len.saturating_add(HEADER_LEN + NONCE_LEN + TAG_LEN) as u64 > MAX_FILE {
+            return Err(VaultError::TooLarge);
+        }
+        let plain = encode(secrets);
         let header = self.header();
         let mut nonce = [0u8; NONCE_LEN];
         getrandom::fill(&mut nonce).map_err(|e| VaultError::Crypto(e.to_string()))?;
         let cipher = XChaCha20Poly1305::new_from_slice(self.key.as_ref()).map_err(|e| VaultError::Crypto(e.to_string()))?;
-        let plain = encode(secrets);
         let ciphertext =
             cipher.encrypt(&XNonce::from(nonce), Payload { msg: &plain, aad: &header }).map_err(|e| VaultError::Crypto(e.to_string()))?;
         let mut file = Vec::with_capacity(HEADER_LEN + NONCE_LEN + ciphertext.len());
@@ -202,7 +221,7 @@ impl SecretStore for PassphraseVault {
         let mut secrets = self.lock()?;
         let mut next = secrets.clone();
         next.insert(name.to_owned(), Zeroizing::new(secret.to_vec()));
-        self.save(&next).map_err(|e| KeychainError::Unavailable(e.to_string()))?;
+        self.save(&next).map_err(keychain_error)?;
         *secrets = next;
         Ok(())
     }
@@ -214,9 +233,16 @@ impl SecretStore for PassphraseVault {
         }
         let mut next = secrets.clone();
         next.remove(name);
-        self.save(&next).map_err(|e| KeychainError::Unavailable(e.to_string()))?;
+        self.save(&next).map_err(keychain_error)?;
         *secrets = next;
         Ok(())
+    }
+}
+
+fn keychain_error(e: VaultError) -> KeychainError {
+    match e {
+        VaultError::TooLarge => KeychainError::TooLarge,
+        other => KeychainError::Unavailable(other.to_string()),
     }
 }
 
@@ -321,7 +347,8 @@ fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), VaultError> {
 #[cfg(test)]
 mod tests {
     use super::{KdfParams, PassphraseVault, VaultError};
-    use crate::{SecretStore, store_key};
+    use crate::{KeychainError, SecretStore, store_key};
+    use zeroize::Zeroizing;
 
     /// Cheap settings, so the tests are quick; the lowest the vault accepts.
     const CHEAP: KdfParams = KdfParams { memory_kib: 8 * 1024, iterations: 1, lanes: 1 };
@@ -398,6 +425,33 @@ mod tests {
         std::fs::write(&path, b"something else entirely, long enough to have a header and a nonce...").unwrap();
         assert!(matches!(PassphraseVault::unlock(&path, "p"), Err(VaultError::Corrupt(_))));
         assert!(matches!(PassphraseVault::unlock(&dir.path().join("missing"), "p"), Err(VaultError::NotFound)));
+    }
+
+    #[test]
+    fn writing_keeps_to_the_limits_reading_enforces() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("vault");
+        let vault = PassphraseVault::create_with(&path, "p", CHEAP).unwrap();
+        vault.set("a", b"kept").unwrap();
+        let before = std::fs::read(&path).unwrap();
+
+        // A secret that would make the file bigger than a vault may be.
+        let big = vec![7u8; super::MAX_FILE as usize];
+        assert!(matches!(vault.set("big", &big), Err(KeychainError::TooLarge)));
+        assert!(vault.get("big").unwrap().is_none(), "nothing changed in memory");
+
+        // One secret more than a vault may hold. They are put in memory directly: writing 4096 files is slow.
+        {
+            let mut secrets = vault.secrets.lock().unwrap();
+            for i in 1..super::MAX_ENTRIES {
+                secrets.insert(format!("n{i}"), Zeroizing::new(vec![1]));
+            }
+        }
+        assert!(matches!(vault.set("one more", b"x"), Err(KeychainError::TooLarge)));
+
+        assert_eq!(std::fs::read(&path).unwrap(), before, "the file is untouched");
+        let again = PassphraseVault::unlock(&path, "p").unwrap();
+        assert_eq!(again.get("a").unwrap().unwrap().as_slice(), b"kept");
     }
 
     #[test]

@@ -118,6 +118,20 @@ fn signing_in_sends_what_was_typed_and_says_why_it_failed() {
 }
 
 #[test]
+fn a_second_pingcraft_says_one_is_already_open_and_offers_nothing_to_type() {
+    let fake = Fake::default();
+    let mut h = harness(&fake);
+    fake.tell([Event::AlreadyRunning]);
+    h.run();
+    h.get_by_label("PingCraft is already open");
+    h.get_by_label("Another PingCraft window is using your messages on this computer.");
+    h.get_by_label("Already open");
+    use egui::accesskit::Role;
+    assert!(h.query_by_role(Role::TextInput).is_none() && h.query_by_role(Role::PasswordInput).is_none(), "no sign-in or passphrase field");
+    assert!(fake.take().is_empty());
+}
+
+#[test]
 fn choosing_a_passphrase_needs_it_twice_and_the_same() {
     let fake = Fake::default();
     let mut h = harness(&fake);

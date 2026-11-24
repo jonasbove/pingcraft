@@ -79,6 +79,9 @@ pub enum SignInProblem {
 /// Something the interface should show.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
+    /// Another PingCraft is open with the same data, so this one does nothing: two would overwrite each other's
+    /// secrets.
+    AlreadyRunning,
     /// Nobody is signed in: show the sign-in sheet.
     SignedOut,
     /// There is no keychain, so PingCraft needs the unlock passphrase. `first` when none has been chosen yet.

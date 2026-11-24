@@ -11,6 +11,8 @@ pub enum Screen {
     /// Waiting for the backend's first word.
     #[default]
     Starting,
+    /// Another PingCraft has this computer's PingCraft data open; this one does nothing.
+    AlreadyRunning,
     /// The unlock passphrase (no keychain). `first` when one has to be chosen.
     Locked {
         first: bool,
@@ -86,6 +88,7 @@ pub struct State {
 impl State {
     pub fn apply(&mut self, event: Event) {
         match event {
+            Event::AlreadyRunning => *self = Self { screen: Screen::AlreadyRunning, ..Self::default() },
             Event::SignedOut => {
                 let server = std::mem::take(&mut self.sign_in.server);
                 *self = Self { screen: Screen::SignIn, ..Self::default() };

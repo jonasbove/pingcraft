@@ -4,6 +4,10 @@
 //! Where secrets go: the OS keychain when it answers, otherwise a [`PassphraseVault`] in the data folder that the
 //! user unlocks with a passphrase (ADR 0004). The only plain file is `profile`, the random name of the signed-in
 //! profile, which says nothing about the account.
+//!
+//! Before it touches any of that, the engine locks the data folder ([`InstanceLock`]) for as long as it runs, so a
+//! second PingCraft on the same folder cannot overwrite the vault or the stores under it; that one says
+//! [`Event::AlreadyRunning`] and does nothing else.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -13,7 +17,7 @@ use std::time::Duration;
 use pingcraft_core::app::{Backend, Command, Event, SignInProblem};
 use pingcraft_core::encryption::{RecoveryStatus, Verification};
 use pingcraft_core::{ChatId, ConnectionState};
-use pingcraft_keychain::{KdfParams, OsKeychain, PassphraseVault, SecretStore, VaultError};
+use pingcraft_keychain::{InstanceLock, KdfParams, LockError, OsKeychain, PassphraseVault, SecretStore, VaultError};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use zeroize::Zeroizing;
 
@@ -117,6 +121,8 @@ struct SignedIn {
 
 struct Worker {
     data_dir: PathBuf,
+    /// Held from the start to the end of the worker; without it, the worker does nothing.
+    lock: Option<InstanceLock>,
     secrets_choice: Secrets,
     secrets: Option<Store>,
     emit: Emitter,
@@ -151,7 +157,7 @@ fn vault_file(data_dir: &Path) -> PathBuf {
 
 impl Worker {
     fn new(data_dir: PathBuf, secrets_choice: Secrets, emit: Emitter) -> Self {
-        Self { data_dir, secrets_choice, secrets: None, emit, signed_in: None }
+        Self { data_dir, lock: None, secrets_choice, secrets: None, emit, signed_in: None }
     }
 
     async fn run(mut self, mut commands: UnboundedReceiver<Command>) {
@@ -189,8 +195,13 @@ impl Worker {
         }
     }
 
-    /// Finds the secrets, then whoever was signed in.
+    /// Locks the data folder, then finds the secrets, then whoever was signed in.
     async fn begin(&mut self) {
+        match InstanceLock::acquire(&self.data_dir) {
+            Ok(lock) => self.lock = Some(lock),
+            Err(LockError::Held) => return self.emit.send(Event::AlreadyRunning),
+            Err(e) => return self.emit.send(Event::Problem(e.to_string())),
+        }
         if self.secrets_choice == Secrets::System && OsKeychain.probe().is_ok() {
             self.secrets = Some(Box::new(OsKeychain));
             return self.resume().await;
@@ -359,6 +370,10 @@ impl Worker {
     }
 
     async fn handle(&mut self, command: Command) {
+        if self.lock.is_none() {
+            // Another PingCraft has the data folder: touch nothing in it.
+            return;
+        }
         match command {
             Command::Unlock { passphrase } => self.unlock(&passphrase).await,
             Command::SignIn { server, username, password } => self.sign_in(server, username, password).await,

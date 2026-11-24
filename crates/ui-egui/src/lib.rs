@@ -57,6 +57,7 @@ impl PingCraftApp {
             view::problem_bar(ui, &mut self.state);
             match self.state.screen.clone() {
                 Screen::Starting => {}
+                Screen::AlreadyRunning => view::already_running(&ctx),
                 Screen::Locked { first } => view::unlock(&ctx, &mut self.state, first, &mut out),
                 Screen::SignIn => view::sign_in(&ctx, &mut self.state, &mut out),
                 Screen::Inbox => {

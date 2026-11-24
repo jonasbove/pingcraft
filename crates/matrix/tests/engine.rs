@@ -38,6 +38,32 @@ fn start(data: &std::path::Path) -> Engine {
     Engine::start(data.to_owned(), CHEAP, Arc::new(|| {})).unwrap()
 }
 
+/// Needs no server: two copies of PingCraft on one data folder.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_second_engine_on_the_same_data_does_nothing_until_the_first_has_gone() {
+    let data = tempfile::tempdir().unwrap();
+    let mut seen = Vec::new();
+    let mut first = start(data.path());
+    until(&mut first, &mut seen, "the first unlock", |e| matches!(e, Event::Locked { first: true }).then_some(())).await;
+
+    let mut second = start(data.path());
+    until(&mut second, &mut seen, "the second to say one is open", |e| (*e == Event::AlreadyRunning).then_some(())).await;
+    // It ignores what it is told: no vault is made under the first one's feet.
+    second.send(Command::Unlock { passphrase: Zeroizing::new("another passphrase".into()) });
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(second.poll().is_empty());
+    assert!(!data.path().join("vault").exists(), "the second engine made no vault");
+    drop(second);
+
+    first.send(Command::Unlock { passphrase: Zeroizing::new("a passphrase".into()) });
+    until(&mut first, &mut seen, "nobody signed in", |e| (*e == Event::SignedOut).then_some(())).await;
+    drop(first);
+
+    // Once the first has gone, PingCraft starts again on the same data.
+    let mut third = start(data.path());
+    until(&mut third, &mut seen, "the vault to ask for its passphrase", |e| matches!(e, Event::Locked { first: false }).then_some(())).await;
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn sign_in_read_send_restart_and_sign_out() {
     let server = server_or_skip!();

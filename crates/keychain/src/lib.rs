@@ -12,8 +12,10 @@ use std::sync::Mutex;
 
 use zeroize::Zeroizing;
 
+mod instance;
 mod vault;
 
+pub use instance::{InstanceLock, LOCK_FILE, LockError};
 pub use vault::{KdfParams, PassphraseVault, VaultError};
 
 /// The keychain "service" every PingCraft secret is filed under.
@@ -31,6 +33,9 @@ pub enum KeychainError {
     Corrupt(&'static str),
     /// The operating system could not supply random bytes.
     Random(String),
+    /// Keeping the secret would make the store bigger than it allows (the vault: 1 MiB, 4096 secrets). Nothing
+    /// was changed.
+    TooLarge,
 }
 
 impl std::fmt::Display for KeychainError {
@@ -39,6 +44,7 @@ impl std::fmt::Display for KeychainError {
             Self::Unavailable(why) => write!(f, "the system keychain is not available: {why}"),
             Self::Corrupt(what) => write!(f, "a PingCraft secret in the keychain is damaged: {what}"),
             Self::Random(why) => write!(f, "no random numbers from the system: {why}"),
+            Self::TooLarge => f.write_str("there is no room for another PingCraft secret"),
         }
     }
 }

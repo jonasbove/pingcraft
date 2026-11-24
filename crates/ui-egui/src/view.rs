@@ -46,6 +46,7 @@ pub fn header(ui: &mut Ui, state: &State) {
 fn status(state: &State, t: &Tokens) -> (String, Color32) {
     match (&state.screen, &state.connection) {
         (Screen::Locked { .. }, _) => (tl!("Locked").to_owned(), t.muted),
+        (Screen::AlreadyRunning, _) => (tl!("Already open").to_owned(), t.muted),
         (Screen::SignIn | Screen::Starting, _) => (tl!("Not signed in").to_owned(), t.muted),
         (Screen::Inbox, ConnectionState::Online) => (tl!("Connected").to_owned(), t.good),
         (Screen::Inbox, ConnectionState::Connecting) => (tl!("Connecting…").to_owned(), t.warn),
@@ -213,6 +214,27 @@ pub fn unlock(ctx: &egui::Context, state: &mut State, first: bool, out: &mut Out
         state.unlock.wrong = false;
         out.push(Command::Unlock { passphrase });
     }
+}
+
+/// Another PingCraft has this computer's data open. Two at once could lose the keys to the messages kept here, so
+/// this one stops before touching anything, and says so.
+pub fn already_running(ctx: &egui::Context) {
+    crate::widgets::sheet(
+        ctx,
+        "already-running",
+        520.0,
+        (tl!("PingCraft is already open"), tl!("On this computer")),
+        |ui| {
+            ui.label(RichText::new(tl!("Another PingCraft window is using your messages on this computer.")).size(14.0));
+            note(
+                ui,
+                tl!(
+                    "Only one can use them at a time, so that neither overwrites what the other keeps. Switch to the PingCraft that is already open, or close it and start PingCraft again."
+                ),
+            );
+        },
+        |_| {},
+    );
 }
 
 /// Signing out without the passphrase clears everything kept on this computer, so it is asked twice.
