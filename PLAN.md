@@ -92,7 +92,7 @@ desktop target.
 8. **Encryption:**
    - cross-signing, key backup, and the recovery key screen;
    - verifying another device by emoji (SAS).
-9. **UI:** sign-in, inbox and chat screens in `pingcraft-ui-egui`, with i18n and `egui_kittest` AccessKit tests.
+9. **UI:** the window and app icon from `design/assets/logo/`, the orchid theme from `design/tools/lib.py`, and the sign-in, inbox and chat screens in `pingcraft-ui-egui`, with i18n and `egui_kittest` AccessKit tests.
 10. **Packaging for every target in ADR 0009.** Releases are not published without the maintainer
     (house rule 9).
 11. **SQLite advisory RUSTSEC-2026-0459.** `matrix-sdk` 0.19.1 locks a SQLite binding older than the fix, and

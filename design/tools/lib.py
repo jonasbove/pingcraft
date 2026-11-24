@@ -15,13 +15,12 @@ FONT_FILES = ("Inter-Variable.ttf", "Archivo-Variable.ttf", "GeistMono-Variable.
 
 # --- tokens -------------------------------------------------------------------------------------
 # The Craft launcher theme (craft-launcher crates/ui-egui/src/theme.rs, as CraftCloud uses it) with
-# PingCraft's accent, a "ping" yellow. (dark, light). Alpha: ink at 60 % = 0x99, 15 % = 0x26, 40 % = 0x66
+# PingCraft's accent, the orchid of its logo tile (hue 291, between FilmCraft's violet and EffectCraft's pink,
+# away from every other Craft app's colour). (dark, light). Alpha: ink at 60 % = 0x99, 15 % = 0x26, 40 % = 0x66
 # (dark); light 62 % = 0x9e, 16 % = 0x29, 40 % = 0x66.
 #
-# The yellow is bright, so it is used two ways only (see README, "Accent"):
-#   * as a fill under on_accent text (unread counts, the wordmark mark), where it is 12.9:1 in both modes;
-#   * as text and thin marks through accent_ink (#ffd23f dark, #7a5c00 light), never `accent` itself
-#     on the light background, where it is 1.3:1.
+# `accent` (#b546c9) is a fill under white on_accent text (4.5:1: unread counts, the primary rule); text and thin
+# marks use accent_ink (#d58ae3 dark, 7.6:1; #86329a light, 6.3:1).
 THEME = {
     # Network tags (inbox rows, chat header): a thin outline and the name in the network's colour over a 12 % wash
     # of it. Our own shades that evoke each network, not their brand codes. Text on the wash: Telegram 6.1 / 6.0,
@@ -42,10 +41,10 @@ THEME = {
     "faint": ("#f2f1ee61", "#1010146b"),
     "line": ("#f2f1ee26", "#10101429"),
     "line_strong": ("#f2f1ee66", "#10101466"),
-    "accent": ("#ffd23f", "#ffd23f"),  # PingCraft ping yellow
-    "accent_ink": ("#ffd23f", "#7a5c00"),  # 12.9:1 on dark bg; 5.5:1 on light bg
-    "on_accent": ("#121316", "#121316"),  # 12.9:1 on accent
-    "accent_tint": ("#ffd23f17", "#ffd23f24"),  # sheet hero wash, own-message wash: 9 % / 14 %
+    "accent": ("#b546c9", "#b546c9"),  # PingCraft orchid (the logo tile)
+    "accent_ink": ("#d58ae3", "#86329a"),  # 7.6:1 on dark bg, 8.3:1 on sunken; 6.3:1 on light bg, 5.8:1 on sunken
+    "on_accent": ("#ffffff", "#ffffff"),  # 4.5:1 on accent
+    "accent_tint": ("#b546c91f", "#b546c91a"),  # sheet hero wash, own-message wash: 9 % / 14 %
     "invert_bg": ("#ffffff", "#101014"),
     "invert_fg": ("#0b0b0c", "#f2f1ee"),
     "good": ("#3fd6b8", "#0a7563"),
@@ -54,11 +53,11 @@ THEME = {
     "on_bad": ("#0b0b0c", "#ffffff"),
     "shadow": ("#0000008c", "#00000024"),
     "scrim": ("#000000aa", "#00000069"),
-    "focus": ("#ffd23f", "#7a5c00"),  # focus ring = accent_ink
+    "focus": ("#d58ae3", "#86329a"),  # focus ring = accent_ink
     "page": ("#0b0b0d", "#dcdbd6"),  # canvas behind the frames (not used inside the UI)
 }
 # Literal accent_ink per mode, for text ranges (FigCraft can't bind a variable to part of a text).
-ACCENT_INK = {False: "#ffd23f", True: "#7a5c00"}
+ACCENT_INK = {False: "#d58ae3", True: "#86329a"}
 
 # --- text styles --------------------------------------------------------------------------------
 
@@ -207,6 +206,10 @@ class Doc:
         if lines:
             self.R("text.maxLines", {"ids": [tid], "lines": lines})
         return tid
+
+    def image(self, parent, path, x, y, w, h, name="image", mode="fill"):
+        return self.R("image.place", {"path": path, "parent": parent, "x": x, "y": y, "width": w, "height": h,
+                                      "name": name, "mode": mode})["id"]
 
     def set(self, ids, **props):
         if not isinstance(ids, list):

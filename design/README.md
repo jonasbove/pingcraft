@@ -9,8 +9,11 @@ copies in `exports/2x/`.
 - **Layout language:** the Craft launcher's, as CraftCloud's v2 design uses it: dark `#121316`, 1 px hairlines,
   square corners, Archivo wide headlines with one accent word, Geist Mono caps for HUD labels, buttons and badges,
   Inter for body text, inverted primary buttons, mono meta lines with middots.
-- **Brand:** PingCraft's own accent, a "ping" yellow. There is no logo yet: `Brand/Mark` is a placeholder (a yellow
-  square with a dot and one ring), and every header and sheet uses that one component, so swapping it is one change.
+- **Brand:** the logo is an engraved dolphin on a rounded orchid tile (`assets/logo/`, see "Logo" below), and the
+  accent is that orchid, `#b546c9`. It was chosen against every Craft app's colour in craft-launcher's
+  `crates/core/catalog.toml`: hue 291 sits between FilmCraft's violet (258) and EffectCraft's pink (329). The first
+  draft's yellow was dropped because it was close to AniCraft (`#dac604`) and to `warn`. `Brand/Mark` is the logo at
+  256 px as an image fill; every header and sheet hero uses that one component.
 - **Words** follow `GLOSSARY.md`: network, account, chat, inbox, message, bridge, risk level. "Room" never appears.
 
 ## Pages and frames
@@ -92,8 +95,8 @@ copies in `exports/2x/`.
 | ink / ink_strong | #f2f1ee / #ffffff | #101014 / #000000 | |
 | muted / faint | ink 60 % / 38 % | ink 62 % / 42 % | muted 6.4:1 / 5.1:1 on bg; no text is drawn in faint |
 | line / line_strong | ink 15 % / 40 % | ink 16 % / 40 % | |
-| **accent** | **#ffd23f** | **#ffd23f** | only as a fill under on_accent text (unread counts, the mark) and the sheet's 2 px rule |
-| **accent_ink** | **#ffd23f** (12.9:1 on bg, 14.0:1 on sunken) | **#7a5c00** (5.5:1 on bg, 5.1:1 on sunken) | text, links, the headline accent word, selected-row and own-message rules, focus ring |
+| **accent** | **#b546c9** | **#b546c9** | a fill: unread counts under white on_accent (4.5:1), the sheet's 2 px rule, the logo tile |
+| **accent_ink** | **#d58ae3** (7.6:1 on bg, 8.3:1 on sunken) | **#86329a** (6.3:1 on bg, 5.8:1 on sunken) | text, links, the headline accent word, selected-row and own-message rules, focus ring |
 | accent_tint | accent at 9 % | accent at 14 % | sheet heroes and your own messages; ink on it is 13.7:1 (dark), 16.2:1 (light) |
 | on_accent | #121316 | #121316 | 12.9:1 on accent |
 | invert_bg / invert_fg | #ffffff / #0b0b0c | #101014 / #f2f1ee | primary buttons, selected cells |
@@ -102,15 +105,13 @@ copies in `exports/2x/`.
 
 Contrast is WCAG 2.x, computed from the hex values (alpha tokens composited on bg).
 
-**Accent caveats** (worth a decision):
+**Accent notes:**
 
-- **The yellow on the light background is 1.3:1**, so `accent` is never used for thin marks or text in light mode;
-  those use accent_ink (#7a5c00). The sheet hero's 2 px accent rule is the one exception and would be faint in light mode (no light sheet is drawn
-  yet).
-- **The yellow is close to `warn`:** #ffd23f against #ffc14d is 1.1:1, and the light accent_ink #7a5c00 against light
-  warn #8a5800 is 1.0:1. They must never carry different meanings side by side. Here, risk levels and message states
-  are always said in words (MEDIUM, Sending…, Not sent), never by colour alone. The M3 frames do show the accent
-  Preview tag and a MEDIUM badge (warn) on one screen, told apart only by their words. If PingCraft keeps the yellow, the theme may want a more orange `warn`.
+- `accent` (#b546c9) is 4.0:1 against both backgrounds, so it is used as a fill (unread counts, the sheet hero's
+  2 px rule, the logo tile) and under white text (4.5:1), not for thin marks or small text; those use accent_ink.
+- The orchid is far from `warn`, `good` and `bad`, so message states and risk levels no longer risk being confused
+  with the accent. They are still always said in words as well.
+- Discord's tag colour (`net_discord`, blue-violet, hue 238) is the nearest network colour; the names keep them apart.
 
 ## Components (page "Components")
 
@@ -177,7 +178,7 @@ owner, MIT OR Apache-2.0), with CraftCloud's app list, logo and server facts rem
   rounded bubble.
 - **Network names appear only as the names of networks.** No network logos, icons or colours are used; the tag is
   text in the same neutral style for every network.
-- **The headline accent word is a literal per mode** (#ffd23f / #7a5c00), because FigCraft can't bind a variable to
+- **The headline accent word is a literal per mode** (#d58ae3 / #86329a), because FigCraft can't bind a variable to
   part of a text; those headlines don't follow a theme switch.
 - **The failed message is a detached instance**: FigCraft doesn't allow adding layers inside an instance.
 - **The overview PNGs** get a page-coloured backdrop at export time (a multi-layer export is transparent); the backdrop
@@ -206,5 +207,22 @@ following (not checked against 0.18.1, so they may not be differences):
 3. `sizingH: fill` on a layer whose parent has no auto layout is an error ("Fill needs an auto layout parent").
 4. Layers can't be added inside an instance; `component.detach` first.
 5. `text.maxLines {lines: 1}` on fixed-width text truncates with an ellipsis, which the chat rows use.
-6. `node.find {name}` matches substrings and nested instances share names (`Brand/Mark` has a "Dot" layer, so the
-   header's status dot is called "Status dot"); `Doc.find` filters exact names.
+6. `node.find {name}` matches substrings and nested instances share names (the first placeholder mark had a "Dot"
+   layer, so the header's status dot is called "Status dot"); `Doc.find` filters exact names.
+
+## Logo
+
+`assets/logo/pingcraft-logo.pcraft` is a PhotoCraft document, made like CraftCloud's logo PSD: a rounded-rectangle
+shape layer **Tile** (1600 px, corner radius 224, #b546c9) and the dolphin as a pixel layer **Dolphin** (the 2048 px
+cut-out at 76 %, centred), clipped to the tile. `tools/logo.py` builds it with `photocraft-cli` and exports
+`pingcraft-logo-{16,32,48,64,128,256,512,1024,1600}.png`, `pingcraft.ico` (16 to 256), `pingcraft.icns` (PNG
+chunks, 16 to 1024 and the @2x sizes) and `pingcraft-logo.webp`.
+
+The drawing came as black and white ink on a flat blue (#4da3c7). `logo.py --source` cuts it out by how much blue
+each pixel has (the ink is grey, so its coverage is one minus its blueness) and un-mixes the blue from the edges, so
+no blue fringe is left; the result is `assets/logo/pingcraft-dolphin.png`. The original drawing was supplied by the
+maintainer; its origin and licence are recorded in `ATTRIBUTION.md` (to be confirmed).
+
+```sh
+python3 -I -B design/tools/logo.py --photocraft /path/to/photocraft-cli [--source drawing.png]
+```

@@ -6,6 +6,9 @@ messages, day divider, network tag, unread count, symbol tile) are PingCraft's o
 """
 
 import math
+import os
+
+LOGO_256 = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "logo", "pingcraft-logo-256.png")
 
 from lib import box_stroke, hstack, hud, side_stroke, spacer, vstack
 
@@ -74,15 +77,13 @@ class Library:
 
     # --- brand ---------------------------------------------------------------------------------
     def brand(self):
-        """Placeholder mark and the text wordmark; swap Brand/Mark for the real logo when it exists."""
+        """The logo (the engraved dolphin on the orchid tile, assets/logo) and the text wordmark."""
         d = self.d
         y = self.row(64)
-        c = d.comp("Brand/Mark", 0, y, 64, 64, fill="accent", clip=True)
-        # A "ping": a dot with one ring, cut from the yellow square.
-        d.node("ellipse", c, "Ring", 14, 14, 36, 36, fill=None, stroke="on_accent", strokeWeight=5)
-        d.node("ellipse", c, "Dot", 25, 25, 14, 14, fill="on_accent")
-        d.set(c, description="Placeholder mark: a yellow square with a ping. Replace with the PingCraft logo; "
-                             "every header and sheet hero uses this component.")
+        c = d.comp("Brand/Mark", 0, y, 64, 64, fill=None, clip=False)
+        d.image(c, LOGO_256, 0, 0, 64, 64, name="Logo image")
+        d.set(c, description="PingCraft logo: the dolphin on the orchid tile. Built by tools/logo.py from "
+                             "assets/logo/pingcraft-logo.pcraft; every header and sheet hero uses this component.")
         w = d.comp("Brand/Wordmark", 120, y + 20, 10, 10, layout="horizontal", sizingH="hug", sizingV="hug")
         d.text(w, "Ping", "Display/Wordmark 18", "ink_strong", name="Ping")
         d.text(w, "Craft", "Display/Wordmark 18", "accent_ink", name="Craft")
@@ -110,7 +111,7 @@ class Library:
                 if state == "Disabled":
                     d.set(c, opacity=0.5)
                 if state == "Focus":
-                    d.set(c, strokes=[{"type": "solid", "color": "#ffd23f"}], strokeWeight=2, strokeAlign="outside")
+                    d.set(c, strokes=[{"type": "solid", "color": "#d58ae3"}], strokeWeight=2, strokeAlign="outside")
                     d.bind_stroke(c, "focus")
                 t = d.text(c, "Retry", "Button/11", k, name="Label")
                 d.prop(c, t, "Label")
@@ -153,7 +154,7 @@ class Library:
                    padding=[0, 5, 0, 5], mainAlign="center", crossAlign="center", sizingH="hug", sizingV="fixed")
         t = d.text(c, "Telegram", "Badge/10", "muted", name="Network")
         d.prop(c, t, "Network")
-        # Unread count: the one place the yellow is a fill (on_accent text, 12.9:1).
+        # Unread count: the accent as a fill under white on_accent text (4.5:1).
         c = d.comp("Unread count", 940, y + 1, 18, 18, fill="accent", layout="horizontal", padding=[0, 6, 0, 6],
                    mainAlign="center", crossAlign="center", sizingH="hug", sizingV="fixed")
         t = d.text(c, "3", "Badge/10", "on_accent", name="Count")
@@ -214,7 +215,7 @@ class Library:
             c = d.comp(f"State={state}", i * 300, y, 260, 34, fill="sunken", stroke="line", layout="horizontal",
                        padding=[0, 10, 0, 10], gap=1, crossAlign="center", sizingV="fixed")
             if state == "Focus":
-                d.set(c, strokes=[{"type": "solid", "color": "#ffd23f"}], strokeWeight=2)
+                d.set(c, strokes=[{"type": "solid", "color": "#d58ae3"}], strokeWeight=2)
                 d.bind_stroke(c, "focus")
             t = d.text(c, "example.org", "Body/14", "ink", name="Value")
             d.prop(c, t, "Value")
