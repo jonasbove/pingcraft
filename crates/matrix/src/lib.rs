@@ -6,6 +6,7 @@ pub use pingcraft_core as core;
 
 mod bridge_info;
 pub mod connection;
+pub mod encryption;
 pub mod inbox;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod session;

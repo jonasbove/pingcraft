@@ -103,9 +103,16 @@ desktop target.
 7. **Done.** **Chat:** the timeline, reading and sending text: `matrix-sdk-ui`'s `Timeline` mapped onto core messages
    (with "waiting for the key" for undecryptable ones and the send state), a failed message sent again, and older
    messages loaded back to the start of the chat. Tested against tuwunel.
-8. **Encryption:**
+8. **Done in `pingcraft-matrix`; the screens are ticket 9's.** **Encryption:**
    - cross-signing, key backup, and the recovery key screen;
    - verifying another device by emoji (SAS).
+
+   The first sign-in sets up cross-signing (with the password when the server asks for it) and a key backup with
+   a new recovery key; a device that finds an existing backup asks for its recovery key and never replaces it. A
+   new device can be verified from an old one by comparing symbols, in both directions. The core model
+   (`pingcraft_core::encryption`) is what the interface renders. Tested against tuwunel with fresh users. Open,
+   for the maintainer: what to offer when the recovery key is lost (resetting it loses the encrypted history);
+   an account with a key backup but no secret storage (made by another client); verifying other people; QR codes.
 9. **UI:** the window and app icon from `design/assets/logo/`, the orchid theme from `design/tools/lib.py`, and the sign-in, inbox and chat screens in `pingcraft-ui-egui`, with i18n and `egui_kittest` AccessKit tests.
 10. **Packaging for every target in ADR 0009.** Releases are not published without the maintainer
     (house rule 9).

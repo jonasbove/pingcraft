@@ -2,7 +2,9 @@
 //!
 //! - `PINGCRAFT_TEST_HOMESERVER`: its address;
 //! - `PINGCRAFT_TEST_USER` and `PINGCRAFT_TEST_PASSWORD`: a test user;
-//! - `PINGCRAFT_TEST_OTHER_USER` and `PINGCRAFT_TEST_OTHER_PASSWORD`: a second test user, for chats between two.
+//! - `PINGCRAFT_TEST_OTHER_USER` and `PINGCRAFT_TEST_OTHER_PASSWORD`: a second test user, for chats between two;
+//! - `PINGCRAFT_TEST_REGISTRATION_TOKEN` (optional): the server's registration token, for tests that need a new user
+//!   each run (encryption, since a recovery key stays with an account once set up).
 //!
 //! Without them, each test says it was skipped and passes. Run them one at a time (`--test-threads 1`): they share
 //! the users. Each test makes its own rooms, so a server can be reused between runs.
@@ -92,6 +94,25 @@ pub async fn chat_until<T>(
         }
     })
     .await
+}
+
+/// Registers a new user with the server's registration token, and returns its name and password. `None` when no
+/// token is given.
+pub async fn register_fresh_user(homeserver: &str) -> Option<(String, String)> {
+    let token = std::env::var("PINGCRAFT_TEST_REGISTRATION_TOKEN").ok()?;
+    let id = new_profile_id().unwrap();
+    let (user, password) = (format!("test-{}", &id[..10]), format!("pw-{}", &id[10..]));
+    let url = format!("{}/_matrix/client/v3/register", homeserver.trim_end_matches('/'));
+    let http = matrix_sdk::reqwest::Client::new();
+    let post = |body: serde_json::Value| http.post(&url).header("content-type", "application/json").body(body.to_string()).send();
+    // The first request only starts the interactive auth and gives its session.
+    let started: String = post(json!({"username": user, "password": password})).await.unwrap().text().await.unwrap();
+    let started: serde_json::Value = serde_json::from_str(&started).unwrap();
+    let session = started["session"].as_str().expect("the server offers interactive registration").to_owned();
+    let auth = json!({"type": "m.login.registration_token", "token": token, "session": session});
+    let done = post(json!({"username": user, "password": password, "inhibit_login": true, "auth": auth})).await.unwrap();
+    assert!(done.status().is_success(), "registration failed: {}", done.status());
+    Some((user, password))
 }
 
 /// A name no other test run has used.

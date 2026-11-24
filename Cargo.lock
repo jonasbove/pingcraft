@@ -2936,6 +2936,9 @@ version = "0.1.0"
 [[package]]
 name = "pingcraft-core"
 version = "0.1.0"
+dependencies = [
+ "zeroize",
+]
 
 [[package]]
 name = "pingcraft-keychain"

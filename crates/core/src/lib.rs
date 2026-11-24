@@ -5,6 +5,7 @@
 //! bodies) is held as given; nothing here trusts it to be short or well formed.
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable))]
 
+pub mod encryption;
 mod inbox;
 
 pub use inbox::{Filter, Inbox, InboxChange};
