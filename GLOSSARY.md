@@ -31,10 +31,6 @@ _Avoid_: room, conversation, thread, channel
 All of a user's chats from all their accounts, together in one list.
 _Avoid_: unified inbox, feed, chat list
 
-**Message**:
-One thing sent in a chat: text, media, or a reaction to another message.
-_Avoid_: event, post
-
 ## Server side
 
 **Bridge**:
@@ -42,7 +38,7 @@ The server program that connects one network, carrying messages between it and t
 _Avoid_: connector, puppet, plugin
 
 **Bridge provider**:
-The family a bridge comes from, such as mautrix. Each network's bridge can come from a different provider.
+The family a bridge comes from, such as mautrix.
 _Avoid_: bridge vendor, backend
 
 **Risk level**:

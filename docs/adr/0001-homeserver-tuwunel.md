@@ -26,9 +26,10 @@ before anything builds on it.
 - **continuwuity:** the original candidate. Bridges can only be registered with an admin-room
   command, and it does not forward to-device messages to appservices, so bridges must use
   sync-based encryption. It is the recorded fallback.
-- **Conduit:** maintained but without MSC4190, which encrypted mautrix bridges need.
-- **Synapse:** the reference server and the only one mautrix tests against, but AGPL-3.0 and
-  Python, with Postgres; heavier on a small machine.
+- **Conduit:** maintained, but MSC4190 support was not found in its source. MSC4190 is needed for encrypted
+  bridges when the homeserver uses OAuth-based login.
+- **Synapse:** the reference server and the only one mautrix tests against, but AGPL-3.0, Python, and
+  Postgres for production use. Memory use on a small machine was not measured for any candidate.
 - **Dendrite:** security fixes only.
 
 ## Consequences

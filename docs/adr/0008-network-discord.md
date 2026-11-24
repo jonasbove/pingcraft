@@ -5,8 +5,9 @@
 ## Context
 
 Discord is bridged by mautrix-discord (AGPL-3.0, Go). Its latest release, v0.7.7 (2026-08-16), is still on the
-old bridge framework; the bridgev2 rewrite lives on the unreleased `megadiscord` branch. Without bridgev2 it has
-no provisioning API, so PingCraft could not connect it from inside the app (ADR 0003).
+old bridge framework; the bridgev2 rewrite lives on the unreleased `megadiscord` branch. Its current release has
+only an older, Discord-specific provisioning API (`/v1/login/qr`, `/v1/login/token`, ...), not the bridgev2 one,
+so PingCraft's bridge provider (ADR 0003) could not connect it from inside the app.
 
 It logs in three ways: a QR code scanned in the Discord mobile app (fails when Discord asks for a CAPTCHA), a
 user token copied from a browser, or a bot token. Discord forbids automating a user account outside its bot API

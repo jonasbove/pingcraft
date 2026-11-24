@@ -6,9 +6,9 @@ Each ticket below is sized for one agent session. Tickets marked **(maintainer)*
 maintainer can give: a test account, an approval, or a change in another repository. Never use real accounts or
 phone numbers; bridge tests use test accounts the maintainer provides.
 
-## Phase 0: research and decisions (done)
+## Phase 0: research and decisions (awaiting maintainer review)
 
-Decided with the maintainer on 2026-11-24:
+Discussed with the maintainer on 2026-11-24:
 
 | ADR | Decision |
 |---|---|
@@ -79,8 +79,7 @@ desktop target.
 4. **`pingcraft-core` model:** network, account, chat, inbox and message, with tests.
 5. **Sign-in:**
    - Password sign-in and session restore in `pingcraft-matrix`.
-   - Stores encrypted with a key kept in the OS keychain, falling back to a passphrase, never a file
-     (ADR 0004).
+   - Stores encrypted with a key kept in the OS keychain, never a plain file (ADR 0004).
 6. **Inbox:** `SyncService` and `RoomListService` mapped onto the core model.
 7. **Chat:** the timeline, reading and sending text.
 8. **Encryption:**
@@ -95,15 +94,18 @@ desktop target.
 Goal: a user connects Telegram, Signal and WhatsApp accounts from PingCraft, after seeing each network's risk.
 
 1. **The bridge provider interface** in `pingcraft-core` (ADR 0003).
-2. **The mautrix bridge provider:** uses the bridgev2 provisioning API, authenticated with a Matrix OpenID token.
-3. **Network of a chat:** read from the bridge-info room state, and shown in the inbox.
-4. **Risk screen:** shown before connecting, with an explicit confirmation. The text is written in our own words
+2. **Spike: OpenID with federation off.** Does tuwunel serve the OpenID userinfo endpoint the bridges use to
+   check a token when federation is off? Stop and ask the maintainer if it does not (ADR 0003).
+3. **Route each bridge's `/_matrix/provision`** through the reverse proxy, and document it.
+4. **The mautrix bridge provider:** uses the bridgev2 provisioning API, authenticated with a Matrix OpenID token.
+5. **Network of a chat:** read from the bridge-info room state, and shown in the inbox.
+6. **Risk screen:** shown before connecting, with an explicit confirmation. The text is written in our own words
    from ADRs 0005–0008.
-5. **Connect Telegram** from inside PingCraft. **(maintainer: test account)**
-6. **Signal:** bridge in compose, and connected from PingCraft. **(maintainer: test account)**
-7. **WhatsApp:** bridge in compose, connected from PingCraft, with the bridge's "phone offline" warning shown in
+7. **Connect Telegram** from inside PingCraft. **(maintainer: test account)**
+8. **Signal:** bridge in compose, and connected from PingCraft. **(maintainer: test account)**
+9. **WhatsApp:** bridge in compose, connected from PingCraft, with the bridge's "phone offline" warning shown in
    the inbox. **(maintainer: test account)**
-8. **Accounts screen:** list a user's accounts and remove one.
+10. **Accounts screen:** list a user's accounts and remove one.
 
 ## Milestone 4: web build and the CraftCloud option
 
