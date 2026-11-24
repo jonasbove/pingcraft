@@ -3,8 +3,9 @@
 Words follow [`GLOSSARY.md`](GLOSSARY.md). Decisions live in [`docs/adr/`](docs/adr/).
 
 Each ticket below is sized for one agent session. Tickets marked **(maintainer)** need something only the
-maintainer can give: a test account, an approval, or a change in another repository. Never use real accounts or
-phone numbers; bridge tests use test accounts the maintainer provides.
+maintainer can give: an account to test with, an approval, or a change in another repository. Bridge tests use
+only accounts the maintainer provides for them; never another real account or phone number. Test notes, logs and
+ADR addenda never name the account, its number or its chats.
 
 ## Phase 0: research and decisions (awaiting maintainer review)
 
@@ -38,7 +39,7 @@ Milestone 1 has no Rust code. Its gate is the end-to-end check below, written up
 Goal: tuwunel and mautrix-telegram, with encryption, in one compose project, checked end to end from a stock
 Matrix client.
 
-1. **Spike (maintainer: a Telegram test account and an `api_id`).** Run tuwunel and mautrix-telegram with
+1. **Spike (maintainer: a Telegram account and an `api_id`).** Run tuwunel and mautrix-telegram with
    Matrix-side encryption required. Log in to the bridge, then send and receive text both ways from a stock
    Matrix client. Measure idle and active memory of tuwunel and the bridge (`docker stats`), then stop the
    containers. Record the findings as an addendum to ADR 0001, and stop if tuwunel cannot do it.
@@ -106,10 +107,10 @@ Goal: a user connects Telegram, Signal and WhatsApp accounts from PingCraft, aft
 5. **Network of a chat:** read from the bridge-info room state, and shown in the inbox.
 6. **Risk screen:** shown before connecting, with an explicit confirmation. The text is written in our own words
    from ADRs 0005–0008.
-7. **Connect Telegram** from inside PingCraft. **(maintainer: test account)**
-8. **Signal:** bridge in compose, and connected from PingCraft. **(maintainer: test account)**
+7. **Connect Telegram** from inside PingCraft. **(maintainer: an account)**
+8. **Signal:** bridge in compose, and connected from PingCraft. **(maintainer: an account)**
 9. **WhatsApp:** bridge in compose, connected from PingCraft, with the bridge's "phone offline" warning shown in
-   the inbox. **(maintainer: test account)**
+   the inbox. **(maintainer: an account)**
 10. **Accounts screen:** list a user's accounts and remove one.
 
 ## Milestone 4: web build and the CraftCloud option
@@ -131,7 +132,7 @@ Starts when mautrix-discord releases its bridgev2 rewrite (ADR 0008).
 
 1. Discord bridge in compose.
 2. Bot login as the default, connected from PingCraft.
-3. User login behind the high-risk warning. **(maintainer: test account)**
+3. User login behind the high-risk warning. **(maintainer: an account)**
 
 ## Milestone 6: polish
 
