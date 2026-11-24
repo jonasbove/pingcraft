@@ -351,3 +351,19 @@ fn a_chat_row_keeps_its_preview_inside_the_row() {
         assert!(r.y0 >= row.y0 && r.y1 <= row.y1, "{label} spills out of its row: {r:?} vs {row:?}");
     }
 }
+
+#[test]
+fn the_chat_header_centres_the_name_and_network_on_the_avatar() {
+    let fake = Fake::default();
+    let mut h = signed_in(&fake);
+    h.get_by_label_contains("Book club, on Telegram").click();
+    h.run();
+    // The encryption badge is centred in the header by its layout, so it marks the avatar's centre line.
+    let badge = h.get_by_label("Encrypted · via your bridge").accesskit_node().raw_bounds().unwrap();
+    let name =
+        h.get_all_by_label("Book club").map(|n| n.accesskit_node().raw_bounds().unwrap()).find(|r| r.y0 < badge.y1 + 20.0 && r.x0 > 400.0).unwrap();
+    let tag = h.get_all_by_label("TELEGRAM").map(|n| n.accesskit_node().raw_bounds().unwrap()).find(|r| r.x0 > 400.0).unwrap();
+    let block = (name.y0 + tag.y1) / 2.0;
+    let line = (badge.y0 + badge.y1) / 2.0;
+    assert!((block - line).abs() <= 2.0, "name and tag centred at {block}, the header's centre line is {line}");
+}

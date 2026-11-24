@@ -468,6 +468,11 @@ fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, out: &mut Ou
         ui.horizontal_centered(|ui| {
             avatar(ui, &name, 36.0);
             ui.vertical(|ui| {
+                // Centre the name and tag on the avatar: a vertical block in a centred row starts at the top.
+                let name_h = ui.fonts_mut(|f| f.row_height(&egui::FontId::proportional(16.0)));
+                let tag_h = ui.fonts_mut(|f| f.row_height(&egui::FontId::monospace(10.0))) + 2.0;
+                let height = if chat.is_some() { name_h + ui.spacing().item_spacing.y + tag_h } else { name_h };
+                ui.add_space(((ui.available_height() - height) / 2.0).max(0.0));
                 ui.label(RichText::new(&name).size(16.0).strong().color(t.ink_strong));
                 if let Some(chat) = chat {
                     network_tag(ui, &chat.network);
