@@ -533,8 +533,13 @@ fn step_sheet(
     }
     if submit.get() && ready {
         let mut answers = Answers::new();
-        for (id, value) in &typed {
-            answers.set(id, Zeroizing::new(value.trim().to_owned()));
+        if let LoginStep::Ask { fields, .. } = &step {
+            for f in fields {
+                let Some(value) = typed.get(&f.id) else { continue };
+                // Stray spaces around a phone number or a code are dropped; a password is sent exactly as typed.
+                let value = if f.kind.is_secret() { value.as_str() } else { value.trim() };
+                answers.set(&f.id, Zeroizing::new(value.to_owned()));
+            }
         }
         out.push(Command::AnswerLogin { step: at, answers });
         return Some(Connect::Step { step, typed, sent: true });

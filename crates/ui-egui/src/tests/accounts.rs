@@ -248,3 +248,34 @@ fn the_cards_and_the_risk_sheet_fit_the_window() {
     let title = h.get_by_label("Before you connect WhatsApp").accesskit_node().raw_bounds().unwrap();
     assert!(title.y0 >= 0.0 && go.y1 <= 760.0, "the whole risk sheet is in the window: {title:?} to {go:?}");
 }
+
+#[test]
+fn a_password_is_sent_as_typed_and_never_shown_by_debug() {
+    let fake = Fake::default();
+    let mut h = on_accounts(&fake, vec![]);
+    accept_risk(&mut h, "Telegram");
+    h.get_by_label("PHONE NUMBER").click();
+    h.run();
+    fake.take();
+    let field = |id: &str, kind: FieldKind, name: &str| InputField {
+        id: id.into(),
+        kind,
+        name: name.into(),
+        description: String::new(),
+        default: None,
+        optional: false,
+    };
+    let fields = vec![field("code", FieldKind::Code, "Code"), field("password", FieldKind::Password, "Two-step password")];
+    fake.tell([Event::Login(LoginStep::Ask { step: step_ref("telegram", "2fa"), instructions: String::new(), fields, can_cancel: true })]);
+    h.run();
+    type_into(&mut h, "CODE", " 12345 ");
+    type_into(&mut h, "TWO-STEP PASSWORD", " spaces count ");
+    let shown = format!("{:?}", h.state().state.accounts);
+    assert!(!shown.contains("12345") && !shown.contains("spaces count"), "{shown}");
+    h.get_by_label("CONTINUE").click();
+    h.run();
+    let sent = fake.take();
+    let [Command::AnswerLogin { answers, .. }] = &sent[..] else { panic!("{sent:?}") };
+    assert_eq!(answers.get("code"), Some("12345"), "spaces around a code are dropped");
+    assert_eq!(answers.get("password"), Some(" spaces count "), "a password is sent exactly as typed");
+}
