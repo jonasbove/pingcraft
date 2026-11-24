@@ -6,6 +6,7 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable))]
 
 pub mod app;
+pub mod bridge;
 pub mod encryption;
 mod inbox;
 
@@ -60,7 +61,8 @@ pub enum ConnectionState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub struct Timestamp(pub u64);
 
-/// Identifies one account: a login on one network.
+/// Identifies one account: a login on one network. It is the bridge's own ID for the login, so it is unique within
+/// its network only (two bridges may both use a phone number); always keep it with its [`Network`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct AccountId(pub String);
 

@@ -162,7 +162,9 @@ desktop target.
 
 Goal: a user connects Telegram, Signal and WhatsApp accounts from PingCraft, after seeing each network's risk.
 
-1. **The bridge provider interface** in `pingcraft-core` (ADR 0003).
+1. **Done.** **The bridge provider interface** in `pingcraft-core` (ADR 0003): `pingcraft_core::bridge`, with
+   networks and their login flows, the login steps (show and wait, ask, not supported yet, done), accounts and
+   removing one, behind `dyn BridgeProvider`.
 2. **Done (2026-11-24), see ADR 0003's addendum.** **Spike: OpenID with federation off.** Does tuwunel serve the OpenID userinfo endpoint the bridges use to
    check a token when federation is off? If not, make only that endpoint reachable to the bridges over the
    internal compose network (ADR 0003).
