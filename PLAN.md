@@ -91,7 +91,9 @@ desktop target.
    sync: name, unread count, last-message preview, encryption, and the network from bridge-info state (a second,
    small sliding sync connection asks for it, since the room list's required state is fixed). Tested against
    tuwunel. Still open: `Chat.account` is always `None` until milestone 3's bridge provider knows the accounts.
-7. **Chat:** the timeline, reading and sending text.
+7. **Done.** **Chat:** the timeline, reading and sending text: `matrix-sdk-ui`'s `Timeline` mapped onto core messages
+   (with "waiting for the key" for undecryptable ones and the send state), a failed message sent again, and older
+   messages loaded back to the start of the chat. Tested against tuwunel.
 8. **Encryption:**
    - cross-signing, key backup, and the recovery key screen;
    - verifying another device by emoji (SAS).

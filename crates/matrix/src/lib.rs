@@ -9,9 +9,11 @@ pub mod connection;
 pub mod inbox;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod session;
+pub mod timeline;
 
 pub use connection::{Connection, SyncError};
 pub use inbox::InboxFeed;
+pub use timeline::{ChatTimeline, TimelineError};
 
 /// The SDK version this adapter is written against, for the about screen and bug reports.
 pub const MATRIX_SDK_VERSION: &str = "0.19.1";

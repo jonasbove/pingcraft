@@ -76,6 +76,24 @@ impl Device {
     }
 }
 
+/// Waits until a chat's list of messages passes `check`, and returns what it found.
+pub async fn chat_until<T>(
+    what: &str,
+    chat: &mut pingcraft_matrix::ChatTimeline,
+    last: &mut Vec<pingcraft_core::Message>,
+    check: impl Fn(&[pingcraft_core::Message]) -> Option<T>,
+) -> T {
+    within(what, async {
+        loop {
+            if let Some(found) = check(last) {
+                return found;
+            }
+            *last = chat.next().await.expect("the chat closed");
+        }
+    })
+    .await
+}
+
 /// A name no other test run has used.
 pub fn unique(prefix: &str) -> String {
     format!("{prefix} {}", &new_profile_id().unwrap()[..8])

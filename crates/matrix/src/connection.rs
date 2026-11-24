@@ -43,6 +43,10 @@ impl Connection {
         &self.client
     }
 
+    pub(crate) fn sync_service(&self) -> &SyncService {
+        &self.sync
+    }
+
     /// Where the sync is now. Cheap; the interface can ask every frame.
     pub fn state(&self) -> ConnectionState {
         match self.sync.state().get() {
