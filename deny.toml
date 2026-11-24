@@ -13,7 +13,7 @@ ignore = [
     # crafted `-wal` file. matrix-sdk 0.19.1 locks rusqlite 0.40 and so libsqlite3-sys 0.38, before the fix
     # (0.39). PingCraft does not enable the `bundled` feature: desktop builds link the system SQLite, which must be
     # 3.54.0 or newer to be safe. Exploiting it needs write access to the user's data folder. Goes when matrix-sdk
-    # moves to rusqlite 0.41 or newer. Windows packaging must not ship a bundled SQLite older than 3.54.0.
+    # moves to rusqlite 0.41 or newer (ignore accepted by the maintainer, 2026-11-24; PLAN.md M2 ticket 11). Windows packaging must not ship a bundled SQLite older than 3.54.0.
     { id = "RUSTSEC-2026-0459", reason = "libsqlite3-sys bundled SQLite < 3.54; not bundled here; waits on matrix-sdk" },
     # Unmaintained, no fixed version; they come in through matrix-sdk-ui and go when it drops them.
     { id = "RUSTSEC-2026-0319", reason = "anymap2: via matrix-sdk-ui" },
