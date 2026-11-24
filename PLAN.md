@@ -149,6 +149,15 @@ Starts when mautrix-discord releases its bridgev2 rewrite (ADR 0008).
 
 ## Later, not yet planned
 
+- **Network colours and the network filter in the inbox** (maintainer, 2026-11-24; in the design as
+  `inbox-networks`, not built). Each network's tag gets its own colour, and a row of toggles hides or shows each
+  network's chats. Open questions before it becomes tickets, to grill the maintainer on:
+  - whether hiding a network is remembered per device, per user, or only for the session;
+  - whether hidden networks still count towards unread totals and notifications;
+  - one toggle per network, or per account (two Telegram accounts);
+  - how the toggles behave with many networks, and with colour-blind users (the names stay, so colour is never the
+    only cue).
+
 - **MailCraft integration** (raised by the maintainer, 2026-11-24). What it means is still open: for example,
   mail as one more network in the inbox, or PingCraft chats shown in MailCraft. It needs its own ADR before any
   ticket.

@@ -23,6 +23,17 @@ FONT_FILES = ("Inter-Variable.ttf", "Archivo-Variable.ttf", "GeistMono-Variable.
 #   * as text and thin marks through accent_ink (#ffd23f dark, #7a5c00 light), never `accent` itself
 #     on the light background, where it is 1.3:1.
 THEME = {
+    # Network tags (inbox rows, chat header): a thin outline and the name in the network's colour over a 12 % wash
+    # of it. Our own shades that evoke each network, not their brand codes. Text on the wash: Telegram 6.1 / 6.0,
+    # Signal 6.2 / 4.9, Discord 6.8 / 4.9, WhatsApp 7.0 / 4.6 (dark / light).
+    "net_telegram": ("#7aa6d4", "#2b5278"),
+    "net_signal": ("#6ea3ff", "#1c56c4"),
+    "net_discord": ("#a3a6ff", "#4a4ec8"),
+    "net_whatsapp": ("#58c486", "#17703c"),
+    "net_telegram_wash": ("#7aa6d41f", "#2b52781f"),
+    "net_signal_wash": ("#6ea3ff1f", "#1c56c41f"),
+    "net_discord_wash": ("#a3a6ff1f", "#4a4ec81f"),
+    "net_whatsapp_wash": ("#58c4861f", "#17703c1f"),
     "bg": ("#121316", "#f2f1ee"),
     "sunken": ("#060607", "#e9e8e4"),
     "ink": ("#f2f1ee", "#101014"),

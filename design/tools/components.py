@@ -147,7 +147,8 @@ class Library:
             d.prop(c, t, "Label")
             ids.append(c)
         d.variants(ids, "Status badge", 0, y)
-        # Network tag: the network's NAME only (no logos, no brand colours), 18 tall.
+        # Network tag: the network's NAME, 18 tall. Neutral here; screens.tint_tag gives it the network's colour
+        # (outline, name, faint wash) (no logos, and our own shades rather than the networks' brand codes).
         c = d.comp("Network tag", 800, y + 1, 60, 18, fill=None, stroke="line_strong", layout="horizontal",
                    padding=[0, 5, 0, 5], mainAlign="center", crossAlign="center", sizingH="hug", sizingV="fixed")
         t = d.text(c, "Telegram", "Badge/10", "muted", name="Network")

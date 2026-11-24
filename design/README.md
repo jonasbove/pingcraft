@@ -19,7 +19,7 @@ copies in `exports/2x/`.
 |---|---|
 | Tokens & type | text styles, colour tokens (dark, light); `exports/_tokens.png` |
 | Components | the library below; `exports/_components.png` |
-| **M2 · Client** (1200×760 window) | `sign-in`, `recovery-key`, `inbox`, `inbox-light`, `inbox-empty`, `chat-states`, `verify-device`, `unlock` |
+| **M2 · Client** (1200×760 window) | `sign-in`, `recovery-key`, `inbox`, `inbox-light`, `inbox-networks`, `inbox-empty`, `chat-states`, `verify-device`, `unlock` |
 | **M3 · Preview** (1200×760 window) | `connect-network`, `connect-risk` (both carry the "Preview · M3" tag) |
 
 `inbox.png` is the main screen.
@@ -43,8 +43,15 @@ copies in `exports/2x/`.
     an ellipsis); the network tag; the time (Mono 12, a fixed 48 px right-aligned slot so the tags line up); the last
     message (truncated); and the unread count. The open chat has been read, so it has no count. Unread rows have the name in Medium and the time and preview in ink;
     read rows are muted. The open chat is sunken with a 2 px accent_ink rule on the left.
-  - **Network tag:** the network's name only (TELEGRAM, SIGNAL, WHATSAPP, MATRIX) in Badge 10 inside a line_strong
-    hairline. No network logos and no network colours.
+  - **Network tag:** the network's name (TELEGRAM, SIGNAL, WHATSAPP, MATRIX) in Badge 10, with a 1 px outline and the
+    name in the network's colour over a 12 % wash of it (tokens `net_telegram`, `net_signal`, `net_discord`,
+    `net_whatsapp` and their `_wash`). Matrix stays the neutral line_strong outline. The shades are our own, chosen to
+    evoke each network (Telegram a deep blue, Signal a bright blue, Discord a blue-violet, WhatsApp a green), not the
+    networks' brand codes, and no logos. Text on the wash is 4.6:1 or better in both modes. Requested by the
+    maintainer on 2026-11-24, after the first review.
+  - **Network filter** (below the filter cells): one toggle per network, in the tag's colours when on and neutral
+    with faint text when off. **inbox-networks** shows WhatsApp and Matrix switched off: their chats leave the list,
+    the counts follow, and the meta line says "2 HIDDEN". Design only for now: PLAN.md lists it as a later decision.
   - **Right: the open chat.** The header has the avatar, chat name, network tag and the account ("personal · 6
     people"), the encryption indicator (a muted lock for a bridged chat) and a "…" button. The timeline is anchored to the bottom, with day dividers
     (hairline, HUD "TODAY · 24 NOV", hairline). Other people's messages have no box: a 28 px avatar, the sender in
@@ -117,7 +124,7 @@ divider and Symbol tile.
 | Component | Spec |
 |---|---|
 | Chat row | 380 × 64, padding 0 16, gap 12, hairline under. Avatar 36. Line 1: name (Body 14, Medium when unread; fills, one line), network tag, time (Mono 12, 48 px slot, right-aligned). Line 2, 3 px under: preview (Small 12.5, fills, one line), unread count. Selected: sunken fill, 2 px accent_ink rule on the left |
-| Network tag | 18 tall, padding 0 5, 1 px line_strong, Badge 10 muted, the network's name |
+| Network tag | 18 tall, padding 0 5, 1 px line_strong, Badge 10 muted, the network's name; on screens tinted per network (see above) |
 | Unread count | 18 tall, padding 0 6, accent fill, Badge 10 on_accent |
 | Message/Theirs | avatar 28, gap 12; head (sender Body 13 Medium ink_strong, time Mono 12 muted, gap 8), 2 under it the text (Body 14) |
 | Message/Mine | right-aligned, 260 to 460 wide (follows the text), accent_tint fill, padding 10 14, 2 px accent_ink rule on the right edge; head "You", time, then the state on the right (14 px icon and Mono 12: ✓ Sent, ◷ Sending…, ⚠ Not sent in bad) |

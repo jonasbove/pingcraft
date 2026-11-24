@@ -204,26 +204,71 @@ def set_text(d, root, layer, text):
     d.set(d.sub(root, layer), characters=text)
 
 
+# Network tags take their network's colour (lib.THEME net_*): outline and name in it, over a faint wash of it.
+# Matrix stays the neutral outline.
+NET_COLOUR = {"Telegram": "net_telegram", "Signal": "net_signal", "Discord": "net_discord", "WhatsApp": "net_whatsapp"}
+
+
+def tint_tag(d, root, net):
+    """Colour the network tag under `root` (an instance, or the tag itself) for `net`."""
+    colour = NET_COLOUR.get(net.title() if net.isupper() else net)
+    if not colour:
+        return
+    tag = root if d.get(root, "name")["name"] == "Tag" else d.sub(root, "Tag")
+    d.set(tag, fill=colour + "_wash", stroke=colour)
+    d.set(d.sub(tag, "Network"), fill=colour)
+
+
 # --- the inbox ----------------------------------------------------------------------------------------
 
-def inbox_column(d, f, selected):
+# The networks the inbox can show, in the order of the network filter. Discord is not connectable yet (ADR 0008).
+FILTER_NETWORKS = ("Telegram", "Signal", "WhatsApp", "Matrix")
+
+
+def network_chip(d, parent, net, on):
+    """One toggle in the network filter: on = the network's colour (outline, name, wash); off = neutral and faint."""
+    colour = NET_COLOUR.get(net)
+    c = hstack(d, parent, f"Network {net}", gap=0, h=24, padding=[0, 8, 0, 8])
+    if on and colour:
+        d.set(c, fill=colour + "_wash")
+        box_stroke(d, c, colour)
+        d.text(c, net, "Badge/10", colour, name="Network")
+    elif on:
+        box_stroke(d, c, "line_strong")
+        d.text(c, net, "Badge/10", "ink", name="Network")
+    else:
+        box_stroke(d, c, "line")
+        d.text(c, net, "Badge/10", "faint", name="Network")
+    return c
+
+
+def inbox_column(d, f, selected, hidden=()):
+    """The inbox. `hidden` names networks switched off in the network filter: their chats leave the list."""
     col = d.frame(f, "Inbox", 0, HEADER, LEFT_W, H - HEADER - FOOTER, fill="bg", clip=True)
     side_stroke(d, col, right=1)
     tb = hstack(d, col, "Filter row", 16, 16, gap=8, h=34)
     d.set(tb, sizingH="fixed", width=LEFT_W - 32)
-    cells(d, tb, ("All", "Unread"), sel="All", counts=(TOTAL_CHATS, UNREAD_CHATS), name="Filter")
+    chats = [c for c in CHATS if c[2] not in hidden]
+    shown = TOTAL_CHATS - (len(CHATS) - len(chats)) * 2 if hidden else TOTAL_CHATS
+    unread = sum(1 for c in chats if c[5])
+    cells(d, tb, ("All", "Unread"), sel="All", counts=(shown, unread), name="Filter")
     sf = d.inst("Search field", tb, props={"Placeholder": "Search chats"}, name="Search")
     d.set(sf, sizingH="fill")
-    meta(d, col, ("Inbox", "4 accounts", f"{TOTAL_CHATS} chats"), name="Inbox meta")
-    d.set(d.sub(col, "Inbox meta"), x=16, y=64)
-    lst = vstack(d, col, "Chats", 0, 88, LEFT_W, gap=0)
+    nf = hstack(d, col, "Network filter", 16, 60, gap=6, h=24)
+    for net in FILTER_NETWORKS:
+        network_chip(d, nf, net, net not in hidden)
+    parts = ("Inbox", "4 accounts", f"{shown} chats") + ((f"{len(hidden)} hidden",) if hidden else ())
+    meta(d, col, parts, name="Inbox meta")
+    d.set(d.sub(col, "Inbox meta"), x=16, y=98)
+    lst = vstack(d, col, "Chats", 0, 122, LEFT_W, gap=0)
     side_stroke(d, lst, top=1)
-    for name, ini, net, time, preview, unread in CHATS:
+    for name, ini, net, time, preview, unread in chats:
         state = "Selected" if name == selected else ("Unread" if unread else "Read")
         r = d.inst("Chat row", lst, props={"State": state, "Name": name, "Time": time, "Preview": preview},
                    name=f"Chat {name}")
         set_text(d, r, "Initials", ini)
         set_text(d, r, "Network", net)
+        tint_tag(d, r, net)
         if unread:
             set_text(d, r, "Count", str(unread))
         else:
@@ -242,7 +287,8 @@ def chat_pane(d, f, name, ini, net, account, enc):
     tc = vstack(d, hd, "Chat title", gap=3)
     d.text(tc, name, "Body/16 Medium", "ink_strong", name="Chat name")
     l2 = hstack(d, tc, "Where", gap=8)
-    d.inst("Network tag", l2, props={"Network": net}, name="Tag")
+    tag = d.inst("Network tag", l2, props={"Network": net}, name="Tag")
+    tint_tag(d, tag, net)
     d.text(l2, account, "Small/12.5", "muted", name="Account")
     spacer(d, hd)
     ec = hstack(d, hd, "Encryption", gap=8, h=30, padding=[0, 10, 0, 10])
@@ -286,9 +332,9 @@ def mine(d, tl, time, body, state="Sent", w=None):
     return m
 
 
-def inbox_frame(d, name, x, y, light=False):
+def inbox_frame(d, name, x, y, light=False, hidden=()):
     f = screen(d, name, x, y, light=light)
-    inbox_column(d, f, "Book club")
+    inbox_column(d, f, "Book club", hidden=hidden)
     tl = chat_pane(d, f, "Book club", "BC", "Signal", "personal · 6 people", (False, "Encrypted · via your bridge"))
     divider(d, tl, "Yesterday · 23 Nov")
     theirs(d, tl, "Lars Holm", "LH", "21:10", "Next meeting on Thursday at mine? I'll make soup.")
@@ -576,7 +622,9 @@ def connect_risk(d, name, x, y):
 # --- pages --------------------------------------------------------------------------------------------
 
 M2 = [("sign-in", sign_in), ("recovery-key", recovery_key), ("inbox", inbox_frame),
-      ("inbox-light", lambda d, n, x, y: inbox_frame(d, n, x, y, light=True)), ("inbox-empty", inbox_empty),
+      ("inbox-light", lambda d, n, x, y: inbox_frame(d, n, x, y, light=True)),
+      ("inbox-networks", lambda d, n, x, y: inbox_frame(d, n, x, y, hidden=("WhatsApp", "Matrix"))),
+      ("inbox-empty", inbox_empty),
       ("chat-states", chat_states), ("verify-device", verify_device), ("unlock", unlock)]
 M3 = [("connect-network", connect_network), ("connect-risk", connect_risk)]
 
