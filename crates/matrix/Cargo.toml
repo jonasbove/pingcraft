@@ -34,5 +34,5 @@ matrix-sdk = { workspace = true, features = ["e2e-encryption", "automatic-room-k
 matrix-sdk-ui = { workspace = true, features = ["js"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "net", "io-util"] }
 tempfile = "3"

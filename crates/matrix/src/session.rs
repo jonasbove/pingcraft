@@ -89,24 +89,34 @@ fn store_dir(data_dir: &Path, profile: &str) -> PathBuf {
     data_dir.join("profiles").join(profile)
 }
 
-async fn client_for(data_dir: &Path, secrets: &dyn SecretStore, profile: &str, server: &str) -> Result<Client, SessionError> {
+/// Where the client finds its homeserver.
+enum Homeserver<'a> {
+    /// What the user typed: a server name to look up (`.well-known`) or an address. Needs the network.
+    Discover(&'a str),
+    /// The address found at sign-in, as saved. Needs no network, so a profile opens offline too.
+    Known(&'a str),
+}
+
+async fn client_for(data_dir: &Path, secrets: &dyn SecretStore, profile: &str, server: Homeserver<'_>) -> Result<Client, SessionError> {
     let key = store_key(secrets, profile)?;
     let dir = store_dir(data_dir, profile);
     std::fs::create_dir_all(&dir).map_err(|e| SessionError::Store(e.to_string()))?;
     let config = SqliteStoreConfig::new(&dir).key(Some(key.bytes()));
-    Client::builder().server_name_or_homeserver_url(server).sqlite_store_with_config_and_cache_path(config, None::<&Path>).build().await.map_err(
-        |e| match e {
-            matrix_sdk::ClientBuildError::AutoDiscovery(_) | matrix_sdk::ClientBuildError::Url(_) => SessionError::ServerNotFound(e.to_string()),
-            other => SessionError::Store(other.to_string()),
-        },
-    )
+    let builder = match server {
+        Homeserver::Discover(server) => Client::builder().server_name_or_homeserver_url(server),
+        Homeserver::Known(url) => Client::builder().homeserver_url(url),
+    };
+    builder.sqlite_store_with_config_and_cache_path(config, None::<&Path>).build().await.map_err(|e| match e {
+        matrix_sdk::ClientBuildError::AutoDiscovery(_) | matrix_sdk::ClientBuildError::Url(_) => SessionError::ServerNotFound(e.to_string()),
+        other => SessionError::Store(other.to_string()),
+    })
 }
 
 /// Signs in with a user name and password, as a new profile. On success the session is in the keychain, so
 /// [`restore`] can come back to it after a restart.
 pub async fn sign_in(data_dir: &Path, secrets: &dyn SecretStore, request: &SignIn) -> Result<Session, SessionError> {
     let profile = new_profile_id()?;
-    let client = match client_for(data_dir, secrets, &profile, request.server.trim()).await {
+    let client = match client_for(data_dir, secrets, &profile, Homeserver::Discover(request.server.trim())).await {
         Ok(client) => client,
         Err(e) => {
             forget_profile(data_dir, secrets, &profile);
@@ -138,7 +148,7 @@ pub async fn sign_in(data_dir: &Path, secrets: &dyn SecretStore, request: &SignI
 pub async fn restore(data_dir: &Path, secrets: &dyn SecretStore, profile: &str) -> Result<Session, SessionError> {
     let json = secrets.get(&session_name(profile))?.ok_or(SessionError::Keychain(KeychainError::Corrupt("no saved session")))?;
     let saved: SavedSession = serde_json::from_slice(&json).map_err(|_| SessionError::Keychain(KeychainError::Corrupt("saved session")))?;
-    let client = client_for(data_dir, secrets, profile, &saved.homeserver).await?;
+    let client = client_for(data_dir, secrets, profile, Homeserver::Known(&saved.homeserver)).await?;
     client.restore_session(saved.session).await.map_err(|e| SessionError::Other(e.to_string()))?;
     Ok(Session { profile: profile.to_owned(), client })
 }

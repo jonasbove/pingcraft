@@ -193,10 +193,23 @@ impl Worker {
     async fn begin(&mut self) {
         if self.secrets_choice == Secrets::System && OsKeychain.probe().is_ok() {
             self.secrets = Some(Box::new(OsKeychain));
-            self.resume().await;
-        } else {
-            self.emit.send(Event::Locked { first: !PassphraseVault::exists(&vault_file(&self.data_dir)) });
+            return self.resume().await;
         }
+        let has_vault = PassphraseVault::exists(&vault_file(&self.data_dir));
+        if !has_vault && self.signed_in_profile().is_some() && self.secrets_choice == Secrets::System {
+            // Someone is signed in with their secrets in the keychain, which is not answering right now (the
+            // Secret Service not started yet, say). A new vault would not have them, and would make the sign-in
+            // look lost: say so instead, and keep everything as it is.
+            return self.emit.send(Event::Problem(
+                "the system keychain is not answering; PingCraft keeps your sign-in there. Start PingCraft again once it is up.".into(),
+            ));
+        }
+        self.emit.send(Event::Locked { first: !has_vault });
+    }
+
+    /// The profile signed in last time, if any (a random name, not a secret).
+    fn signed_in_profile(&self) -> Option<String> {
+        std::fs::read_to_string(profile_file(&self.data_dir)).ok().map(|p| p.trim().to_owned()).filter(|p| !p.is_empty())
     }
 
     async fn unlock(&mut self, passphrase: &str) {
@@ -225,14 +238,15 @@ impl Worker {
 
     /// Comes back to the profile signed in last time, if there is one.
     async fn resume(&mut self) {
+        let Some(profile) = self.signed_in_profile() else { return self.emit.send(Event::SignedOut) };
         let Some(secrets) = self.secrets.as_deref() else { return };
-        let profile = std::fs::read_to_string(profile_file(&self.data_dir)).ok().map(|p| p.trim().to_owned()).filter(|p| !p.is_empty());
-        let Some(profile) = profile else { return self.emit.send(Event::SignedOut) };
         match session::restore(&self.data_dir, secrets, &profile).await {
             Ok(session) => self.connect(session, None).await,
             Err(e) => {
+                // The profile, its store and its keychain entries stay: a failure here may pass (the server
+                // unreachable, the keychain busy), and they hold the only copy of this device's keys. Signing in
+                // again makes a new profile next to it.
                 self.emit.send(Event::Problem(e.to_string()));
-                let _ = std::fs::remove_file(profile_file(&self.data_dir));
                 self.emit.send(Event::SignedOut);
             }
         }

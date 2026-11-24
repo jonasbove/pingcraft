@@ -293,9 +293,10 @@ fn verifying_compares_seven_named_symbols() {
         h.get_by_label(name);
     }
     h.get_by_label("THEY DON'T MATCH");
-    // Through AccessKit: START was clicked at about the same spot a moment ago (in test time), and a second
-    // pointer click there would count as a double click.
-    h.get_by_label("THEY MATCH").click_accesskit();
+    // One more frame: the sheet grew with the symbols and re-centres a frame later, so the button moves once
+    // more after run() settles. (Found by testing: without it the click lands where the button was.)
+    h.step();
+    h.get_by_label("THEY MATCH").click();
     h.run();
     let sent = fake.take();
     assert!(matches!(&sent[..], [Command::SymbolsMatch]), "{sent:?}");

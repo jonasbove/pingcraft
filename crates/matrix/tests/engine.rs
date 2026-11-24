@@ -109,3 +109,71 @@ async fn sign_in_read_send_restart_and_sign_out() {
     assert!(!data.path().join("profile").exists(), "nothing says who was signed in");
     other.sign_out().await;
 }
+
+/// Forwards a local port to the homeserver until it is dropped, so a test can take the server away.
+struct Proxy {
+    url: String,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl Proxy {
+    async fn to(homeserver: &str) -> Self {
+        let upstream = homeserver.trim_start_matches("http://").trim_end_matches('/').to_owned();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move {
+            while let Ok((mut inbound, _)) = listener.accept().await {
+                let upstream = upstream.clone();
+                tokio::spawn(async move {
+                    if let Ok(mut outbound) = tokio::net::TcpStream::connect(upstream).await {
+                        let _ = tokio::io::copy_bidirectional(&mut inbound, &mut outbound).await;
+                    }
+                });
+            }
+        });
+        Self { url, task }
+    }
+}
+
+impl Drop for Proxy {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_restart_without_the_server_keeps_the_sign_in() {
+    let server = server_or_skip!();
+    let user = register_fresh_user(&server.homeserver).await.unwrap_or_else(|| server.user.clone());
+    let data = tempfile::tempdir().unwrap();
+    let mut seen = Vec::new();
+    let proxy = Proxy::to(&server.homeserver).await;
+
+    let mut engine = start(data.path());
+    until(&mut engine, &mut seen, "the first unlock", |e| matches!(e, Event::Locked { first: true }).then_some(())).await;
+    engine.send(Command::Unlock { passphrase: Zeroizing::new("a passphrase".into()) });
+    engine.send(Command::SignIn { server: proxy.url.clone(), username: user.0.clone(), password: Zeroizing::new(user.1.clone()) });
+    let me = until(&mut engine, &mut seen, "signed in", |e| match e {
+        Event::SignedIn { user } => Some(user.clone()),
+        _ => None,
+    })
+    .await;
+    drop(engine);
+    // The server goes away (as when the computer is offline).
+    drop(proxy);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let mut engine = start(data.path());
+    until(&mut engine, &mut seen, "locked", |e| matches!(e, Event::Locked { first: false }).then_some(())).await;
+    engine.send(Command::Unlock { passphrase: Zeroizing::new("a passphrase".into()) });
+    let outcome = until(&mut engine, &mut seen, "signed in, or told why not", |e| match e {
+        Event::SignedIn { user } => Some(Ok(user.clone())),
+        Event::SignedOut => Some(Err(())),
+        _ => None,
+    })
+    .await;
+    eprintln!("offline restart: {outcome:?}; problems: {:?}", seen.iter().filter(|e| matches!(e, Event::Problem(_))).collect::<Vec<_>>());
+    assert!(data.path().join("profile").exists(), "the sign-in is kept, whatever happened");
+    assert_eq!(outcome, Ok(me), "the session comes back from this computer without the server");
+    drop(engine);
+}
