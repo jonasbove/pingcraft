@@ -180,7 +180,12 @@ Goal: a user connects Telegram, Signal and WhatsApp accounts from PingCraft, aft
    NOTICE, docs/deploy.md section 10), without a login. Checked on a throwaway stack: `whoami` with an OpenID
    token through the proxy answered for all three bridges; other bridge paths, a path with `..`, no token and
    another user's ID were refused.
-4. **The mautrix bridge provider:** uses the bridgev2 provisioning API, authenticated with a Matrix OpenID token.
+4. **Done.** **The mautrix bridge provider:** uses the bridgev2 provisioning API, authenticated with a Matrix OpenID token.
+   `pingcraft_matrix::mautrix` (v3: whoami, login start, step, cancel, logout) and the engine's commands for it.
+   Steps PingCraft cannot do yet (cookies, webauthn, a choice from a list) end as "not supported". Desktop only
+   until the web build. Tested live on a throwaway stack (`tests/bridges.rs`, `PINGCRAFT_TEST_BRIDGES=1`): Signal
+   and WhatsApp showed a QR code, Telegram and WhatsApp asked for a phone number, each was cancelled, and no
+   account was made.
 5. **Network of a chat:** read from the bridge-info room state, and shown in the inbox.
 6. **Risk screen:** shown before connecting, with an explicit confirmation. The text is written in our own words
    from ADRs 0005–0008.

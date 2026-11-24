@@ -15,6 +15,7 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use pingcraft_core::app::{Backend, Command, Event, SignInProblem};
+use pingcraft_core::bridge::BridgeProvider;
 use pingcraft_core::encryption::{RecoveryStatus, Verification};
 use pingcraft_core::{ChatId, ConnectionState};
 use pingcraft_keychain::{InstanceLock, KdfParams, LockError, OsKeychain, PassphraseVault, SecretStore, VaultError};
@@ -22,8 +23,10 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use zeroize::Zeroizing;
 
 use crate::Connection;
+use crate::connect::{self, Connector};
 use crate::encryption::{EncryptionError, IncomingVerifications, VerificationFlow};
 use crate::inbox::InboxFeed;
+use crate::mautrix::MautrixProvider;
 use crate::session::{self, Session, SessionError, SignIn};
 use crate::timeline::ChatTimeline;
 
@@ -117,6 +120,8 @@ struct SignedIn {
     flow: Option<VerificationFlow>,
     shown_state: Option<ConnectionState>,
     shown_recovery: Option<RecoveryStatus>,
+    /// Connecting networks through the mautrix bridges (ADR 0003).
+    connector: Option<Connector>,
 }
 
 struct Worker {
@@ -136,6 +141,7 @@ enum Woke {
     Messages(Option<Vec<pingcraft_core::Message>>),
     Incoming(Option<VerificationFlow>),
     Verification(Option<Verification>),
+    Bridge(Option<connect::Done>),
     Tick,
 }
 
@@ -166,12 +172,13 @@ impl Worker {
         loop {
             let wake = {
                 let s = self.signed_in.as_mut();
-                let (inbox, chat, incoming, flow) = match s {
-                    Some(s) => (Some(&mut s.inbox), s.chat.as_mut().map(|(_, c)| c), Some(&mut s.incoming), s.flow.as_mut()),
-                    None => (None, None, None, None),
+                let (inbox, chat, incoming, flow, connector) = match s {
+                    Some(s) => (Some(&mut s.inbox), s.chat.as_mut().map(|(_, c)| c), Some(&mut s.incoming), s.flow.as_mut(), s.connector.as_mut()),
+                    None => (None, None, None, None, None),
                 };
                 tokio::select! {
                     c = commands.recv() => Woke::Command(c),
+                    Some(done) = maybe(connector.map(|c| c.next())) => Woke::Bridge(Some(done)),
                     Some(change) = maybe(inbox.map(|f| f.next())) => Woke::Inbox(Some(change)),
                     Some(messages) = maybe(chat.map(|c| c.next())) => Woke::Messages(Some(messages)),
                     Some(flow) = maybe(incoming.map(|i| i.next())) => Woke::Incoming(Some(flow)),
@@ -186,7 +193,14 @@ impl Worker {
                 Woke::Messages(Some(messages)) => self.messages(messages).await,
                 Woke::Incoming(Some(flow)) => self.incoming(flow),
                 Woke::Verification(Some(state)) => self.emit.send(Event::Verification(Some(state))),
-                Woke::Inbox(None) | Woke::Messages(None) | Woke::Incoming(None) | Woke::Verification(None) => {}
+                Woke::Bridge(Some(done)) => {
+                    if let Some(connector) = self.signed_in.as_mut().and_then(|s| s.connector.as_mut()) {
+                        for event in connector.handle(done) {
+                            self.emit.send(event);
+                        }
+                    }
+                }
+                Woke::Inbox(None) | Woke::Messages(None) | Woke::Incoming(None) | Woke::Verification(None) | Woke::Bridge(None) => {}
                 Woke::Tick => self.tick(),
             }
         }
@@ -305,7 +319,10 @@ impl Worker {
                 Err(e) => self.emit.send(Event::Problem(e.to_string())),
             }
         }
-        self.signed_in = Some(SignedIn { session, connection, inbox, incoming, chat: None, flow: None, shown_state: None, shown_recovery: None });
+        // A signed-in client always has a user ID, so there is always a provider.
+        let connector = MautrixProvider::for_client(&session.client).map(|p| Connector::new(Arc::new(p) as Arc<dyn BridgeProvider>));
+        self.signed_in =
+            Some(SignedIn { session, connection, inbox, incoming, chat: None, flow: None, shown_state: None, shown_recovery: None, connector });
         self.tick();
     }
 
@@ -461,6 +478,16 @@ impl Worker {
                 self.emit.send(Event::Verification(None));
                 Ok(())
             }
+            command @ (Command::LoadNetworks
+            | Command::StartLogin { .. }
+            | Command::AnswerLogin { .. }
+            | Command::CancelLogin(_)
+            | Command::RemoveAccount { .. }) => {
+                if let Some(c) = s.connector.as_mut() {
+                    connect(c, command);
+                }
+                Ok(())
+            }
             // Handled before.
             Command::Unlock { .. } | Command::SignIn { .. } | Command::SignOut => Ok(()),
         };
@@ -468,5 +495,17 @@ impl Worker {
             self.emit.send(Event::Problem(problem));
         }
         self.tick();
+    }
+}
+
+/// The commands for connecting networks, handed to the connector.
+fn connect(c: &mut Connector, command: Command) {
+    match command {
+        Command::LoadNetworks => c.load(),
+        Command::StartLogin { network, flow } => c.start(network, flow),
+        Command::AnswerLogin { step, answers } => c.answer(step, answers),
+        Command::CancelLogin(step) => c.cancel(&step),
+        Command::RemoveAccount { network, account } => c.remove(network, account),
+        _ => {}
     }
 }

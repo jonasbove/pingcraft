@@ -150,6 +150,8 @@ impl State {
             }
             Event::WrongRecoveryKey => self.recovery_forms.wrong = true,
             Event::Verification(v) => self.verification = v,
+            // The accounts screen comes with milestone 3's tickets 6 and 10.
+            Event::Network { .. } | Event::Login(_) | Event::LoginFailed { .. } | Event::AccountRemoved { .. } | Event::RemoveFailed { .. } => {}
             Event::Problem(p) => {
                 self.sign_in.busy = false;
                 self.problem = Some(p);

@@ -4,8 +4,9 @@
 
 use zeroize::Zeroizing;
 
+use crate::bridge::{Answers, BridgeError, BridgedNetwork, LoginStep, StepRef};
 use crate::encryption::{RecoveryKey, RecoveryStatus, Verification};
-use crate::{ChatId, ConnectionState, InboxChange, Message, MessageId};
+use crate::{AccountId, ChatId, ConnectionState, InboxChange, Message, MessageId, Network};
 
 /// Something the user asked for. `Debug` never shows a password, passphrase or message text.
 pub enum Command {
@@ -39,6 +40,26 @@ pub enum Command {
     SymbolsMatch,
     SymbolsDiffer,
     CancelVerification,
+    /// Ask each network's bridge how to log in and which accounts the user has there.
+    LoadNetworks,
+    /// Start connecting an account on a network, with one of its login flows. One login at a time: starting one
+    /// ends the one before.
+    StartLogin {
+        network: Network,
+        flow: String,
+    },
+    /// What the user typed for the login's current question.
+    AnswerLogin {
+        step: StepRef,
+        answers: Answers,
+    },
+    /// End the login in progress.
+    CancelLogin(StepRef),
+    /// Log an account out of its network and remove it.
+    RemoveAccount {
+        network: Network,
+        account: AccountId,
+    },
     SignOut,
 }
 
@@ -61,6 +82,12 @@ impl std::fmt::Debug for Command {
             Self::SymbolsMatch => f.write_str("SymbolsMatch"),
             Self::SymbolsDiffer => f.write_str("SymbolsDiffer"),
             Self::CancelVerification => f.write_str("CancelVerification"),
+            Self::LoadNetworks => f.write_str("LoadNetworks"),
+            Self::StartLogin { network, flow } => f.debug_struct("StartLogin").field("network", network).field("flow", flow).finish(),
+            // Answers' own Debug shows the field names only.
+            Self::AnswerLogin { step, answers } => f.debug_struct("AnswerLogin").field("step", step).field("answers", answers).finish(),
+            Self::CancelLogin(step) => f.debug_tuple("CancelLogin").field(step).finish(),
+            Self::RemoveAccount { network, account } => f.debug_struct("RemoveAccount").field("network", network).field("account", account).finish(),
             Self::SignOut => f.write_str("SignOut"),
         }
     }
@@ -112,6 +139,29 @@ pub enum Event {
     WrongRecoveryKey,
     /// A verification started, changed, or (`None`) is over and closed.
     Verification(Option<Verification>),
+    /// What a network's bridge said: how to log in and the user's accounts there, or why it could not say.
+    Network {
+        network: Network,
+        found: Result<BridgedNetwork, BridgeError>,
+    },
+    /// The login in progress is at this step. [`LoginStep::Done`] ends it.
+    Login(LoginStep),
+    /// The login in progress failed, and has ended.
+    LoginFailed {
+        network: Network,
+        error: BridgeError,
+    },
+    /// An account was logged out and removed.
+    AccountRemoved {
+        network: Network,
+        account: AccountId,
+    },
+    /// Removing an account did not work; it is still there.
+    RemoveFailed {
+        network: Network,
+        account: AccountId,
+        error: BridgeError,
+    },
     /// Something failed that the user should know about, in the adapter's words.
     Problem(String),
 }
@@ -136,9 +186,23 @@ mod tests {
             Command::Unlock { passphrase: Zeroizing::new("correct horse".into()) },
             Command::Recover(RecoveryKey::new("EsTc 8Jq2")),
             Command::SendText { chat: crate::ChatId("!a".into()), text: "private words".into() },
+            Command::AnswerLogin {
+                step: crate::bridge::StepRef {
+                    network: crate::Network::from_id("telegram"),
+                    login: "l".into(),
+                    step: "s".into(),
+                    attempt: "t".into(),
+                },
+                answers: {
+                    let mut a = crate::bridge::Answers::new();
+                    a.set("phone", Zeroizing::new("+4512345678".into()));
+                    a.set("password", Zeroizing::new("two-step secret".into()));
+                    a
+                },
+            },
         ];
         let shown = format!("{commands:?}");
-        for secret in ["hunter2", "correct horse", "EsTc", "private words"] {
+        for secret in ["hunter2", "correct horse", "EsTc", "private words", "12345678", "two-step secret"] {
             assert!(!shown.contains(secret), "{shown}");
         }
         assert!(shown.contains("example.org"));
