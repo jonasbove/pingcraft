@@ -379,7 +379,8 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
    Built: PIN IN THIS CHAT / UNPIN in the message's menu (`m.room.pinned_events`, so everyone in the chat sees
    them; refused without permission, said in plain words), and a pinned bar under the chat header, newest pin first,
    that goes to the message when clicked and steps through the pins. The chat's "…" menu pins it to the top of the
-   inbox (the `m.favourite` tag, so other Matrix apps see it); pinned chats come first, with a pin. Open: a pinned
+   inbox (the `m.favourite` tag, so other Matrix apps see it; confirmed by the maintainer, 2026-11-25); pinned
+   chats come first, with a pin. Open: a pinned
    message that is not loaded shows without its text until older messages are loaded; whether bridges carry pins
    (pending, needs the maintainer's accounts).
 10. **Done for chats (2026-11-25), with gaps.** **Muting.** Mute a chat or a whole network, for an hour, a day, until turned back on, or until a time; muted
