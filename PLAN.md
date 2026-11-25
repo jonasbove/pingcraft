@@ -143,8 +143,10 @@ desktop target.
     3.54.0 (`check_sqlite`); Linux, FreeBSD and macOS link the system's SQLite, and the Windows build compiles
     the pinned SQLite 3.54.1 amalgamation in. Built here: the Linux x86_64 AppImage, deb, rpm and tar.gz, and
     the FreeBSD layout (`--dry-run`). Open:
-    - the deb and rpm depend on the system SQLite without a minimum version: requiring 3.54.0 would make them
-      uninstallable on today's stable distributions (Ubuntu 24.04 has 3.45);
+    - the deb and rpm require the system SQLite 3.54.0 or newer (maintainer, 2026-11-25: correctness over
+      installability), so they cannot be installed on today's stable distributions until their SQLite moves:
+      Ubuntu 24.04 has 3.45. The rpm names the package (`sqlite-libs` on Fedora/RHEL, `libsqlite3-0` on openSUSE),
+      since the soname has no version. Not built here (no nfpm on this machine);
     - the logo drawing: generated with an AI image tool by the maintainer for PingCraft, under the repository's
       licence (maintainer, 2026-11-25; `ATTRIBUTION.md`);
     - `LICENSE-MIT` and `LICENSE-APACHE` were added for the packages ("the PingCraft contributors", as

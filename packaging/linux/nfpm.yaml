@@ -23,7 +23,8 @@ description: |-
   is encrypted with a key in the system keychain.
 
 # The binary links glibc, libgcc_s and the system's SQLite directly (matrix-sdk's stores; never a bundled
-# copy, see deny.toml and RUSTSEC-2026-0459: the system SQLite should be 3.54.0 or newer). Windowing
+# copy, see deny.toml and RUSTSEC-2026-0459). The packages require SQLite 3.54.0 or newer (maintainer, 2026-11-25:
+# correct over installable; Ubuntu 24.04, with 3.45, cannot install them until its SQLite moves). Windowing
 # (X11/Wayland, xkbcommon) and the GPU (Vulkan, EGL/GL) are loaded at runtime with dlopen, so they aren't ELF
 # NEEDED entries and the package tools can't find them: they are listed here. The keychain (Secret Service) is
 # reached over the session bus in pure Rust (zbus), so there is no libdbus dependency; without a Secret Service
@@ -33,7 +34,7 @@ overrides:
     depends:
       - libc6 (>= ${GLIBC_FLOOR})
       - libgcc-s1
-      - libsqlite3-0
+      - libsqlite3-0 (>= 3.54.0)
       - libxkbcommon0
       - libxkbcommon-x11-0
       - libwayland-client0
@@ -52,6 +53,8 @@ overrides:
     depends:
       - glibc >= ${GLIBC_FLOOR}
       - libsqlite3.so.0()(64bit)
+      # The soname carries no version: the package, by its name on Fedora/RHEL or on openSUSE.
+      - (sqlite-libs >= 3.54.0 or libsqlite3-0 >= 3.54.0)
       - libxkbcommon.so.0()(64bit)
       - libxkbcommon-x11.so.0()(64bit)
       - libwayland-client.so.0()(64bit)
