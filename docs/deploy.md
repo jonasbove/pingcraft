@@ -67,7 +67,7 @@ The bridge configuration it writes:
 
 - encryption on the Matrix side is required;
 - no chat history is imported;
-- no chat is bridged automatically: you choose each one;
+- a chat is bridged when a message arrives in it, or when you start it; none are copied at login;
 - logs show warnings and errors only.
 
 ## 4. Start it
