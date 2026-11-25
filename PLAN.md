@@ -203,6 +203,16 @@ Goal: a user connects Telegram, Signal and WhatsApp accounts from PingCraft, aft
     `connect-network`, with each card's accounts and whether its bridge answers; the user's accounts with their state
     and REMOVE, which asks first; and "Connect a network" from the empty inbox. Not checked against a real account
     (tickets 7 to 9), and the screens were checked through their AccessKit tree only, not by eye.
+11. **Settings screen** (maintainer, 2026-11-25): the header's SETTINGS tab, disabled until now. Not in the design
+    yet: add a `settings` frame to `design/pingcraft.figcraft` first. Sections:
+    - **Appearance:** dark or light theme.
+    - **Passphrase:** change the passphrase that unlocks PingCraft on this device (ADR 0004).
+    - **Recovery key:** whether recovery is set up, and making a new key, shown once as on first sign-in.
+    - **This device:** its name as other devices see it, editable.
+    - **Your other devices:** each signed-in device with its name, last seen and whether it is verified; verify one,
+      or sign it out.
+    - **Sign out** of this device, with a warning when the recovery key is not set up, since this device's message
+      keys would then be lost.
 
 ## Milestone 4: web build and the CraftCloud option
 
