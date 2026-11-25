@@ -233,9 +233,16 @@ Goal: the same client in a browser, served by CraftCloud.
 
 Starts when mautrix-discord releases its bridgev2 rewrite (ADR 0008).
 
-1. Discord bridge in compose.
-2. Bot login as the default, connected from PingCraft.
-3. User login behind the high-risk warning. **(maintainer: an account)**
+1. **Each network described in one place** (maintainer, 2026-11-25). Today a network's facts are spread
+   over six places: the bridge list (`crates/matrix/src/mautrix.rs`),
+   the risk level (`crates/core/src/lib.rs`), the display name (`widgets.rs`), the colour (`theme.rs`), and the
+   card list and login text (`accounts.rs`). Gather them into one description per network (id, name, icon,
+   colour, risk level and its ADR, how to log in, the card's text), read by core and the UI, so adding Discord,
+   and later networks, is mostly adding one entry. Whether it is Rust data or a file shipped with the app is
+   decided in the ticket; it is never downloaded at run time.
+2. Discord bridge in compose.
+3. Bot login as the default, connected from PingCraft.
+4. User login behind the high-risk warning. **(maintainer: an account)**
 
 ## Milestone 6: polish
 
@@ -244,6 +251,9 @@ Starts when mautrix-discord releases its bridgev2 rewrite (ADR 0008).
 3. Media: images and files, over authenticated media.
 4. Reactions, edits and replies.
 5. Inbox filters by network and account.
+6. **Unread count on the app's icon** (maintainer, 2026-11-25): the total unread on the taskbar or dock
+   icon, or in the tray where there is one, cleared as chats are read. Per platform: what each desktop supports
+   (Linux launchers vary) is checked in the ticket.
 
 ## Later, not yet planned
 
@@ -254,7 +264,11 @@ Starts when mautrix-discord releases its bridgev2 rewrite (ADR 0008).
   - whether hidden networks still count towards unread totals and notifications;
   - one toggle per network, or per account (two Telegram accounts);
   - how the toggles behave with many networks, and with colour-blind users (the names stay, so colour is never the
-    only cue).
+    only cue);
+  - **workspaces** (maintainer, 2026-11-25): instead of, or on top of, the toggles, named views such as
+    "Work" and "Private", each a saved set of networks, accounts or single chats, switched in one click. Open:
+    whether a chat can be in more than one, whether they sync across devices (Matrix account data would allow it),
+    and whether notifications follow the current workspace.
 
 - **Chat history** (maintainer, 2026-11-25: not for now). PingCraft copies no earlier messages: a chat appears when
   a message arrives in it, with messages from then on. An opt-in asked at each connection was wanted, but a spike
