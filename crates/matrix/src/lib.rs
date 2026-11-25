@@ -5,6 +5,7 @@
 pub use pingcraft_core as core;
 
 mod bridge_info;
+mod chat_settings;
 #[cfg(not(target_arch = "wasm32"))]
 mod connect;
 pub mod connection;
@@ -20,7 +21,7 @@ pub mod timeline;
 
 pub use connection::{Connection, SyncError};
 pub use inbox::InboxFeed;
-pub use timeline::{ChatTimeline, TimelineError};
+pub use timeline::{ChatTimeline, ChatUpdate, TimelineError};
 
 /// The SDK version this adapter is written against, for the about screen and bug reports.
 pub const MATRIX_SDK_VERSION: &str = "0.19.1";

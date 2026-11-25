@@ -126,9 +126,29 @@ pub struct Chat {
     pub unread: u32,
     /// Whether messages in this chat are end-to-end encrypted on the Matrix side.
     pub encrypted: bool,
+    /// Pinned to the top of the inbox (the Matrix favourite tag, so other apps see it too).
+    pub pinned: bool,
+    /// Muted: its messages make no notification. It still counts as unread.
+    pub muted: Option<Mute>,
+    /// The user marked it as unread.
+    pub marked_unread: bool,
+}
+
+/// How long a chat stays muted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mute {
+    /// Until this time; PingCraft turns it back on then, while it runs.
+    Until(Timestamp),
+    /// Until the user turns it back on.
+    UntilUnmuted,
 }
 
 impl Chat {
+    /// Whether the inbox shows the chat as unread: it has unread messages, or the user marked it.
+    pub fn is_unread(&self) -> bool {
+        self.unread > 0 || self.marked_unread
+    }
+
     /// When the chat last had a message, for sorting the inbox. A chat without messages sorts last.
     pub fn last_activity(&self) -> Timestamp {
         self.last_message.as_ref().map(|m| m.at).unwrap_or_default()
@@ -283,6 +303,9 @@ mod tests {
             last_message: None,
             unread: 0,
             encrypted: true,
+            pinned: false,
+            muted: None,
+            marked_unread: false,
         };
         assert_eq!(chat.last_activity(), Timestamp(0));
         chat.last_message = Some(MessagePreview { sender: "Ana".into(), own: false, body: MessageBody::Text("hi".into()), at: Timestamp(5) });

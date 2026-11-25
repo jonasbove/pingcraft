@@ -54,7 +54,7 @@ fn type_into(h: &mut Harness<'static, PingCraftApp>, label: &str, text: &str) {
     h.run();
 }
 
-fn chat(id: &str, name: &str, network: &str, unread: u32, preview: Option<(&str, &str)>) -> Chat {
+pub(super) fn chat(id: &str, name: &str, network: &str, unread: u32, preview: Option<(&str, &str)>) -> Chat {
     Chat {
         id: ChatId(id.into()),
         account: None,
@@ -68,6 +68,9 @@ fn chat(id: &str, name: &str, network: &str, unread: u32, preview: Option<(&str,
         }),
         unread,
         encrypted: true,
+        pinned: false,
+        muted: None,
+        marked_unread: false,
     }
 }
 
@@ -393,6 +396,7 @@ fn the_chat_header_centres_the_name_and_network_on_the_avatar() {
 }
 
 mod accounts;
+mod chats;
 mod messages;
 
 #[test]

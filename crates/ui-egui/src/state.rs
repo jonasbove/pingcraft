@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use pingcraft_core::app::{Event, SignInProblem};
 use pingcraft_core::bridge::{BridgeError, BridgedNetwork, LoginStep};
 use pingcraft_core::encryption::{RecoveryKey, RecoveryStatus, Verification};
-use pingcraft_core::{Account, ChatId, ConnectionState, Filter, Inbox, InboxChange, Message, MessageBody, MessageDetails, MessageId, Network};
+use pingcraft_core::{Account, ChatId, ConnectionState, Filter, Inbox, InboxChange, Message, MessageBody, MessageDetails, MessageId, Network, Quote};
 use zeroize::Zeroizing;
 
 use crate::i18n::fmt;
@@ -164,6 +164,10 @@ pub struct OpenChat {
     pub selected: Option<Vec<MessageId>>,
     /// The forward sheet.
     pub forwarding: Option<Forwarding>,
+    /// The chat's pinned messages, oldest pin first.
+    pub pinned: Vec<Quote>,
+    /// Which pin the pinned bar shows, counting from the newest.
+    pub pin_shown: usize,
 }
 
 /// Forwarding messages from the open chat: which ones, and where to.
@@ -189,6 +193,8 @@ impl OpenChat {
             details: None,
             selected: None,
             forwarding: None,
+            pinned: Vec::new(),
+            pin_shown: 0,
         }
     }
 
@@ -322,6 +328,14 @@ impl State {
                     open.set_messages(messages);
                 }
             }
+            Event::Pinned { chat, pinned } => {
+                if let Some(open) = self.open.as_mut().filter(|o| o.id == chat) {
+                    open.pinned = pinned;
+                    if open.pin_shown >= open.pinned.len() {
+                        open.pin_shown = 0;
+                    }
+                }
+            }
             Event::Details { chat, message, details } => {
                 if let Some(open) = self.open.as_mut().filter(|o| o.id == chat)
                     && let Some((id, shown)) = open.details.as_mut()
@@ -419,7 +433,18 @@ mod tests {
     use pingcraft_core::{Chat, ChatId, InboxChange, Network};
 
     fn chat(id: &str) -> Chat {
-        Chat { id: ChatId(id.into()), account: None, network: Network::matrix(), name: id.into(), last_message: None, unread: 0, encrypted: true }
+        Chat {
+            id: ChatId(id.into()),
+            account: None,
+            network: Network::matrix(),
+            name: id.into(),
+            last_message: None,
+            unread: 0,
+            encrypted: true,
+            pinned: false,
+            muted: None,
+            marked_unread: false,
+        }
     }
 
     #[test]

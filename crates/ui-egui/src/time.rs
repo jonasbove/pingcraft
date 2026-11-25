@@ -15,6 +15,12 @@ pub fn clock(at: Timestamp) -> String {
     local(at).map(|t| t.format("%H:%M").to_string()).unwrap_or_default()
 }
 
+/// This many hours from now.
+pub fn hours_from_now(hours: i64) -> Timestamp {
+    let at = chrono::Utc::now() + chrono::Duration::hours(hours);
+    Timestamp(u64::try_from(at.timestamp_millis()).unwrap_or_default())
+}
+
 /// The full date and time, for a message's details: "Tuesday 24 November 2026 · 14:28:03".
 pub fn full(at: Timestamp) -> String {
     local(at).map(|t| t.format("%A %-d %B %Y · %H:%M:%S").to_string()).unwrap_or_default()

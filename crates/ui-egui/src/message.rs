@@ -25,6 +25,13 @@ pub fn shown_key(key: &str) -> String {
     shown
 }
 
+/// What a message needs to know about its chat.
+pub struct Cx<'a> {
+    pub chat: &'a ChatId,
+    /// The chat's pinned messages.
+    pub pinned: &'a [MessageId],
+}
+
 /// What a message asked the open chat to do, beyond sending a command.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Act {
@@ -63,8 +70,8 @@ fn snippet(body: &MessageBody) -> String {
 
 /// One message. `ticked` is whether it is selected, while selecting. Returns its rectangle (to scroll to it) and
 /// what it asked for.
-pub fn message_view(ui: &mut Ui, message: &Message, chat: &ChatId, ticked: Option<bool>, out: &mut Out) -> (Rect, Option<Act>) {
-    let Some(on) = ticked else { return message_only(ui, message, chat, out) };
+pub fn message_view(ui: &mut Ui, message: &Message, cx: &Cx<'_>, ticked: Option<bool>, out: &mut Out) -> (Rect, Option<Act>) {
+    let Some(on) = ticked else { return message_only(ui, message, cx, out) };
     let t = Tokens::get(ui.ctx());
     let mut act = None;
     let row = egui::Frame::new().fill(if on { t.sunken } else { Color32::TRANSPARENT }).inner_margin(Margin::symmetric(8, 6)).show(ui, |ui| {
@@ -78,7 +85,7 @@ pub fn message_view(ui: &mut Ui, message: &Message, chat: &ChatId, ticked: Optio
             }
             ui.vertical(|ui| {
                 ui.set_width(ui.available_width());
-                let (_, inner) = message_only(ui, message, chat, out);
+                let (_, inner) = message_only(ui, message, cx, out);
                 act = act.take().or(inner);
             });
         });
@@ -86,7 +93,7 @@ pub fn message_view(ui: &mut Ui, message: &Message, chat: &ChatId, ticked: Optio
     (row.response.rect, act)
 }
 
-fn message_only(ui: &mut Ui, message: &Message, chat: &ChatId, out: &mut Out) -> (Rect, Option<Act>) {
+fn message_only(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out) -> (Rect, Option<Act>) {
     // Right-clicking anywhere on the message opens its menu. The area is the message's place in the last frame,
     // claimed before its contents so the buttons inside stay on top of it.
     let area_id = ui.scope_id().with(("message-area", &message.id.0));
@@ -95,39 +102,39 @@ fn message_only(ui: &mut Ui, message: &Message, chat: &ChatId, out: &mut Out) ->
     if let Some(rect) = last {
         let area = ui.interact(rect, area_id, Sense::click());
         area.context_menu(|ui| {
-            if let Some(a) = menu(ui, message, chat, out) {
+            if let Some(a) = menu(ui, message, cx, out) {
                 act = Some(a);
             }
         });
     }
-    let rect = if message.own { own(ui, message, chat, out, &mut act) } else { theirs(ui, message, chat, out, &mut act) };
+    let rect = if message.own { own(ui, message, cx, out, &mut act) } else { theirs(ui, message, cx, out, &mut act) };
     ui.ctx().data_mut(|d| d.insert_temp(area_id, rect));
     (rect, act)
 }
 
-fn theirs(ui: &mut Ui, message: &Message, chat: &ChatId, out: &mut Out, act: &mut Option<Act>) -> Rect {
+fn theirs(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out, act: &mut Option<Act>) -> Rect {
     ui.horizontal_top(|ui| {
         avatar(ui, &message.sender, 28.0);
         ui.add_space(4.0);
-        ui.vertical(|ui| contents(ui, message, chat, out, act));
+        ui.vertical(|ui| contents(ui, message, cx, out, act));
     })
     .response
     .rect
 }
 
-fn own(ui: &mut Ui, message: &Message, chat: &ChatId, out: &mut Out, act: &mut Option<Act>) -> Rect {
+fn own(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out, act: &mut Option<Act>) -> Rect {
     let t = Tokens::get(ui.ctx());
     ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
         let rule = if matches!(message.state, SendState::Failed(_)) { t.bad } else { t.accent_ink };
         let frame = egui::Frame::new().fill(t.accent_tint).inner_margin(Margin::symmetric(14, 10)).show(ui, |ui| {
             ui.set_max_width(460.0);
             ui.with_layout(Layout::top_down(Align::Min), |ui| {
-                contents(ui, message, chat, out, act);
+                contents(ui, message, cx, out, act);
                 if let SendState::Failed(_) = message.state {
                     ui.horizontal(|ui| {
                         note(ui, tl!("The server didn't take it."));
                         if button(ui, tl!("Retry"), Kind::Primary, true).clicked() {
-                            out.push(Command::Retry { chat: chat.clone(), message: message.id.clone() });
+                            out.push(Command::Retry { chat: cx.chat.clone(), message: message.id.clone() });
                         }
                     });
                 }
@@ -141,8 +148,8 @@ fn own(ui: &mut Ui, message: &Message, chat: &ChatId, out: &mut Out, act: &mut O
 }
 
 /// The head, the quote, the body and the reactions.
-fn contents(ui: &mut Ui, message: &Message, chat: &ChatId, out: &mut Out, act: &mut Option<Act>) {
-    head(ui, message, chat, out, act);
+fn contents(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out, act: &mut Option<Act>) {
+    head(ui, message, cx, out, act);
     if let Some(quote) = &message.reply_to
         && let Some(a) = quote_view(ui, quote, &message.id)
     {
@@ -150,11 +157,11 @@ fn contents(ui: &mut Ui, message: &Message, chat: &ChatId, out: &mut Out, act: &
     }
     body(ui, &message.body);
     if !message.reactions.is_empty() {
-        reactions(ui, message, chat, out);
+        reactions(ui, message, cx, out);
     }
 }
 
-fn head(ui: &mut Ui, message: &Message, chat: &ChatId, out: &mut Out, act: &mut Option<Act>) {
+fn head(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out, act: &mut Option<Act>) {
     let t = Tokens::get(ui.ctx());
     ui.horizontal(|ui| {
         ui.label(RichText::new(who(message)).size(13.0).strong().color(t.ink_strong));
@@ -172,26 +179,26 @@ fn head(ui: &mut Ui, message: &Message, chat: &ChatId, out: &mut Out, act: &mut 
             ui.label(RichText::new(state.to_uppercase()).monospace().size(11.0).color(color));
         }
         if message.body != MessageBody::Deleted {
-            more(ui, message, chat, out, act);
+            more(ui, message, cx, out, act);
         }
     });
 }
 
 /// The "…" button that opens the message's menu.
-fn more(ui: &mut Ui, message: &Message, chat: &ChatId, out: &mut Out, act: &mut Option<Act>) {
+fn more(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out, act: &mut Option<Act>) {
     let t = Tokens::get(ui.ctx());
     let label = fmt(tl!("Message actions: {sender}, {text}"), &[("sender", &who(message)), ("text", &snippet(&message.body))]);
     let response = ui.add(egui::Button::new(RichText::new("…").size(14.0).color(t.muted)).frame(false).min_size(egui::vec2(24.0, 18.0)));
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
     egui::Popup::menu(&response).show(|ui| {
-        if let Some(a) = menu(ui, message, chat, out) {
+        if let Some(a) = menu(ui, message, cx, out) {
             *act = Some(a);
         }
     });
 }
 
 /// The message's menu: quick reactions, then what the user may do with it.
-fn menu(ui: &mut Ui, message: &Message, chat: &ChatId, out: &mut Out) -> Option<Act> {
+fn menu(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out) -> Option<Act> {
     ui.set_min_width(220.0);
     let mut act = None;
     if message.can.react {
@@ -205,7 +212,7 @@ fn menu(ui: &mut Ui, message: &Message, chat: &ChatId, out: &mut Out) -> Option<
                 let response = ui.add(chip);
                 response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, fmt(tl!("React with {emoji}"), &[("emoji", &shown)])));
                 if response.clicked() {
-                    out.push(Command::React { chat: chat.clone(), message: message.id.clone(), key: key.to_owned() });
+                    out.push(Command::React { chat: cx.chat.clone(), message: message.id.clone(), key: key.to_owned() });
                     ui.close();
                 }
             }
@@ -228,6 +235,11 @@ fn menu(ui: &mut Ui, message: &Message, chat: &ChatId, out: &mut Out) -> Option<
     }
     if item(ui, tl!("Forward"), text.is_some() && message.state == SendState::Sent) {
         act = Some(Act::Forward(message.id.clone()));
+    }
+    let pinned = cx.pinned.contains(&message.id);
+    if item(ui, if pinned { tl!("Unpin") } else { tl!("Pin in this chat") }, pinned || message.can.react) {
+        out.push(Command::PinMessage { chat: cx.chat.clone(), message: message.id.clone(), pin: !pinned });
+        ui.close();
     }
     if item(ui, tl!("Select"), true) {
         act = Some(Act::Select(message.id.clone()));
@@ -275,11 +287,11 @@ fn quote_view(ui: &mut Ui, quote: &Quote, reply: &MessageId) -> Option<Act> {
 }
 
 /// The reactions under a message: one chip per emoji with its count, in the accent when the user is among them.
-fn reactions(ui: &mut Ui, message: &Message, chat: &ChatId, out: &mut Out) {
+fn reactions(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out) {
     ui.horizontal_wrapped(|ui| {
         for reaction in &message.reactions {
             if chip(ui, reaction, message.can.react).clicked() {
-                out.push(Command::React { chat: chat.clone(), message: message.id.clone(), key: reaction.key.clone() });
+                out.push(Command::React { chat: cx.chat.clone(), message: message.id.clone(), key: reaction.key.clone() });
             }
         }
     });
@@ -332,7 +344,7 @@ fn body(ui: &mut Ui, body: &MessageBody) {
 }
 
 /// Asks before deleting some of the user's messages.
-pub fn delete_sheet(ctx: &egui::Context, messages: &[Message], chat: &ChatId, chat_name: &str, out: &mut Out) -> bool {
+pub fn delete_sheet(ctx: &egui::Context, messages: &[Message], cx: &Cx<'_>, chat_name: &str, out: &mut Out) -> bool {
     let mut close = false;
     let title = match messages {
         [_] => tl!("Delete this message?").to_owned(),
@@ -357,7 +369,7 @@ pub fn delete_sheet(ctx: &egui::Context, messages: &[Message], chat: &ChatId, ch
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if button(ui, tl!("Delete"), Kind::Danger, true).clicked() {
                     for message in messages {
-                        out.push(Command::Delete { chat: chat.clone(), message: message.id.clone() });
+                        out.push(Command::Delete { chat: cx.chat.clone(), message: message.id.clone() });
                     }
                     close = true;
                 }

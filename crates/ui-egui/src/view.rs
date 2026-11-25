@@ -315,13 +315,17 @@ pub fn inbox(ui: &mut Ui, state: &mut State, out: &mut Out) {
     egui::Panel::left("inbox").exact_size(380.0).resizable(false).frame(egui::Frame::new().fill(t.bg)).show(ui, |ui| {
         inbox_list(ui, state, out);
     });
+    let mut leave = false;
     egui::CentralPanel::default().frame(egui::Frame::new().fill(t.bg)).show(ui, |ui| match state.open.as_mut() {
         Some(open) => {
             let chat = state.inbox.get(&open.id).cloned();
-            crate::chat::chat_view(ui, open, chat.as_ref(), out);
+            leave = crate::chat::chat_view(ui, open, chat.as_ref(), out);
         }
         None => empty_chat(ui, state, out),
     });
+    if leave {
+        state.open = None;
+    }
     forward_sheet(ui.ctx(), state, out);
 }
 
@@ -477,6 +481,10 @@ pub(crate) fn unsupported(kind: &str) -> String {
     }
 }
 
+/// The marks on a pinned and a muted chat's row.
+pub(crate) const PINNED_MARK: &str = "📌";
+pub(crate) const MUTED_MARK: &str = "🔕";
+
 /// One chat in the list. Its accessible name says the chat, its network, the unread count and the last message.
 fn chat_row(ui: &mut Ui, chat: &Chat, selected: bool) -> egui::Response {
     let t = Tokens::get(ui.ctx());
@@ -487,9 +495,20 @@ fn chat_row(ui: &mut Ui, chat: &Chat, selected: bool) -> egui::Response {
         format!("{who}: {}", preview_text(&m.body))
     });
     let mut name = fmt(tl!("{chat}, on {network}"), &[("chat", &chat.name), ("network", &network_name(&chat.network))]);
+    if chat.pinned {
+        name.push_str(", ");
+        name.push_str(tl!("pinned"));
+    }
+    if chat.muted.is_some() {
+        name.push_str(", ");
+        name.push_str(tl!("muted"));
+    }
     if chat.unread > 0 {
         name.push_str(", ");
         name.push_str(&trn(u64::from(chat.unread), "{n} unread", "{n} unread"));
+    } else if chat.marked_unread {
+        name.push_str(", ");
+        name.push_str(tl!("marked unread"));
     }
     if let Some(p) = &preview {
         name.push_str(". ");
@@ -515,9 +534,9 @@ fn chat_row(ui: &mut Ui, chat: &Chat, selected: bool) -> egui::Response {
     child.style_mut().interaction.selectable_labels = false;
     avatar(&mut child, &chat.name, 36.0);
     child.add_space(4.0);
-    let two_lines = preview.is_some() || chat.unread > 0;
+    let two_lines = preview.is_some() || chat.is_unread();
     child.vertical(|ui| {
-        let strong = chat.unread > 0;
+        let strong = chat.is_unread();
         // Centre the one or two lines in the row by hand: a vertical block in a centred row starts at the top.
         let name_h = ui.fonts_mut(|f| f.row_height(&egui::FontId::proportional(14.0)));
         let preview_h = ui.fonts_mut(|f| f.row_height(&egui::FontId::proportional(12.5)));
@@ -529,6 +548,13 @@ fn chat_row(ui: &mut Ui, chat: &Chat, selected: bool) -> egui::Response {
                 let when = chat.last_message.as_ref().map(|m| short_time(m.at)).unwrap_or_default();
                 ui.label(RichText::new(when).monospace().size(12.0).color(if strong { t.ink } else { t.muted }));
                 network_tag(ui, &chat.network);
+                // Marks drawn from the bundled emoji font (a test checks they have glyphs).
+                if chat.muted.is_some() {
+                    ui.label(RichText::new(MUTED_MARK).size(12.0).color(t.muted));
+                }
+                if chat.pinned {
+                    ui.label(RichText::new(PINNED_MARK).size(12.0).color(t.muted));
+                }
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                     let mut name = RichText::new(&chat.name).size(14.0).color(if strong { t.ink_strong } else { t.ink });
                     if strong {
@@ -544,7 +570,9 @@ fn chat_row(ui: &mut Ui, chat: &Chat, selected: bool) -> egui::Response {
         ui.horizontal(|ui| {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if chat.unread > 0 {
-                    unread(ui, chat.unread);
+                    unread(ui, chat.unread, chat.muted.is_some());
+                } else if chat.marked_unread {
+                    crate::widgets::marked_unread(ui);
                 }
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                     let text = preview.clone().unwrap_or_default();

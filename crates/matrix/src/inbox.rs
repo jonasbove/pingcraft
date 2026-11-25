@@ -21,7 +21,7 @@ use matrix_sdk_ui::RoomListService;
 use matrix_sdk_ui::eyeball_im::{Vector, VectorDiff};
 use matrix_sdk_ui::room_list_service::filters::{new_filter_all, new_filter_joined, new_filter_not, new_filter_space};
 use matrix_sdk_ui::room_list_service::{RoomList, RoomListItem};
-use pingcraft_core::{Chat, ChatId, InboxChange, MessageBody, MessagePreview, Network, Timestamp};
+use pingcraft_core::{Chat, ChatId, InboxChange, MessageBody, MessagePreview, Mute, Network, Timestamp};
 use serde_json::Value;
 use tokio::sync::broadcast;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
@@ -194,6 +194,12 @@ pub(crate) async fn chat_from_room(room: &Room, own: Option<&UserId>) -> Chat {
         last_message: preview(room, own).await,
         unread: u32::try_from(room.num_unread_messages()).unwrap_or(u32::MAX),
         encrypted: room.encryption_state().is_encrypted(),
+        pinned: room.is_favourite(),
+        muted: match crate::chat_settings::is_muted(room) {
+            false => None,
+            true => Some(crate::chat_settings::mute_until(room).await.map_or(Mute::UntilUnmuted, Mute::Until)),
+        },
+        marked_unread: room.is_marked_unread(),
     }
 }
 

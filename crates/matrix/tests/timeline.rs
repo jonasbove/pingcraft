@@ -230,3 +230,43 @@ async fn details_show_edits_and_forwarding_sends_copies() {
     let mut last = Vec::new();
     chat_until("the forwarded copy", &mut elsewhere, &mut last, |ms| ms.iter().find(|m| text(m) == Some("second words")).map(|_| ())).await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn pins_mutes_and_marking_unread_reach_the_server() {
+    use pingcraft_core::{ChatId, Mute, Timestamp};
+    use pingcraft_matrix::ChatUpdate;
+    let server = server_or_skip!();
+    let ana = sign_in_as(&server.homeserver, &server.user).await;
+    let room = create_room(&ana, &unique("Settings"), true, None, vec![]).await;
+    let (connection, mut chat) = open(&ana, &room).await;
+    let id = ChatId(room.to_string());
+    let mut last = Vec::new();
+    chat.send_text("pin me").await.unwrap();
+    let sent =
+        chat_until("the message", &mut chat, &mut last, |ms| ms.iter().find(|m| text(m) == Some("pin me") && m.state == SendState::Sent).cloned())
+            .await;
+    chat.pin(&sent.id, true).await.unwrap();
+    within("the pin", async {
+        loop {
+            if let Some(ChatUpdate::Pinned(p)) = chat.next_update().await
+                && p.iter().any(|q| q.message.as_ref() == Some(&sent.id))
+            {
+                return;
+            }
+        }
+    })
+    .await;
+
+    assert!(connection.pin_chat(&id, true).await.unwrap().pinned);
+    let until = Timestamp(4_000_000_000_000);
+    assert_eq!(connection.mute(&id, Some(Mute::Until(until))).await.unwrap().muted, Some(Mute::Until(until)));
+    assert!(connection.mark_unread(&id).await.unwrap().marked_unread);
+    let mut feed = connection.inbox().await.unwrap();
+    let mut inbox = pingcraft_core::Inbox::default();
+    inbox_until("the settings in the inbox", &mut feed, &mut inbox, |inbox| {
+        inbox.get(&id).filter(|c| c.pinned && c.muted == Some(Mute::Until(until)) && c.marked_unread).map(|_| ())
+    })
+    .await;
+    assert!(connection.opened(&id).await.unwrap().is_some_and(|c| !c.marked_unread));
+    assert_eq!(connection.mute(&id, None).await.unwrap().muted, None);
+}

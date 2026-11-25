@@ -310,16 +310,33 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
    as new messages from you, through that chat's send queue. The sheet says they don't say "forwarded": no bridge
    carries that, so nothing marks them yet. Open: forwarding media (with milestone 6's media), several target
    chats at once, and a "forwarded" mark if bridges gain one.
-9. **Pinning.** Pin messages inside a chat (shown at the top of the chat, synced to the network where the bridge
+9. **Done (2026-11-25), with gaps.** **Pinning.** Pin messages inside a chat (shown at the top of the chat, synced to the network where the bridge
    carries pins), and pin chats to the top of the inbox.
-10. **Muting.** Mute a chat or a whole network, for an hour, a day, until turned back on, or until a time; muted
+   Built: PIN IN THIS CHAT / UNPIN in the message's menu (`m.room.pinned_events`, so everyone in the chat sees
+   them; refused without permission, said in plain words), and a pinned bar under the chat header, newest pin first,
+   that goes to the message when clicked and steps through the pins. The chat's "…" menu pins it to the top of the
+   inbox (the `m.favourite` tag, so other Matrix apps see it); pinned chats come first, with a pin. Open: a pinned
+   message that is not loaded shows without its text until older messages are loaded; whether bridges carry pins
+   (pending, needs the maintainer's accounts).
+10. **Done for chats (2026-11-25), with gaps.** **Muting.** Mute a chat or a whole network, for an hour, a day, until turned back on, or until a time; muted
     chats still count as unread but make no notification. Possibly mentions-only for group chats.
+    Built: the chat's "…" menu mutes it for an hour, a day, a week or until turned back on, and turns it back on.
+    Muting is a push rule on the server, so the user's other Matrix apps follow it; the end time is kept in the
+    chat's room account data (`org.pingcraft.mute_until`) and PingCraft turns notifications back on at that time
+    while it runs (a push rule has no end time; if PingCraft is not running, it happens at its next start). Muted
+    chats show a struck bell and a quiet count, and still count as unread. Open: muting a whole network, "until a
+    time" (needs a date and time picker), mentions-only; PingCraft has no notifications of its own yet
+    (milestone 6).
 11. **Notification sounds and colours.** Choose a sound for each network or chat (a few built-in sounds under an
     allowlisted licence, or none), and pick a chat's or network's accent colour, tied to the network colours under
     "Later". Builds on milestone 6's desktop notifications.
 12. **Other everyday actions,** to decide when the design is made: mark as unread, archive a chat, drafts kept
     per chat, typing indicators, a "jump to latest" button, and the context menu that holds all of the above
     (right-click and a keyboard shortcut, through `craft-libs` `menu` and `keymap`).
+    - **Mark as unread: done (2026-11-25).** In the chat's "…" menu (`m.marked_unread`); it leaves the chat, the
+      row gets an accent mark and counts under UNREAD, and opening the chat takes the mark off.
+    - **Context menu: done, without shortcuts.** A message's menu opens from its "…" button or a right-click;
+      the keyboard shortcuts in the design (through `craft-keymap`) are still to come.
 
 ## Later, not yet planned
 

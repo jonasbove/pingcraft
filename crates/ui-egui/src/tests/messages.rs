@@ -140,7 +140,7 @@ fn the_quick_reactions_are_drawn_by_the_shipped_fonts() {
     crate::theme::install(&ctx);
     let mut out = ctx.run_ui(egui::RawInput::default(), |_| {});
     out.textures_delta.clear();
-    for key in crate::message::QUICK_REACTIONS {
+    for key in crate::message::QUICK_REACTIONS.iter().chain(&[crate::view::PINNED_MARK, crate::view::MUTED_MARK]) {
         for c in crate::message::shown_key(key).chars() {
             let has = ctx.fonts_mut(|f| f.has_glyph(&egui::FontId::proportional(14.0), c));
             assert!(has, "{key:?}: no glyph for {c:?}");

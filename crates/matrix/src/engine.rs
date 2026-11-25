@@ -9,6 +9,7 @@
 //! second PingCraft on the same folder cannot overwrite the vault or the stores under it; that one says
 //! [`Event::AlreadyRunning`] and does nothing else.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc;
@@ -17,7 +18,7 @@ use std::time::Duration;
 use pingcraft_core::app::{Backend, Command, Event, SignInProblem};
 use pingcraft_core::bridge::BridgeProvider;
 use pingcraft_core::encryption::{RecoveryStatus, Verification};
-use pingcraft_core::{ChatId, ConnectionState};
+use pingcraft_core::{ChatId, ConnectionState, InboxChange, Mute, Timestamp};
 use pingcraft_keychain::{InstanceLock, KdfParams, LockError, OsKeychain, PassphraseVault, SecretStore, VaultError};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use zeroize::Zeroizing;
@@ -122,6 +123,8 @@ struct SignedIn {
     shown_recovery: Option<RecoveryStatus>,
     /// Connecting networks through the mautrix bridges (ADR 0003).
     connector: Option<Connector>,
+    /// When each muted chat's mute ends; PingCraft turns its notifications back on then.
+    mute_ends: HashMap<ChatId, Timestamp>,
 }
 
 struct Worker {
@@ -138,7 +141,7 @@ struct Worker {
 enum Woke {
     Command(Option<Command>),
     Inbox(Option<pingcraft_core::InboxChange>),
-    Messages(Option<Vec<pingcraft_core::Message>>),
+    Chat(Option<crate::timeline::ChatUpdate>),
     Incoming(Option<VerificationFlow>),
     Verification(Option<Verification>),
     Bridge(Option<connect::Done>),
@@ -180,7 +183,7 @@ impl Worker {
                     c = commands.recv() => Woke::Command(c),
                     Some(done) = maybe(connector.map(|c| c.next())) => Woke::Bridge(Some(done)),
                     Some(change) = maybe(inbox.map(|f| f.next())) => Woke::Inbox(Some(change)),
-                    Some(messages) = maybe(chat.map(|c| c.next())) => Woke::Messages(Some(messages)),
+                    Some(update) = maybe(chat.map(|c| c.next_update())) => Woke::Chat(Some(update)),
                     Some(flow) = maybe(incoming.map(|i| i.next())) => Woke::Incoming(Some(flow)),
                     Some(state) = maybe(flow.map(|f| f.next())) => Woke::Verification(Some(state)),
                     _ = tick.tick() => Woke::Tick,
@@ -189,8 +192,9 @@ impl Worker {
             match wake {
                 Woke::Command(None) => break,
                 Woke::Command(Some(command)) => self.handle(command).await,
-                Woke::Inbox(Some(change)) => self.emit.send(Event::Inbox(change)),
-                Woke::Messages(Some(messages)) => self.messages(messages).await,
+                Woke::Inbox(Some(change)) => self.inbox(change),
+                Woke::Chat(Some(crate::timeline::ChatUpdate::Messages(messages))) => self.messages(messages).await,
+                Woke::Chat(Some(crate::timeline::ChatUpdate::Pinned(pinned))) => self.pinned(pinned),
                 Woke::Incoming(Some(flow)) => self.incoming(flow),
                 Woke::Verification(Some(state)) => self.emit.send(Event::Verification(Some(state))),
                 Woke::Bridge(Some(done)) => {
@@ -200,8 +204,11 @@ impl Worker {
                         }
                     }
                 }
-                Woke::Inbox(None) | Woke::Messages(None) | Woke::Incoming(None) | Woke::Verification(None) | Woke::Bridge(None) => {}
-                Woke::Tick => self.tick(),
+                Woke::Inbox(None) | Woke::Chat(None) | Woke::Incoming(None) | Woke::Verification(None) | Woke::Bridge(None) => {}
+                Woke::Tick => {
+                    self.tick();
+                    self.end_mutes().await;
+                }
             }
         }
         if let Some(s) = self.signed_in.take() {
@@ -322,8 +329,18 @@ impl Worker {
         }
         // A signed-in client always has a user ID, so there is always a provider.
         let connector = MautrixProvider::for_client(&session.client).map(|p| Connector::new(Arc::new(p) as Arc<dyn BridgeProvider>));
-        self.signed_in =
-            Some(SignedIn { session, connection, inbox, incoming, chat: None, flow: None, shown_state: None, shown_recovery: None, connector });
+        self.signed_in = Some(SignedIn {
+            session,
+            connection,
+            inbox,
+            incoming,
+            chat: None,
+            flow: None,
+            shown_state: None,
+            shown_recovery: None,
+            connector,
+            mute_ends: HashMap::new(),
+        });
         self.tick();
     }
 
@@ -340,6 +357,53 @@ impl Worker {
             s.shown_recovery = Some(recovery);
             self.emit.send(Event::Recovery(recovery));
         }
+    }
+
+    /// Passes an inbox change on, noting when each muted chat's mute ends.
+    fn inbox(&mut self, change: pingcraft_core::InboxChange) {
+        if let Some(s) = self.signed_in.as_mut() {
+            use pingcraft_core::InboxChange;
+            let chats = match &change {
+                InboxChange::Reset(chats) => {
+                    s.mute_ends.clear();
+                    chats.iter().collect()
+                }
+                InboxChange::Upsert(chat) => vec![chat],
+                InboxChange::Remove(id) => {
+                    s.mute_ends.remove(id);
+                    vec![]
+                }
+            };
+            for chat in chats {
+                match chat.muted {
+                    Some(Mute::Until(at)) => s.mute_ends.insert(chat.id.clone(), at),
+                    _ => s.mute_ends.remove(&chat.id),
+                };
+            }
+        }
+        self.emit.send(Event::Inbox(change));
+    }
+
+    /// Turns notifications back on in chats whose mute has ended.
+    async fn end_mutes(&mut self) {
+        let Some(s) = self.signed_in.as_mut() else { return };
+        let now = Timestamp(
+            u64::try_from(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or_default())
+                .unwrap_or(u64::MAX),
+        );
+        let ended: Vec<ChatId> = s.mute_ends.iter().filter(|(_, at)| **at <= now).map(|(id, _)| id.clone()).collect();
+        for chat in ended {
+            s.mute_ends.remove(&chat);
+            match s.connection.mute(&chat, None).await {
+                Ok(now) => self.emit.send(Event::Inbox(pingcraft_core::InboxChange::Upsert(now))),
+                Err(e) => self.emit.send(Event::Problem(e)),
+            }
+        }
+    }
+
+    fn pinned(&mut self, pinned: Vec<pingcraft_core::Quote>) {
+        let Some((chat, _)) = self.signed_in.as_ref().and_then(|s| s.chat.as_ref()) else { return };
+        self.emit.send(Event::Pinned { chat: chat.clone(), pinned });
     }
 
     async fn messages(&mut self, messages: Vec<pingcraft_core::Message>) {
@@ -402,8 +466,10 @@ impl Worker {
 
     async fn handle_signed_in(&mut self, command: Command) {
         let Some(s) = self.signed_in.as_mut() else { return };
+        // A chat this command changed, to show at once rather than after the next sync.
+        let mut upsert = None;
         let result: Result<(), String> = match command {
-            Command::OpenChat(chat) => open_chat(s, chat).await,
+            Command::OpenChat(chat) => open_chat(s, chat).await.map(|changed| upsert = changed),
             Command::CloseChat => {
                 s.chat = None;
                 Ok(())
@@ -416,6 +482,7 @@ impl Worker {
             | Command::Delete { .. }
             | Command::Details { .. }
             | Command::Forward { .. }
+            | Command::PinMessage { .. }
             | Command::LoadOlder(_)) => match chat_command(s, command).await {
                 Ok(Some(event)) => {
                     self.emit.send(event);
@@ -467,6 +534,9 @@ impl Worker {
                 Ok(())
             }
             Command::EnableEncryption(chat) => s.connection.enable_encryption(&chat).await,
+            Command::PinChat { chat, pin } => s.connection.pin_chat(&chat, pin).await.map(|c| upsert = Some(c)),
+            Command::Mute { chat, mute } => s.connection.mute(&chat, mute).await.map(|c| upsert = Some(c)),
+            Command::MarkUnread(chat) => s.connection.mark_unread(&chat).await.map(|c| upsert = Some(c)),
             Command::Refresh => refresh(s).await,
             command @ (Command::LoadNetworks
             | Command::StartLogin { .. }
@@ -481,6 +551,9 @@ impl Worker {
             // Handled before.
             Command::Unlock { .. } | Command::SignIn { .. } | Command::SignOut => Ok(()),
         };
+        if let Some(chat) = upsert {
+            self.inbox(InboxChange::Upsert(chat));
+        }
         if let Err(problem) = result {
             self.emit.send(Event::Problem(problem));
         }
@@ -488,13 +561,15 @@ impl Worker {
     }
 }
 
-/// Opens a chat from the inbox, closing the one before, and marks it read.
-async fn open_chat(s: &mut SignedIn, chat: ChatId) -> Result<(), String> {
+/// Opens a chat from the inbox, closing the one before, and marks it read (taking off a "marked unread"). Returns
+/// the chat when that changed it.
+async fn open_chat(s: &mut SignedIn, chat: ChatId) -> Result<Option<pingcraft_core::Chat>, String> {
     s.chat = None;
     let timeline = s.connection.open_chat(&chat).await.map_err(|e| e.to_string())?;
     let _ = timeline.mark_read().await;
+    let changed = s.connection.opened(&chat).await?;
     s.chat = Some((chat, timeline));
-    Ok(())
+    Ok(changed)
 }
 
 /// A command for the open chat. One for a chat that is not open fails, except loading older messages, which
@@ -509,6 +584,7 @@ async fn chat_command(s: &SignedIn, command: Command) -> Result<Option<Event>, S
         Command::React { chat, message, key } if is_open(&chat) => timeline.react(&message, &key).await,
         Command::Edit { chat, message, text } if is_open(&chat) => timeline.edit(&message, &text).await,
         Command::Delete { chat, message } if is_open(&chat) => timeline.delete(&message).await,
+        Command::PinMessage { chat, message, pin } if is_open(&chat) => timeline.pin(&message, pin).await,
         Command::Details { chat, message } if is_open(&chat) => {
             let details = timeline.details(&message).await.map_err(|e| e.to_string())?;
             return Ok(Some(Event::Details { chat, message, details }));

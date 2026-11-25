@@ -3,10 +3,10 @@
 
 use egui::{Align, Color32, Layout, Margin, RichText, ScrollArea, Sense, Stroke, Ui, Vec2};
 use pingcraft_core::app::Command;
-use pingcraft_core::{Chat, Network};
+use pingcraft_core::{Chat, Mute, Network};
 
 use crate::i18n::fmt;
-use crate::message::Act;
+use crate::message::{Act, Cx};
 use crate::state::{Forwarding, OpenChat};
 use crate::theme::Tokens;
 use crate::time::day_label;
@@ -14,9 +14,11 @@ use crate::tl;
 use crate::view::Out;
 use crate::widgets::{Kind, avatar, button, hud, network_name, network_tag, note};
 
-pub fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, out: &mut Out) {
+/// The open chat. Returns whether the user left it (marking it unread).
+pub fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, out: &mut Out) -> bool {
     let t = Tokens::get(ui.ctx());
     let name = chat.map(|c| c.name.clone()).unwrap_or_default();
+    let mut leave = false;
     // The header.
     egui::Panel::top("chat-header").exact_size(64.0).frame(egui::Frame::new().inner_margin(Margin::symmetric(24, 0))).show(ui, |ui| {
         ui.horizontal_centered(|ui| {
@@ -34,6 +36,7 @@ pub fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, out: &mu
             });
             if let Some(chat) = chat {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    leave = chat_menu(ui, chat, out);
                     let (text, color) = match (chat.encrypted, chat.network.is_matrix()) {
                         (true, true) => (tl!("End-to-end encrypted"), t.good),
                         (true, false) => (tl!("Encrypted · via your bridge"), t.muted),
@@ -58,8 +61,14 @@ pub fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, out: &mu
             }
         });
     });
+    if leave {
+        return true;
+    }
     if open.encrypt_sheet {
         encrypt_sheet(ui.ctx(), open, &name, out);
+    }
+    if !open.pinned.is_empty() {
+        pinned_bar(ui, open, out);
     }
     // The composer, with the reply or edit bar over it; while selecting, what can be done with the selection. Hidden
     // under a sheet, so the sheet's buttons are the only ones with their names.
@@ -78,6 +87,7 @@ pub fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, out: &mu
             }
             let mut last_day = String::new();
             let mut acts = Vec::new();
+            let pinned: Vec<_> = open.pinned.iter().filter_map(|q| q.message.clone()).collect();
             for message in &open.messages {
                 let day = day_label(message.at);
                 if day != last_day {
@@ -85,7 +95,8 @@ pub fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, out: &mu
                     last_day = day;
                 }
                 let ticked = open.selected.as_ref().map(|s| s.contains(&message.id));
-                let (rect, act) = crate::message::message_view(ui, message, &open.id, ticked, out);
+                let cx = Cx { chat: &open.id, pinned: &pinned };
+                let (rect, act) = crate::message::message_view(ui, message, &cx, ticked, out);
                 if open.jump_to.as_ref() == Some(&message.id) {
                     ui.scroll_to_rect(rect, Some(Align::Center));
                 }
@@ -99,7 +110,8 @@ pub fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, out: &mu
         });
     });
     let deleting: Vec<_> = open.messages.iter().filter(|m| open.deleting.contains(&m.id)).cloned().collect();
-    if !deleting.is_empty() && crate::message::delete_sheet(ui.ctx(), &deleting, &open.id, &name, out) {
+    let cx = Cx { chat: &open.id, pinned: &[] };
+    if !deleting.is_empty() && crate::message::delete_sheet(ui.ctx(), &deleting, &cx, &name, out) {
         // Deleting from a selection ends it, whether or not the user went ahead.
         if open.deleting.len() > 1 || open.selected.is_some() {
             open.selected = None;
@@ -109,6 +121,103 @@ pub fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, out: &mu
     if open.details.is_some() {
         details_sheet(ui.ctx(), open, chat);
     }
+    false
+}
+
+/// The chat's "…" menu: pin it to the top of the inbox, mark it unread, mute it. Returns whether the user left the
+/// chat (marking it unread).
+fn chat_menu(ui: &mut Ui, chat: &Chat, out: &mut Out) -> bool {
+    let t = Tokens::get(ui.ctx());
+    let mut leave = false;
+    let more = ui.add(
+        egui::Button::new(RichText::new("…").size(14.0))
+            .stroke(Stroke::new(1.0, t.line_strong))
+            .corner_radius(egui::CornerRadius::ZERO)
+            .min_size(Vec2::splat(34.0)),
+    );
+    more.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, tl!("Chat actions")));
+    egui::Popup::menu(&more).show(|ui| {
+        ui.set_min_width(260.0);
+        let id = chat.id.clone();
+        let pin = if chat.pinned { tl!("Unpin from the top of the inbox") } else { tl!("Pin to the top of the inbox") };
+        if ui.button(pin).clicked() {
+            out.push(Command::PinChat { chat: id.clone(), pin: !chat.pinned });
+        }
+        if ui.button(tl!("Mark as unread")).clicked() {
+            out.push(Command::CloseChat);
+            out.push(Command::MarkUnread(id.clone()));
+            leave = true;
+        }
+        ui.separator();
+        hud(ui, tl!("Notifications"), t.muted);
+        match chat.muted {
+            Some(mute) => {
+                let until = match mute {
+                    Mute::Until(at) => fmt(tl!("Muted until {time}"), &[("time", &crate::time::full(at))]),
+                    Mute::UntilUnmuted => tl!("Muted until you turn it back on").to_owned(),
+                };
+                note(ui, &until);
+                if ui.button(tl!("Turn notifications back on")).clicked() {
+                    out.push(Command::Mute { chat: id.clone(), mute: None });
+                }
+            }
+            None => {
+                for (label, hours) in [(tl!("Mute for an hour"), 1), (tl!("Mute for a day"), 24), (tl!("Mute for a week"), 24 * 7)] {
+                    if ui.button(label).clicked() {
+                        out.push(Command::Mute { chat: id.clone(), mute: Some(Mute::Until(crate::time::hours_from_now(hours))) });
+                    }
+                }
+                if ui.button(tl!("Mute until you turn it back on")).clicked() {
+                    out.push(Command::Mute { chat: id.clone(), mute: Some(Mute::UntilUnmuted) });
+                }
+            }
+        }
+        note(ui, tl!("A muted chat still counts as unread. PingCraft turns notifications back on at the time you chose while it is running."));
+    });
+    leave
+}
+
+/// The pinned messages, one at a time, newest first, under the chat header. Clicking one goes to it.
+fn pinned_bar(ui: &mut Ui, open: &mut OpenChat, out: &mut Out) {
+    let t = Tokens::get(ui.ctx());
+    let n = open.pinned.len();
+    let i = open.pin_shown.min(n.saturating_sub(1));
+    let Some(quote) = open.pinned.get(n - 1 - i).cloned() else { return };
+    let text = crate::view::preview_text(&quote.body);
+    let sender = if quote.sender.is_empty() { tl!("A message") } else { quote.sender.as_str() };
+    let count = fmt(tl!("Pinned {i} of {n}"), &[("i", &(i + 1).to_string()), ("n", &n.to_string())]);
+    egui::Panel::top("pinned").exact_size(44.0).frame(egui::Frame::new().fill(t.sunken).inner_margin(Margin::symmetric(24, 0))).show(ui, |ui| {
+        let bar = ui.max_rect();
+        ui.painter().vline(bar.left() + 1.0, bar.y_range(), Stroke::new(2.0, t.accent_ink));
+        ui.horizontal_centered(|ui| {
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if n > 1 {
+                    let next = ui.add(egui::Button::new(RichText::new("›").size(16.0)).frame(false));
+                    next.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, tl!("Next pinned message")));
+                    if next.clicked() {
+                        open.pin_shown = (i + 1) % n;
+                    }
+                }
+                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                    let line = format!("{sender}: {text}");
+                    let shown = ui.add(
+                        egui::Label::new(RichText::new(format!("{}   {line}", count.to_uppercase())).size(12.5).color(t.ink))
+                            .truncate()
+                            .sense(Sense::click()),
+                    );
+                    let label = format!("{count}: {line}");
+                    shown.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
+                    if shown.clicked() {
+                        match &quote.message {
+                            Some(id) => open.jump_to = Some(id.clone()),
+                            None if !open.at_start => out.push(Command::LoadOlder(open.id.clone())),
+                            None => {}
+                        }
+                    }
+                });
+            });
+        });
+    });
 }
 
 /// Does what a message asked for.

@@ -6,7 +6,7 @@ use zeroize::Zeroizing;
 
 use crate::bridge::{Answers, BridgeError, BridgedNetwork, LoginStep, StepRef};
 use crate::encryption::{RecoveryKey, RecoveryStatus, Verification};
-use crate::{AccountId, ChatId, ConnectionState, InboxChange, Message, MessageDetails, MessageId, Network};
+use crate::{AccountId, ChatId, ConnectionState, InboxChange, Message, MessageDetails, MessageId, Mute, Network, Quote};
 
 /// Something the user asked for. `Debug` never shows a password, passphrase or message text.
 pub enum Command {
@@ -63,6 +63,24 @@ pub enum Command {
         messages: Vec<MessageId>,
         to: ChatId,
     },
+    /// Pins a message in its chat (`pin`), or unpins it. Pins are the chat's, so everyone in it sees them.
+    PinMessage {
+        chat: ChatId,
+        message: MessageId,
+        pin: bool,
+    },
+    /// Pins a chat to the top of the inbox, or unpins it.
+    PinChat {
+        chat: ChatId,
+        pin: bool,
+    },
+    /// Mutes a chat for a while (`Some`), or turns its notifications back on (`None`).
+    Mute {
+        chat: ChatId,
+        mute: Option<Mute>,
+    },
+    /// Marks a chat as unread. Opening it marks it read again.
+    MarkUnread(ChatId),
     LoadOlder(ChatId),
     /// The user saved the recovery key they were shown.
     RecoveryKeySaved,
@@ -121,6 +139,12 @@ impl std::fmt::Debug for Command {
             Self::Forward { from, messages, to } => {
                 f.debug_struct("Forward").field("from", from).field("messages", messages).field("to", to).finish()
             }
+            Self::PinMessage { chat, message, pin } => {
+                f.debug_struct("PinMessage").field("chat", chat).field("message", message).field("pin", pin).finish()
+            }
+            Self::PinChat { chat, pin } => f.debug_struct("PinChat").field("chat", chat).field("pin", pin).finish(),
+            Self::Mute { chat, mute } => f.debug_struct("Mute").field("chat", chat).field("mute", mute).finish(),
+            Self::MarkUnread(c) => f.debug_tuple("MarkUnread").field(c).finish(),
             Self::LoadOlder(c) => f.debug_tuple("LoadOlder").field(c).finish(),
             Self::RecoveryKeySaved => f.write_str("RecoveryKeySaved"),
             Self::Recover(key) => f.debug_tuple("Recover").field(key).finish(),
@@ -186,6 +210,11 @@ pub enum Event {
         chat: ChatId,
         message: MessageId,
         details: MessageDetails,
+    },
+    /// The open chat's pinned messages, oldest pin first.
+    Pinned {
+        chat: ChatId,
+        pinned: Vec<Quote>,
     },
     /// The open chat has no older messages.
     ReachedStart(ChatId),

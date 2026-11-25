@@ -80,7 +80,7 @@ impl Inbox {
         self.chats.iter().filter(move |c| {
             let passes_filter = match filter {
                 Filter::All => true,
-                Filter::Unread => c.unread > 0,
+                Filter::Unread => c.is_unread(),
             };
             passes_filter && (needle.is_empty() || c.name.to_lowercase().contains(&needle))
         })
@@ -88,12 +88,13 @@ impl Inbox {
 
     /// The number of chats with unread messages, for the window title and the filter's count.
     pub fn unread_chats(&self) -> usize {
-        self.chats.iter().filter(|c| c.unread > 0).count()
+        self.chats.iter().filter(|c| c.is_unread()).count()
     }
 
-    /// Whether `a` belongs before `b`: newer activity first, then name, then ID.
+    /// Whether `a` belongs before `b`: pinned chats first, then newer activity, then name, then ID.
     fn before(a: &Chat, b: &Chat) -> bool {
-        (std::cmp::Reverse(a.last_activity()), &a.name, &a.id) < (std::cmp::Reverse(b.last_activity()), &b.name, &b.id)
+        let key = |c: &'_ Chat| (!c.pinned, std::cmp::Reverse(c.last_activity()));
+        (key(a), &a.name, &a.id) < (key(b), &b.name, &b.id)
     }
 }
 
@@ -111,6 +112,9 @@ mod tests {
             last_message: (at > 0).then(|| MessagePreview { sender: "x".into(), own: false, body: MessageBody::Text("y".into()), at: Timestamp(at) }),
             unread,
             encrypted: true,
+            pinned: false,
+            muted: None,
+            marked_unread: false,
         }
     }
 
@@ -140,6 +144,18 @@ mod tests {
         assert_eq!(names(inbox.visible(Filter::All, "  ORT ")), ["Ana Ortiz"]);
         assert_eq!(names(inbox.visible(Filter::Unread, "ana")), Vec::<&str>::new());
         assert_eq!(inbox.unread_chats(), 2);
+    }
+
+    #[test]
+    fn pinned_chats_come_first_and_marked_ones_count_as_unread() {
+        let mut old = chat("1", "Old but pinned", 1, 0);
+        old.pinned = true;
+        let mut marked = chat("2", "Marked", 5, 0);
+        marked.marked_unread = true;
+        let inbox = Inbox::new([chat("3", "Newest", 9, 0), marked, old]);
+        assert_eq!(names(inbox.visible(Filter::All, "")), ["Old but pinned", "Newest", "Marked"]);
+        assert_eq!(names(inbox.visible(Filter::Unread, "")), ["Marked"]);
+        assert_eq!(inbox.unread_chats(), 1);
     }
 
     #[test]

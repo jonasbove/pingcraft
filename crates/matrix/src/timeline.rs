@@ -57,12 +57,21 @@ fn sdk(e: impl std::fmt::Display) -> TimelineError {
     TimelineError::Sdk(e.to_string())
 }
 
+/// What changed in an open chat.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChatUpdate {
+    /// Its messages, oldest first.
+    Messages(Vec<Message>),
+    /// Its pinned messages, oldest pin first.
+    Pinned(Vec<Quote>),
+}
+
 /// An open chat. Its messages arrive as whole lists, oldest first; dropping it closes the chat.
 pub struct ChatTimeline {
     timeline: Arc<Timeline>,
     connection_rooms: Arc<matrix_sdk_ui::RoomListService>,
     room_id: OwnedRoomId,
-    lists: UnboundedReceiver<Vec<Message>>,
+    lists: UnboundedReceiver<ChatUpdate>,
     _task: AbortOnDrop<()>,
 }
 
@@ -85,26 +94,47 @@ impl Connection {
         let (tx, lists) = unbounded_channel();
         let own = room.own_user_id().to_owned();
         let fetcher = Arc::clone(&timeline);
+        let pins = room.pinned_event_ids_stream();
         let task = spawn(async move {
+            enum Wake {
+                Items(Vec<matrix_sdk_ui::eyeball_im::VectorDiff<Arc<TimelineItem>>>),
+                Pins(Vec<OwnedEventId>),
+            }
             let mut items: Vector<Arc<TimelineItem>> = items;
+            let mut pinned: Vec<OwnedEventId> = Vec::new();
             // Replies to messages that are not loaded: each original is asked for once.
             let mut asked: HashSet<OwnedEventId> = HashSet::new();
-            let mut updates = pin!(updates);
+            let mut wakes = pin!(futures_util::stream::select(updates.map(Wake::Items), pins.map(Wake::Pins)));
+            let mut changed = (true, true);
             loop {
-                let (list, missing) = messages(&items, &own);
-                if tx.send(list).is_err() {
-                    return;
-                }
-                for event in missing {
-                    if asked.insert(event.clone()) {
-                        // What it finds arrives as an update; failing leaves the quote as "loading".
-                        let _ = fetcher.fetch_details_for_event(&event).await;
+                if changed.0 {
+                    let (list, missing) = messages(&items, &own);
+                    if tx.send(ChatUpdate::Messages(list)).is_err() {
+                        return;
+                    }
+                    for event in missing {
+                        if asked.insert(event.clone()) {
+                            // What it finds arrives as an update; failing leaves the quote as "loading".
+                            let _ = fetcher.fetch_details_for_event(&event).await;
+                        }
                     }
                 }
-                let Some(diffs) = updates.next().await else { return };
-                for diff in diffs {
-                    diff.apply(&mut items);
+                if (changed.0 || changed.1) && tx.send(ChatUpdate::Pinned(pinned_quotes(&items, &pinned, &own))).is_err() {
+                    return;
                 }
+                changed = match wakes.next().await {
+                    None => return,
+                    Some(Wake::Items(diffs)) => {
+                        for diff in diffs {
+                            diff.apply(&mut items);
+                        }
+                        (true, false)
+                    }
+                    Some(Wake::Pins(ids)) => {
+                        pinned = ids;
+                        (false, true)
+                    }
+                };
             }
         });
         Ok(ChatTimeline { timeline, connection_rooms: rooms, room_id, lists, _task: AbortOnDrop::new(task) })
@@ -112,19 +142,43 @@ impl Connection {
 }
 
 impl ChatTimeline {
-    /// The newest list of messages, if anything changed since the last call. Never blocks; skips lists that were
-    /// already out of date.
+    /// The newest list of messages, if it changed since the last call. Never blocks; skips lists that were already
+    /// out of date, and pins.
     pub fn try_next(&mut self) -> Option<Vec<Message>> {
         let mut newest = None;
-        while let Ok(list) = self.lists.try_recv() {
-            newest = Some(list);
+        while let Ok(update) = self.lists.try_recv() {
+            if let ChatUpdate::Messages(list) = update {
+                newest = Some(list);
+            }
         }
         newest
     }
 
-    /// Waits for the next list of messages. `None` when the chat was closed underneath it.
+    /// Waits for the next list of messages, passing over pins. `None` when the chat was closed underneath it.
     pub async fn next(&mut self) -> Option<Vec<Message>> {
+        loop {
+            if let ChatUpdate::Messages(list) = self.lists.recv().await? {
+                return Some(list);
+            }
+        }
+    }
+
+    /// Waits for the next change: messages or pins. `None` when the chat was closed underneath it.
+    pub async fn next_update(&mut self) -> Option<ChatUpdate> {
         self.lists.recv().await
+    }
+
+    /// Pins a message in the chat, or unpins it. Pins are the chat's state, so this needs permission to change
+    /// it.
+    pub async fn pin(&self, message: &MessageId, pin: bool) -> Result<(), TimelineError> {
+        let item = self.item(message).await?;
+        let event = item.event_id().ok_or(TimelineError::NotSentYet)?;
+        let room = self.timeline.room();
+        let done = if pin { room.pin_event(event).await } else { room.unpin_event(event).await };
+        done.map(|_| ()).map_err(|e| match e.as_client_api_error().map(|e| e.status_code.as_u16()) {
+            Some(403) => TimelineError::Sdk("you don't have permission to pin messages in this chat".into()),
+            _ => sdk(e),
+        })
     }
 
     /// Sends a text message. It shows at once as [`SendState::Sending`], then as sent or failed.
@@ -323,6 +377,23 @@ fn message(id: &TimelineUniqueId, event: &EventTimelineItem, known: &Known<'_>, 
         delete: !deleted && event.is_own(),
     };
     Some(m)
+}
+
+/// The pinned messages as quotes, oldest pin first. One that is not loaded has no message and no text yet.
+fn pinned_quotes(items: &Vector<Arc<TimelineItem>>, pinned: &[OwnedEventId], own: &UserId) -> Vec<Quote> {
+    let (list, _) = messages(items, own);
+    let by_event: HashMap<OwnedEventId, String> =
+        items.iter().filter_map(|i| i.as_event().and_then(|e| e.event_id()).map(|id| (id.to_owned(), i.unique_id().0.clone()))).collect();
+    pinned
+        .iter()
+        .map(|event| {
+            let found = by_event.get(event).and_then(|uid| list.iter().find(|m| &m.id.0 == uid));
+            match found {
+                Some(m) => Quote { message: Some(m.id.clone()), sender: m.sender.clone(), body: m.body.clone() },
+                None => Quote { message: None, sender: String::new(), body: MessageBody::Loading },
+            }
+        })
+        .collect()
 }
 
 fn kind_body(kind: &MsgLikeKind) -> MessageBody {

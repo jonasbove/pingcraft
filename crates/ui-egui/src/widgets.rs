@@ -119,12 +119,20 @@ pub fn avatar(ui: &mut Ui, name: &str, size: f32) {
     ui.painter().text(rect.center(), Align2::CENTER_CENTER, initials(name), FontId::monospace(size * 0.33), t.ink);
 }
 
-/// The unread count on a chat row.
-pub fn unread(ui: &mut Ui, count: u32) {
+/// The unread count on a chat row; `quiet` for a muted chat (an outline, not the accent).
+pub fn unread(ui: &mut Ui, count: u32, quiet: bool) {
     let t = Tokens::get(ui.ctx());
-    Frame::new().fill(t.accent).inner_margin(Margin::symmetric(6, 1)).show(ui, |ui| {
-        ui.label(RichText::new(count.to_string()).monospace().size(10.0).color(t.on_accent));
+    let (fill, stroke, ink) = if quiet { (t.sunken, Stroke::new(1.0, t.line_strong), t.muted) } else { (t.accent, Stroke::NONE, t.on_accent) };
+    Frame::new().fill(fill).stroke(stroke).inner_margin(Margin::symmetric(6, 1)).show(ui, |ui| {
+        ui.label(RichText::new(count.to_string()).monospace().size(10.0).color(ink));
     });
+}
+
+/// The mark on a chat the user marked unread: a small accent square where the count goes.
+pub fn marked_unread(ui: &mut Ui) {
+    let t = Tokens::get(ui.ctx());
+    let (rect, _) = ui.allocate_exact_size(Vec2::splat(10.0), Sense::hover());
+    ui.painter().rect_filled(rect, CornerRadius::ZERO, t.accent);
 }
 
 /// The logo, decoded once per context.
