@@ -95,3 +95,14 @@ Findings:
   `--talk-name=org.freedesktop.secrets`. Whether `keyring` can use the Secret portal instead was not checked.
   This was not built or run in a Flatpak here.
 - **Still open:** the Windows and macOS targets, and linking and running on every target, wait for CI.
+
+## Addendum (2026-11-25): `pingcraft-notify`
+
+A crate added with milestone 6's desktop notifications, in the layering of decision 1:
+
+| Crate | Holds | May depend on | Layer in `cargo xtask layers` |
+|---|---|---|---|
+| `pingcraft-notify` | desktop notifications, each operating system its own way (zbus on Linux and the BSDs, notify-rust on macOS and Windows), behind `pingcraft_core::notify::Notifier`; desktop only; a candidate for a craft-libs notification crate | `core` only; neither `matrix-sdk` nor egui | 1, beside `pingcraft-matrix` |
+
+Only the desktop app (layer 3) uses it; the interface decides what to notify and sees only the `Notifier` trait.
+The macOS and Windows backends stay (maintainer, 2026-11-25).
