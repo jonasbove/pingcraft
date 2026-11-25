@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use pingcraft_core::app::{Event, SignInProblem};
 use pingcraft_core::bridge::{BridgeError, BridgedNetwork, LoginStep};
 use pingcraft_core::encryption::{RecoveryKey, RecoveryStatus, Verification};
-use pingcraft_core::{Account, ChatId, ConnectionState, Filter, Inbox, InboxChange, Message, Network};
+use pingcraft_core::{Account, ChatId, ConnectionState, Filter, Inbox, InboxChange, Message, MessageBody, MessageId, Network};
 use zeroize::Zeroizing;
 
 use crate::i18n::fmt;
@@ -150,6 +150,68 @@ pub struct OpenChat {
     pub draft: String,
     /// The "turn on encryption" sheet is open.
     pub encrypt_sheet: bool,
+    /// The message the composer replies to.
+    pub replying: Option<MessageId>,
+    /// The user's own message the composer is editing, and the draft it set aside.
+    pub editing: Option<(MessageId, String)>,
+    /// The message the user asked to delete, while they confirm it.
+    pub deleting: Option<MessageId>,
+    /// A quoted message was clicked: scroll to it.
+    pub jump_to: Option<MessageId>,
+}
+
+impl OpenChat {
+    pub fn new(id: ChatId) -> Self {
+        Self {
+            id,
+            messages: Vec::new(),
+            at_start: false,
+            draft: String::new(),
+            encrypt_sheet: false,
+            replying: None,
+            editing: None,
+            deleting: None,
+            jump_to: None,
+        }
+    }
+
+    pub fn message(&self, id: &MessageId) -> Option<&Message> {
+        self.messages.iter().find(|m| &m.id == id)
+    }
+
+    /// Starts editing one of the user's messages: its text goes into the composer, and the draft waits.
+    pub fn edit(&mut self, id: MessageId) {
+        let Some(MessageBody::Text(text)) = self.message(&id).map(|m| m.body.clone()) else { return };
+        self.replying = None;
+        let before = match self.editing.take() {
+            Some((_, before)) => before,
+            None => std::mem::take(&mut self.draft),
+        };
+        self.draft = text;
+        self.editing = Some((id, before));
+    }
+
+    /// Stops editing and gives the draft back.
+    pub fn stop_editing(&mut self) {
+        if let Some((_, before)) = self.editing.take() {
+            self.draft = before;
+        }
+    }
+
+    /// Takes in a new list of messages; a reply, edit or deletion of a message that is gone is dropped.
+    fn set_messages(&mut self, messages: Vec<Message>) {
+        self.messages = messages;
+        let gone = |id: &Option<MessageId>, list: &[Message]| id.as_ref().is_some_and(|id| !list.iter().any(|m| &m.id == id));
+        if gone(&self.replying, &self.messages) {
+            self.replying = None;
+        }
+        if gone(&self.deleting, &self.messages) {
+            self.deleting = None;
+        }
+        if gone(&self.editing.as_ref().map(|(id, _)| id.clone()), &self.messages) {
+            self.stop_editing();
+        }
+    }
 }
 
 #[derive(Default)]
@@ -218,7 +280,7 @@ impl State {
             }
             Event::Messages { chat, messages } => {
                 if let Some(open) = self.open.as_mut().filter(|o| o.id == chat) {
-                    open.messages = messages;
+                    open.set_messages(messages);
                 }
             }
             Event::ReachedStart(chat) => {
@@ -299,7 +361,7 @@ impl State {
         if self.open.as_ref().is_some_and(|o| o.id == id) {
             return;
         }
-        self.open = Some(OpenChat { id, messages: Vec::new(), at_start: false, draft: String::new(), encrypt_sheet: false });
+        self.open = Some(OpenChat::new(id));
     }
 }
 
@@ -329,6 +391,27 @@ mod tests {
         s.apply(Event::SignedOut);
         assert_eq!(s.sign_in.server, "example.org");
         assert!(s.user.is_none());
+    }
+
+    #[test]
+    fn editing_sets_the_draft_aside_and_gives_it_back() {
+        use pingcraft_core::{Message, MessageBody, MessageId, SendState, Timestamp};
+        let mut s = State::default();
+        s.open_chat(ChatId("a".into()));
+        let mine = Message::new(MessageId("1".into()), "me", true, Timestamp(1), MessageBody::Text("old words".into()), SendState::Sent);
+        s.apply(Event::Messages { chat: ChatId("a".into()), messages: vec![mine] });
+        let open = s.open.as_mut().unwrap();
+        open.draft = "half a thought".into();
+        open.edit(MessageId("1".into()));
+        assert_eq!(open.draft, "old words");
+        open.stop_editing();
+        assert_eq!(open.draft, "half a thought");
+        open.edit(MessageId("1".into()));
+        // The message goes away (deleted elsewhere): the edit ends and the draft comes back.
+        s.apply(Event::Messages { chat: ChatId("a".into()), messages: vec![] });
+        let open = s.open.as_ref().unwrap();
+        assert!(open.editing.is_none());
+        assert_eq!(open.draft, "half a thought");
     }
 
     #[test]

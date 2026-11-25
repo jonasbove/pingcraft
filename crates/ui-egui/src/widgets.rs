@@ -18,6 +18,8 @@ pub enum Kind {
     Primary,
     /// A hairline box.
     Secondary,
+    /// Filled in the colour that says it cannot be undone.
+    Danger,
 }
 
 /// A button with a mono capitals label. Its accessible name is the label as shown.
@@ -27,10 +29,12 @@ pub fn button(ui: &mut Ui, text: &str, kind: Kind, enabled: bool) -> Response {
     let (fill, ink, stroke) = match kind {
         Kind::Primary => (t.invert_bg, t.invert_fg, Stroke::new(1.0, t.invert_bg)),
         Kind::Secondary => (Color32::TRANSPARENT, t.ink, Stroke::new(1.0, t.line_strong)),
+        Kind::Danger => (t.bad, t.bg, Stroke::new(1.0, t.bad)),
     };
     let hover = match kind {
         Kind::Primary => t.invert_bg.lerp_to_gamma(t.accent, 0.35),
         Kind::Secondary => t.line,
+        Kind::Danger => t.bad.lerp_to_gamma(t.ink_strong, 0.2),
     };
     let button = egui::Button::new(RichText::new(label).monospace().strong().size(11.0).color(ink))
         .stroke(stroke)

@@ -29,6 +29,29 @@ pub enum Command {
         chat: ChatId,
         message: MessageId,
     },
+    /// Sends a text message that replies to another.
+    Reply {
+        chat: ChatId,
+        to: MessageId,
+        text: String,
+    },
+    /// Adds the user's reaction with this key to a message, or takes it back if they had given it.
+    React {
+        chat: ChatId,
+        message: MessageId,
+        key: String,
+    },
+    /// Replaces the text of one of the user's own messages.
+    Edit {
+        chat: ChatId,
+        message: MessageId,
+        text: String,
+    },
+    /// Deletes one of the user's own messages for everyone in the chat.
+    Delete {
+        chat: ChatId,
+        message: MessageId,
+    },
     LoadOlder(ChatId),
     /// The user saved the recovery key they were shown.
     RecoveryKeySaved,
@@ -78,6 +101,11 @@ impl std::fmt::Debug for Command {
             Self::CloseChat => f.write_str("CloseChat"),
             Self::SendText { chat, .. } => f.debug_struct("SendText").field("chat", chat).finish_non_exhaustive(),
             Self::Retry { chat, message } => f.debug_struct("Retry").field("chat", chat).field("message", message).finish(),
+            Self::Reply { chat, to, .. } => f.debug_struct("Reply").field("chat", chat).field("to", to).finish_non_exhaustive(),
+            // The key is what the user reacted with: as private as the message text.
+            Self::React { chat, message, .. } => f.debug_struct("React").field("chat", chat).field("message", message).finish_non_exhaustive(),
+            Self::Edit { chat, message, .. } => f.debug_struct("Edit").field("chat", chat).field("message", message).finish_non_exhaustive(),
+            Self::Delete { chat, message } => f.debug_struct("Delete").field("chat", chat).field("message", message).finish(),
             Self::LoadOlder(c) => f.debug_tuple("LoadOlder").field(c).finish(),
             Self::RecoveryKeySaved => f.write_str("RecoveryKeySaved"),
             Self::Recover(key) => f.debug_tuple("Recover").field(key).finish(),
@@ -194,6 +222,9 @@ mod tests {
             Command::Unlock { passphrase: Zeroizing::new("correct horse".into()) },
             Command::Recover(RecoveryKey::new("EsTc 8Jq2")),
             Command::SendText { chat: crate::ChatId("!a".into()), text: "private words".into() },
+            Command::Reply { chat: crate::ChatId("!a".into()), to: crate::MessageId("m".into()), text: "private reply".into() },
+            Command::Edit { chat: crate::ChatId("!a".into()), message: crate::MessageId("m".into()), text: "private edit".into() },
+            Command::React { chat: crate::ChatId("!a".into()), message: crate::MessageId("m".into()), key: "🫣".into() },
             Command::AnswerLogin {
                 step: crate::bridge::StepRef {
                     network: crate::Network::from_id("telegram"),
@@ -210,7 +241,7 @@ mod tests {
             },
         ];
         let shown = format!("{commands:?}");
-        for secret in ["hunter2", "correct horse", "EsTc", "private words", "12345678", "two-step secret"] {
+        for secret in ["hunter2", "correct horse", "EsTc", "private words", "12345678", "two-step secret", "private reply", "private edit", "🫣"] {
             assert!(!shown.contains(secret), "{shown}");
         }
         assert!(shown.contains("example.org"));

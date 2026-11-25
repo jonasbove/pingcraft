@@ -72,7 +72,7 @@ fn chat(id: &str, name: &str, network: &str, unread: u32, preview: Option<(&str,
 }
 
 fn message(id: &str, sender: &str, own: bool, body: MessageBody, state: SendState) -> Message {
-    Message { id: MessageId(id.into()), sender: sender.into(), own, at: Timestamp(1_795_000_000_000), body, state }
+    Message::new(MessageId(id.into()), sender, own, Timestamp(1_795_000_000_000), body, state)
 }
 
 fn signed_in(fake: &Fake) -> Harness<'static, PingCraftApp> {
@@ -393,6 +393,7 @@ fn the_chat_header_centres_the_name_and_network_on_the_avatar() {
 }
 
 mod accounts;
+mod messages;
 
 #[test]
 fn an_unencrypted_chat_offers_to_turn_encryption_on() {

@@ -150,7 +150,7 @@ pub struct MessagePreview {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MessageId(pub String);
 
-/// One thing sent in a chat. Milestone 2 carries text; media and reactions come in milestone 6.
+/// One thing sent in a chat. Milestone 2 carries text; media comes in milestone 6.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
     pub id: MessageId,
@@ -160,6 +160,59 @@ pub struct Message {
     pub at: Timestamp,
     pub body: MessageBody,
     pub state: SendState,
+    /// The reactions to it, in the order they were first given.
+    pub reactions: Vec<Reaction>,
+    /// The message it replies to, if it is a reply.
+    pub reply_to: Option<Quote>,
+    /// Whether it was edited after it was sent.
+    pub edited: bool,
+    /// What the user may do with it, as the adapter worked out (a message still on its way out has no ID on the
+    /// server yet, so it cannot be replied to or reacted to).
+    pub can: Abilities,
+}
+
+impl Message {
+    /// A message with no reactions, reply or edits, that nothing can be done with yet. For adapters and tests.
+    pub fn new(id: MessageId, sender: impl Into<String>, own: bool, at: Timestamp, body: MessageBody, state: SendState) -> Self {
+        Self { id, sender: sender.into(), own, at, body, state, reactions: Vec::new(), reply_to: None, edited: false, can: Abilities::default() }
+    }
+
+    /// The reaction with this key the user gave, if they gave it.
+    pub fn my_reaction(&self, key: &str) -> bool {
+        self.reactions.iter().any(|r| r.key == key && r.mine)
+    }
+}
+
+/// What the user may do with one message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Abilities {
+    pub reply: bool,
+    pub react: bool,
+    /// Only the user's own text messages.
+    pub edit: bool,
+    /// Only the user's own messages (deleting other people's needs moderator rights, which PingCraft does not offer).
+    pub delete: bool,
+}
+
+/// One reaction (an emoji, or any short text a network allows) and who gave it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reaction {
+    /// What was reacted with, as sent: an emoji, possibly with a variation selector.
+    pub key: String,
+    /// Who reacted, by display name (or ID when they have none), in the order they did.
+    pub by: Vec<String>,
+    /// Whether the user is one of them.
+    pub mine: bool,
+}
+
+/// The message a reply answers, as shown above the reply.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Quote {
+    /// The original, when it is among the messages loaded; `None` when it is older or could not be found.
+    pub message: Option<MessageId>,
+    /// Its sender; empty while it is being fetched.
+    pub sender: String,
+    pub body: MessageBody,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -167,6 +220,10 @@ pub enum MessageBody {
     Text(String),
     /// Encrypted, and the key to it has not arrived (yet). Never shown as an error the user caused.
     WaitingForKey,
+    /// Deleted by its sender (or a moderator): only the fact that there was a message is left.
+    Deleted,
+    /// Being fetched from the server (a quoted message that is not loaded yet).
+    Loading,
     /// A kind of message this version does not show yet; the text says what it is.
     Unsupported(String),
 }

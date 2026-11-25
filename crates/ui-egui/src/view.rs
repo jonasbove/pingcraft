@@ -5,10 +5,11 @@
 use egui::{Align, Color32, Layout, Margin, RichText, ScrollArea, Sense, Stroke, Ui, Vec2};
 use pingcraft_core::app::{Command, SignInProblem};
 use pingcraft_core::encryption::{CancelReason, RecoveryKey, RecoveryStatus, SasSymbol, Verification};
-use pingcraft_core::{Chat, ChatId, ConnectionState, Filter, Message, MessageBody, SendState};
+use pingcraft_core::{Chat, ConnectionState, Filter, MessageBody};
 use zeroize::Zeroizing;
 
 use crate::i18n::{fmt, trn};
+use crate::message::Act;
 use crate::state::{NetworkEntry, OpenChat, Screen, State, Tab};
 use crate::theme::Tokens;
 use crate::time::{day_label, short_time};
@@ -399,15 +400,17 @@ fn needs_key(ui: &mut Ui, state: &mut State, out: &mut Out) {
 }
 
 /// What a message shows as in one line.
-fn preview_text(body: &MessageBody) -> String {
+pub(crate) fn preview_text(body: &MessageBody) -> String {
     match body {
         MessageBody::Text(text) => text.lines().next().unwrap_or_default().to_owned(),
         MessageBody::WaitingForKey => tl!("Waiting for the key to this message").to_owned(),
+        MessageBody::Deleted => unsupported("deleted"),
+        MessageBody::Loading => String::new(),
         MessageBody::Unsupported(kind) => unsupported(kind),
     }
 }
 
-fn unsupported(kind: &str) -> String {
+pub(crate) fn unsupported(kind: &str) -> String {
     match kind {
         "image" => tl!("An image").to_owned(),
         "file" => tl!("A file").to_owned(),
@@ -606,25 +609,8 @@ fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, out: &mut Ou
     if open.encrypt_sheet {
         encrypt_sheet(ui.ctx(), open, &name, out);
     }
-    // The composer.
-    let mut send = false;
-    egui::Panel::bottom("composer").exact_size(74.0).frame(egui::Frame::new().inner_margin(Margin::symmetric(24, 20))).show(ui, |ui| {
-        ui.horizontal(|ui| {
-            let label = fmt(tl!("Message {chat}"), &[("chat", &name)]);
-            let width = ui.available_width() - 100.0;
-            let edit = egui::TextEdit::singleline(&mut open.draft).hint_text(&label).desired_width(width).margin(Margin::symmetric(10, 8));
-            let response = ui.add(edit);
-            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, &label));
-            if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                send = true;
-                response.request_focus();
-            }
-            send |= button(ui, tl!("Send"), Kind::Primary, !open.draft.trim().is_empty()).clicked();
-        });
-    });
-    if send && !open.draft.trim().is_empty() {
-        out.push(Command::SendText { chat: open.id.clone(), text: std::mem::take(&mut open.draft).trim().to_owned() });
-    }
+    // The composer, with the reply or edit bar over it.
+    composer(ui, open, &name, chat.map(|c| &c.network), out);
     // The timeline, newest at the bottom.
     egui::CentralPanel::default().frame(egui::Frame::new().inner_margin(Margin::symmetric(24, 16))).show(ui, |ui| {
         ScrollArea::vertical().stick_to_bottom(true).auto_shrink([false, false]).show(ui, |ui| {
@@ -632,16 +618,126 @@ fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, out: &mut Ou
                 out.push(Command::LoadOlder(open.id.clone()));
             }
             let mut last_day = String::new();
+            let mut acts = Vec::new();
             for message in &open.messages {
                 let day = day_label(message.at);
                 if day != last_day {
                     divider(ui, &day);
                     last_day = day;
                 }
-                message_view(ui, message, &open.id, out);
+                let (rect, act) = crate::message::message_view(ui, message, &open.id, out);
+                if open.jump_to.as_ref() == Some(&message.id) {
+                    ui.scroll_to_rect(rect, Some(Align::Center));
+                }
+                acts.extend(act);
                 ui.add_space(14.0);
             }
+            open.jump_to = None;
+            for act in acts {
+                apply(open, act, out);
+            }
         });
+    });
+    if let Some(message) = open.deleting.as_ref().and_then(|id| open.message(id)).cloned()
+        && crate::message::delete_sheet(ui.ctx(), &message, &open.id, &name, out)
+    {
+        open.deleting = None;
+    }
+}
+
+/// Does what a message asked for.
+fn apply(open: &mut OpenChat, act: Act, out: &mut Out) {
+    match act {
+        Act::Reply(id) => {
+            open.stop_editing();
+            open.replying = Some(id);
+        }
+        Act::Edit(id) => open.edit(id),
+        Act::Delete(id) => open.deleting = Some(id),
+        Act::Jump(id) => open.jump_to = Some(id),
+        Act::LoadOlder => {
+            if !open.at_start {
+                out.push(Command::LoadOlder(open.id.clone()));
+            }
+        }
+    }
+}
+
+/// The message field and SEND, with a bar over them while replying to a message or editing one of the user's.
+fn composer(ui: &mut Ui, open: &mut OpenChat, name: &str, network: Option<&pingcraft_core::Network>, out: &mut Out) {
+    let t = Tokens::get(ui.ctx());
+    let editing = open.editing.as_ref().map(|(id, _)| id.clone());
+    let replying = open.replying.as_ref().and_then(|id| open.message(id)).map(|m| (m.sender.clone(), m.own, crate::view::preview_text(&m.body)));
+    let mut send = false;
+    egui::Panel::bottom("composer").frame(egui::Frame::new().inner_margin(Margin::ZERO)).show(ui, |ui| {
+        let bar = |ui: &mut Ui, title: &str, line: &str, cancel: &str| -> bool {
+            let mut cancelled = false;
+            egui::Frame::new().fill(t.sunken).inner_margin(Margin::symmetric(24, 10)).show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
+                        ui.label(RichText::new(title).monospace().size(11.0).color(t.accent_ink));
+                        ui.add(egui::Label::new(RichText::new(line).size(12.5).color(t.muted)).truncate());
+                    });
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        let x = ui.add(
+                            egui::Button::new(RichText::new("×").size(13.0))
+                                .stroke(Stroke::new(1.0, t.line_strong))
+                                .corner_radius(egui::CornerRadius::ZERO)
+                                .min_size(Vec2::splat(30.0)),
+                        );
+                        x.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, cancel));
+                        cancelled = x.clicked();
+                    });
+                });
+            });
+            cancelled
+        };
+        if editing.is_some() {
+            let what = match network {
+                Some(n) if !n.is_matrix() => fmt(
+                    tl!("Edited messages say “edited”. Whether the edit reaches {network} depends on its bridge."),
+                    &[("network", &network_name(n))],
+                ),
+                _ => tl!("Edited messages say “edited”.").to_owned(),
+            };
+            if bar(ui, tl!("Editing your message"), &what, tl!("Cancel editing")) {
+                open.stop_editing();
+            }
+        } else if let Some((sender, own, line)) = &replying {
+            let sender = if *own { tl!("yourself").to_owned() } else { sender.clone() };
+            if bar(ui, &fmt(tl!("Replying to {sender}"), &[("sender", &sender)]), line, tl!("Cancel reply")) {
+                open.replying = None;
+            }
+        }
+        egui::Frame::new().inner_margin(Margin::symmetric(24, 20)).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                let label = fmt(tl!("Message {chat}"), &[("chat", name)]);
+                let width = ui.available_width() - 100.0;
+                let edit = egui::TextEdit::singleline(&mut open.draft).hint_text(&label).desired_width(width).margin(Margin::symmetric(10, 8));
+                let response = ui.add(edit);
+                response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, &label));
+                if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    send = true;
+                    response.request_focus();
+                }
+                let verb = if editing.is_some() { tl!("Save") } else { tl!("Send") };
+                send |= button(ui, verb, Kind::Primary, !open.draft.trim().is_empty()).clicked();
+            });
+        });
+    });
+    if !send || open.draft.trim().is_empty() {
+        return;
+    }
+    let text = std::mem::take(&mut open.draft).trim().to_owned();
+    let chat = open.id.clone();
+    out.push(match (open.editing.take(), open.replying.take()) {
+        (Some((message, before)), _) => {
+            open.draft = before;
+            Command::Edit { chat, message, text }
+        }
+        (None, Some(to)) => Command::Reply { chat, to, text },
+        (None, None) => Command::SendText { chat, text },
     });
 }
 
@@ -657,73 +753,6 @@ fn divider(ui: &mut Ui, label: &str) {
         ui.painter().hline(right.x_range(), right.center().y, t.hairline());
     });
     ui.add_space(6.0);
-}
-
-fn message_view(ui: &mut Ui, message: &Message, chat: &ChatId, out: &mut Out) {
-    let t = Tokens::get(ui.ctx());
-    if message.own {
-        ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-            let rule = if matches!(message.state, SendState::Failed(_)) { t.bad } else { t.accent_ink };
-            let frame = egui::Frame::new().fill(t.accent_tint).inner_margin(Margin::symmetric(14, 10)).show(ui, |ui| {
-                ui.set_max_width(460.0);
-                ui.with_layout(Layout::top_down(Align::Min), |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new(tl!("You")).size(13.0).strong().color(t.ink_strong));
-                        ui.label(RichText::new(crate::time::clock(message.at)).monospace().size(12.0).color(t.muted));
-                        ui.add_space(24.0);
-                        let (state, color) = match &message.state {
-                            SendState::Sent => (tl!("Sent"), t.muted),
-                            SendState::Sending => (tl!("Sending…"), t.muted),
-                            SendState::Failed(_) => (tl!("Not sent"), t.bad),
-                        };
-                        ui.label(RichText::new(state.to_uppercase()).monospace().size(11.0).color(color));
-                    });
-                    body(ui, &message.body);
-                    if let SendState::Failed(_) = message.state {
-                        ui.horizontal(|ui| {
-                            note(ui, tl!("The server didn't take it."));
-                            if button(ui, tl!("Retry"), Kind::Primary, true).clicked() {
-                                out.push(Command::Retry { chat: chat.clone(), message: message.id.clone() });
-                            }
-                        });
-                    }
-                });
-            });
-            let r = frame.response.rect;
-            ui.painter().vline(r.right() - 1.0, r.y_range(), Stroke::new(2.0, rule));
-        });
-    } else {
-        ui.horizontal_top(|ui| {
-            avatar(ui, &message.sender, 28.0);
-            ui.add_space(4.0);
-            ui.vertical(|ui| {
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new(&message.sender).size(13.0).strong().color(t.ink_strong));
-                    ui.label(RichText::new(crate::time::clock(message.at)).monospace().size(12.0).color(t.muted));
-                });
-                body(ui, &message.body);
-            });
-        });
-    }
-}
-
-fn body(ui: &mut Ui, body: &MessageBody) {
-    let t = Tokens::get(ui.ctx());
-    match body {
-        MessageBody::Text(text) => {
-            ui.add(egui::Label::new(RichText::new(text).size(14.0)).wrap());
-        }
-        MessageBody::WaitingForKey => {
-            egui::Frame::new().fill(t.sunken).stroke(t.hairline()).inner_margin(Margin::same(14)).show(ui, |ui| {
-                ui.set_max_width(500.0);
-                ui.label(RichText::new(tl!("Waiting for the key to this message")).size(14.0));
-                note(ui, tl!("It was sent before this device could read it. It opens by itself once one of your other devices, or your key backup, shares the key."));
-            });
-        }
-        MessageBody::Unsupported(kind) => {
-            ui.label(RichText::new(unsupported(kind)).italics().size(14.0).color(t.muted));
-        }
-    }
 }
 
 // -----------------------------------------------------------------------------------------------------------------

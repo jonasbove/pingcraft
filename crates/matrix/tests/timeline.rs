@@ -164,3 +164,40 @@ async fn a_message_from_before_this_device_waits_for_its_key() {
     ben.sign_out().await;
     ben_new.sign_out().await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn replying_reacting_editing_and_deleting() {
+    let server = server_or_skip!();
+    let ana = sign_in_as(&server.homeserver, &server.user).await;
+    let ben = sign_in_as(&server.homeserver, &server.other).await;
+    let ben_id = ben.session.client.user_id().unwrap().to_owned();
+    let room = create_room(&ana, &unique("Actions"), true, Some(ben_id), vec![]).await;
+    join_and_say(&ben, &room, "lunch?").await;
+    let (_connection, mut chat) = open(&ana, &room).await;
+    let mut last = Vec::new();
+    let theirs = chat_until("ben's message", &mut chat, &mut last, |ms| ms.iter().find(|m| text(m) == Some("lunch?")).cloned()).await;
+    assert!(theirs.can.reply && theirs.can.react && !theirs.can.edit && !theirs.can.delete);
+
+    chat.reply(&theirs.id, "yes, at noon").await.unwrap();
+    let reply = chat_until("the reply", &mut chat, &mut last, |ms| {
+        ms.iter().find(|m| text(m) == Some("yes, at noon") && m.state == SendState::Sent && m.reply_to.is_some()).cloned()
+    })
+    .await;
+    let quote = reply.reply_to.clone().unwrap();
+    assert_eq!(quote.message.as_ref(), Some(&theirs.id), "the quote points at the original");
+    assert_eq!(quote.body, MessageBody::Text("lunch?".into()));
+    assert!(reply.can.edit && reply.can.delete);
+
+    chat.react(&theirs.id, "👍").await.unwrap();
+    chat_until("the reaction", &mut chat, &mut last, |ms| ms.iter().find(|m| m.id == theirs.id && m.my_reaction("👍")).map(|_| ())).await;
+    chat.react(&theirs.id, "👍").await.unwrap();
+    chat_until("the reaction taken back", &mut chat, &mut last, |ms| ms.iter().find(|m| m.id == theirs.id && m.reactions.is_empty()).map(|_| ()))
+        .await;
+
+    chat.edit(&reply.id, "yes, at one").await.unwrap();
+    chat_until("the edit", &mut chat, &mut last, |ms| ms.iter().find(|m| m.id == reply.id && m.edited && text(m) == Some("yes, at one")).map(|_| ()))
+        .await;
+
+    chat.delete(&reply.id).await.unwrap();
+    chat_until("the deletion", &mut chat, &mut last, |ms| ms.iter().find(|m| m.id == reply.id && m.body == MessageBody::Deleted).map(|_| ())).await;
+}

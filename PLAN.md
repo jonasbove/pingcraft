@@ -257,6 +257,10 @@ Starts when mautrix-discord releases its bridgev2 rewrite (ADR 0008).
 
 ## Messages and chats (maintainer, 2026-11-25)
 
+Frames: page "Messages · Draft" in `design/pingcraft.figcraft` (draft for review, `design/README.md`). The message
+menu is egui's own popup: craft-libs `menu` is the window's menu bar, not a context menu. Its keyboard shortcuts
+(through `craft-keymap`) are still to come.
+
 What people expect from a chat app beyond sending text. It does not wait on Discord; where it goes among the
 milestones is the maintainer's call. Every screen here needs a frame in the design first (house rule), and each
 ticket checks what the three bridges carry to and from each network: where a network cannot do something (for
@@ -267,14 +271,27 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
    missing glyphs today): a colour emoji font under an allowlisted licence (`OFL-1.1` or `CC-BY-4.0`, with the
    attribution), sequences such as skin tones, flags and joined emoji, and an emoji picker with search and recent
    emoji. Typing `:name:` to insert one.
-2. **Reactions.** Show reactions under a message with counts and who reacted; add and remove one from the picker or a
+2. **Done (2026-11-25), with gaps.** **Reactions.** Show reactions under a message with counts and who reacted; add and remove one from the picker or a
    quick row of recent ones.
-3. **Replies.** Reply to a message: the reply shows a quoted line of the original, and clicking it scrolls to it
+   Built: a chip per reaction under the message (the count, who reacted on hover and in its accessible name, in the
+   accent when you are one of them; clicking it adds or takes back yours), and six quick reactions in the message's
+   menu (👍 ❤️ 😂 😮 😢 🙏, sent with the variation selector, drawn by egui's own emoji font; a test checks each has
+   a glyph). Open: the picker, recent emoji and `:name:` (with ticket 1's font); what each bridge carries
+   (pending: needs the maintainer's accounts).
+3. **Done (2026-11-25), with gaps.** **Replies.** Reply to a message: the reply shows a quoted line of the original, and clicking it scrolls to it
    (loading older messages if needed).
-4. **Editing.** Edit your own messages; edited messages say "edited", and the earlier versions can be seen in
+   Built: REPLY in the message's menu, a "Replying to …" bar over the composer, the quote above a reply (an
+   original that is not loaded is fetched from the server). Clicking the quote scrolls to the original; when it is
+   older than what is loaded, it loads one page of older messages, and a second click goes on. Open: loading until
+   the original is found in one click; the per-bridge check (pending).
+4. **Done (2026-11-25), except the earlier versions.** **Editing.** Edit your own messages; edited messages say "edited", and the earlier versions can be seen in
    message details.
-5. **Deleting.** Delete your own messages (for everyone, where the network allows it), with a confirmation; a
+   Built: EDIT in your own text message's menu puts its text in the composer (the draft waits and comes back), SAVE
+   sends the edit, and edited messages say "edited". Earlier versions come with ticket 6. Per-bridge check pending.
+5. **Done (2026-11-25), with the per-bridge check pending.** **Deleting.** Delete your own messages (for everyone, where the network allows it), with a confirmation; a
    deleted message leaves a "message deleted" line. What happens on the other network is checked per bridge.
+   Built: DELETE in your own message's menu asks first, then redacts it; any deleted message shows "Message
+   deleted". The sheet says whether it disappears on the network depends on the network.
 6. **Message details.** Sent and received times, delivery and read receipts where the network reports them, which
    network and account it came through, encryption state, and edit history.
 7. **Selecting and copying.** Select text inside a message and copy it; copy a whole message; select several

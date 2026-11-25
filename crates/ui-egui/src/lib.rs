@@ -7,6 +7,7 @@
 
 mod accounts;
 pub mod i18n;
+mod message;
 mod state;
 mod theme;
 mod time;

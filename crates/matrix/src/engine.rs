@@ -408,24 +408,19 @@ impl Worker {
                 s.chat = None;
                 Ok(())
             }
-            Command::SendText { chat, text } => match &s.chat {
-                Some((open, timeline)) if *open == chat => timeline.send_text(&text).await.map_err(|e| e.to_string()),
-                _ => Err("that chat is not open".into()),
-            },
-            Command::Retry { chat, message } => match &s.chat {
-                Some((open, timeline)) if *open == chat => timeline.retry(&message).await.map_err(|e| e.to_string()),
-                _ => Err("that chat is not open".into()),
-            },
-            Command::LoadOlder(chat) => match &s.chat {
-                Some((open, timeline)) if *open == chat => match timeline.load_older(PAGE).await {
-                    Ok(true) => {
-                        self.emit.send(Event::ReachedStart(chat));
-                        Ok(())
-                    }
-                    Ok(false) => Ok(()),
-                    Err(e) => Err(e.to_string()),
-                },
-                _ => Ok(()),
+            command @ (Command::SendText { .. }
+            | Command::Retry { .. }
+            | Command::Reply { .. }
+            | Command::React { .. }
+            | Command::Edit { .. }
+            | Command::Delete { .. }
+            | Command::LoadOlder(_)) => match chat_command(s, command).await {
+                Ok(Some(event)) => {
+                    self.emit.send(event);
+                    Ok(())
+                }
+                Ok(None) => Ok(()),
+                Err(e) => Err(e),
             },
             Command::RecoveryKeySaved => {
                 s.shown_recovery = None;
@@ -498,6 +493,31 @@ async fn open_chat(s: &mut SignedIn, chat: ChatId) -> Result<(), String> {
     let _ = timeline.mark_read().await;
     s.chat = Some((chat, timeline));
     Ok(())
+}
+
+/// A command for the open chat. One for a chat that is not open fails, except loading older messages, which
+/// does nothing.
+async fn chat_command(s: &SignedIn, command: Command) -> Result<Option<Event>, String> {
+    let Some((open, timeline)) = &s.chat else { return Err("that chat is not open".into()) };
+    let is_open = |chat: &ChatId| chat == open;
+    let done = match command {
+        Command::SendText { chat, text } if is_open(&chat) => timeline.send_text(&text).await,
+        Command::Retry { chat, message } if is_open(&chat) => timeline.retry(&message).await,
+        Command::Reply { chat, to, text } if is_open(&chat) => timeline.reply(&to, &text).await,
+        Command::React { chat, message, key } if is_open(&chat) => timeline.react(&message, &key).await,
+        Command::Edit { chat, message, text } if is_open(&chat) => timeline.edit(&message, &text).await,
+        Command::Delete { chat, message } if is_open(&chat) => timeline.delete(&message).await,
+        Command::LoadOlder(chat) if is_open(&chat) => {
+            return match timeline.load_older(PAGE).await {
+                Ok(true) => Ok(Some(Event::ReachedStart(chat))),
+                Ok(false) => Ok(None),
+                Err(e) => Err(e.to_string()),
+            };
+        }
+        Command::LoadOlder(_) => return Ok(None),
+        _ => return Err("that chat is not open".into()),
+    };
+    done.map(|()| None).map_err(|e| e.to_string())
 }
 
 /// The header's REFRESH: a new sync connection, and the bridges asked again.
