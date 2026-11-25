@@ -249,11 +249,48 @@ Starts when mautrix-discord releases its bridgev2 rewrite (ADR 0008).
 1. Desktop notifications.
 2. Search.
 3. Media: images and files, over authenticated media.
-4. Reactions, edits and replies.
+4. Reactions, edits and replies: now part of "Messages and chats" below.
 5. Inbox filters by network and account.
 6. **Unread count on the app's icon** (maintainer, 2026-11-25): the total unread on the taskbar or dock
    icon, or in the tray where there is one, cleared as chats are read. Per platform: what each desktop supports
    (Linux launchers vary) is checked in the ticket.
+
+## Messages and chats (maintainer, 2026-11-25)
+
+What people expect from a chat app beyond sending text. It does not wait on Discord; where it goes among the
+milestones is the maintainer's call. Every screen here needs a frame in the design first (house rule), and each
+ticket checks what the three bridges carry to and from each network: where a network cannot do something (for
+example, editing on a network without edits), PingCraft says so instead of pretending, and what stays in
+PingCraft only (local pins, mute, sounds) is labelled as such.
+
+1. **Emoji, properly.** Colour emoji in messages, previews and names (egui shows most emoji as monochrome or
+   missing glyphs today): a colour emoji font under an allowlisted licence (`OFL-1.1` or `CC-BY-4.0`, with the
+   attribution), sequences such as skin tones, flags and joined emoji, and an emoji picker with search and recent
+   emoji. Typing `:name:` to insert one.
+2. **Reactions.** Show reactions under a message with counts and who reacted; add and remove one from the picker or a
+   quick row of recent ones.
+3. **Replies.** Reply to a message: the reply shows a quoted line of the original, and clicking it scrolls to it
+   (loading older messages if needed).
+4. **Editing.** Edit your own messages; edited messages say "edited", and the earlier versions can be seen in
+   message details.
+5. **Deleting.** Delete your own messages (for everyone, where the network allows it), with a confirmation; a
+   deleted message leaves a "message deleted" line. What happens on the other network is checked per bridge.
+6. **Message details.** Sent and received times, delivery and read receipts where the network reports them, which
+   network and account it came through, encryption state, and edit history.
+7. **Selecting and copying.** Select text inside a message and copy it; copy a whole message; select several
+   messages to copy, forward or delete together.
+8. **Forwarding.** Forward one or more messages to another chat, on any connected network, with a note that it was
+   forwarded where the network supports that.
+9. **Pinning.** Pin messages inside a chat (shown at the top of the chat, synced to the network where the bridge
+   carries pins), and pin chats to the top of the inbox.
+10. **Muting.** Mute a chat or a whole network, for an hour, a day, until turned back on, or until a time; muted
+    chats still count as unread but make no notification. Possibly mentions-only for group chats.
+11. **Notification sounds and colours.** Choose a sound for each network or chat (a few built-in sounds under an
+    allowlisted licence, or none), and pick a chat's or network's accent colour, tied to the network colours under
+    "Later". Builds on milestone 6's desktop notifications.
+12. **Other everyday actions,** to decide when the design is made: mark as unread, archive a chat, drafts kept
+    per chat, typing indicators, a "jump to latest" button, and the context menu that holds all of the above
+    (right-click and a keyboard shortcut, through `craft-libs` `menu` and `keymap`).
 
 ## Later, not yet planned
 
