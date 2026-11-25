@@ -331,6 +331,8 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
      exports nothing yet, so its wasm (513 kB, the same before and after) leaves the interface out.
    - Recently used emoji last for one run of PingCraft; they are not saved. Emoji names and search are English.
    - Picking a skin tone in the picker; the picker and suggestions row have no frames in the design yet.
+   - Without the colour font (the fallback build, and the web) the picker shows tofu for emoji egui's monochrome
+     face lacks; its two tests are ignored in that build.
    - Not tried by hand in the running app; checked through the tests only. A Nix build (no network in its
      sandbox) falls back to monochrome emoji.
 2. **Done (2026-11-25), with gaps.** **Reactions.** Show reactions under a message with counts and who reacted; add and remove one from the picker or a

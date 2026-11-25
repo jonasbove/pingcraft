@@ -50,7 +50,8 @@ export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/target}"
 # make the build fail without it, instead of falling back to monochrome emoji.
 export CRAFT_FONTS_REQUIRED=1
 if [[ -z "${PINGCRAFT_SKIP_FONTS:-}" ]]; then
-  (cd "$ROOT" && cargo xtask fonts) || exit 1
+  # xtask runs on this machine, never for a cross target.
+  (cd "$ROOT" && env -u CARGO_BUILD_TARGET cargo xtask fonts) || exit 1
 fi
 
 # Emit a GitHub Actions warning (plain stderr outside Actions).

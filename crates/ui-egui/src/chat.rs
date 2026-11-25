@@ -532,7 +532,7 @@ fn reaction_picker(ctx: &egui::Context, open: &mut OpenChat, out: &mut Out) {
 fn emoji_button(ui: &mut Ui, edit_id: egui::Id) -> Option<String> {
     let t = Tokens::get(ui.ctx());
     let pick = ui.add(
-        egui::Button::new(emoji::text("🙂", 16.0, Color32::PLACEHOLDER))
+        egui::Button::new(emoji::text("😀", 16.0, Color32::PLACEHOLDER))
             .stroke(Stroke::new(1.0, t.line_strong))
             .corner_radius(egui::CornerRadius::ZERO)
             .min_size(Vec2::splat(34.0)),

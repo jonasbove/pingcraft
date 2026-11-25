@@ -92,6 +92,7 @@ fn sent_texts(fake: &super::Fake) -> Vec<String> {
 }
 
 #[test]
+#[cfg_attr(not(color_emoji), ignore = "the picker shows emoji egui's monochrome face lacks: cargo xtask fonts")]
 fn the_picker_finds_an_emoji_and_puts_it_in_the_message() {
     use egui_kittest::kittest::Queryable;
     let fake = super::Fake::default();
@@ -127,6 +128,7 @@ fn a_shortcode_becomes_its_emoji_as_it_is_finished() {
 }
 
 #[test]
+#[cfg_attr(not(color_emoji), ignore = "the picker shows emoji egui's monochrome face lacks: cargo xtask fonts")]
 fn a_reaction_can_be_any_emoji_from_the_picker() {
     use egui_kittest::kittest::Queryable;
     let fake = super::Fake::default();
