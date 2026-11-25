@@ -27,6 +27,11 @@ static OFF: AtomicBool = AtomicBool::new(false);
 
 impl Native {
     pub fn new(wake: Wake) -> Self {
+        // Windows shows toasts only for an ID a Start menu shortcut carries: the portable zip makes its own.
+        #[cfg(target_os = "windows")]
+        if let Err(e) = crate::shortcut::ensure_start_menu_shortcut() {
+            eprintln!("pingcraft: could not make PingCraft's Start menu shortcut, so Windows may show no notifications: {e}");
+        }
         let (click, clicks) = channel();
         Self { click, clicks, waiting: Arc::new(AtomicUsize::new(0)), wake, asked: false }
     }

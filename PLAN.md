@@ -280,7 +280,12 @@ Starts when mautrix-discord releases its bridgev2 rewrite (ADR 0008).
      bus (it says so once and shows nothing).
    - **macOS was not compiled** (no macOS target here); **Windows** was only checked (`cargo clippy` for
      `aarch64-pc-windows-msvc`), not built or run; FreeBSD was checked the same way.
-   - The portable Windows zip has no shortcut with the AppUserModelID, so Windows may show no toasts from it.
+   - **The portable Windows zip** (maintainer, 2026-11-25): on its first run PingCraft makes its own Start menu
+     shortcut carrying the AppUserModelID when neither the user's nor the machine's Start menu has one
+     (`pingcraft_notify::shortcut`; the `.lnk` is written byte by byte, so no COM and no `unsafe`). Checked with
+     `cargo clippy` for `aarch64-pc-windows-msvc` and unit tests of the file's layout on Linux; **untested on
+     Windows**: whether Windows accepts the shortcut and then shows toasts is not known. A failure is said once on
+     stderr and PingCraft goes on.
    - The web build shows none (the browser's Notification API later); the preview setting comes with Settings.
 2. Search.
 3. Media: images and files, over authenticated media.

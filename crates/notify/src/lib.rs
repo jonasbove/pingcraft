@@ -7,7 +7,8 @@
 //! - **macOS** ([`native`]): `UNUserNotificationCenter`. It shows notifications only for an app in a bundle with a
 //!   bundle identifier, after the user allows them; PingCraft asks once, at the first notification.
 //! - **Windows** ([`native`]): WinRT toasts, under PingCraft's AppUserModelID ([`APP_ID`]). Windows shows toasts
-//!   only for an ID that a Start menu shortcut carries; the installer makes it.
+//!   only for an ID that a Start menu shortcut carries; the installer makes it, and PingCraft makes its own when
+//!   there is none, as from the portable zip ([`shortcut`]).
 //! - **The web:** nothing yet ([`Silent`]).
 //!
 //! A notification's text (a chat's name and a message preview) never goes in a log.
@@ -30,6 +31,8 @@ pub type Wake = Arc<dyn Fn() + Send + Sync>;
 pub mod freedesktop;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 pub mod native;
+#[cfg(any(target_os = "windows", test))]
+pub mod shortcut;
 
 /// This platform's notifier.
 pub fn desktop(wake: Wake) -> Box<dyn Notifier> {
