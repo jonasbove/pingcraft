@@ -79,8 +79,10 @@ Findings:
   it. An OpenID token only proves who the user is, and tuwunel's last an hour, but it ends up in the bridge's
   container log.
 
-The fix chosen, within point 4 above. It is built (milestone 3, ticket 3) but **waits for the maintainer's
-approval**: it adds a reverse proxy to the server side that CLAUDE.md's "Decided" list and ADR 0010 describe.
+The fix chosen, within point 4 above. It is built (milestone 3, ticket 3) and **approved by the maintainer
+(2026-11-25)**. It adds a reverse proxy to the server side that CLAUDE.md's "Decided" list and ADR 0010 describe.
+The cleaner fix, letting a bridge check tokens for its own server at `homeserver.address`, belongs upstream in
+mautrix-go; proposing it is a public contribution and waits for the maintainer.
 
 - Federation stays off. No bridge image changes (ADR 0002).
 - The compose project gets one reverse proxy (Caddy, Apache-2.0, pinned by digest).

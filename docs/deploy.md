@@ -146,7 +146,11 @@ Nothing outside the stack reaches that network. ADR 0003's addendum says why it 
 2. Run `./setup.sh`. It makes the certificate and the WhatsApp bridge's configuration, and keeps everything that
    exists.
 3. Run `docker compose up -d`. The proxy now takes over `PINGCRAFT_PORT` from the homeserver, so the address
-   clients use does not change.
+   clients use does not change. `./setup.sh` also points each existing bridge at the proxy: the homeserver now
+   takes a client's address from a header only the proxy sets, and fails requests without it.
+
+The homeserver remembers the bridges' container addresses. If you recreate bridge containers on their own, run
+`docker compose restart homeserver` afterwards, or it keeps sending to the old addresses.
 
 ## 8. Connect Telegram
 

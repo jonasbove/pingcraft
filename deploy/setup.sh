@@ -66,7 +66,7 @@ run_bridge() {
 # starts it from Matrix.
 common_overrides() {
 	cat <<YQ
-		.homeserver.address = "http://homeserver:8008" |
+		.homeserver.address = "http://proxy:8008" |
 		.homeserver.domain = strenv(SN) |
 		.appservice.hostname = "0.0.0.0" |
 		.appservice.address = "http://$1:" + (.appservice.port | tostring) |
@@ -100,6 +100,13 @@ setup_bridge() {
 		echo "setup: writing the $service bridge configuration"
 		run_bridge "$service" "$binary" -c /data/config.yaml -e >/dev/null
 		run_bridge "$service" yq -i "$(common_overrides "$service") | $network" /data/config.yaml
+	fi
+	# The bridges reach the homeserver through the proxy, like every client: the homeserver takes each client's
+	# address from the X-Real-IP header the proxy sets (Caddyfile), and fails requests that come without it.
+	# Configurations written before the proxy existed are moved over once.
+	if grep -q 'address: http://homeserver:8008$' "data/$service/config.yaml"; then
+		echo "setup: pointing the $service bridge at the proxy"
+		run_bridge "$service" yq -i '.homeserver.address = "http://proxy:8008"' /data/config.yaml
 	fi
 	if [ ! -s "data/$service/registration.yaml" ]; then
 		echo "setup: generating the $service bridge registration"
