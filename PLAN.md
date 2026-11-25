@@ -417,6 +417,13 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
     - **Archive a chat:** not built (no frame yet).
     - **Context menu: done, without shortcuts.** A message's menu opens from its "…" button or a right-click;
       the keyboard shortcuts in the design (through `craft-keymap`) are still to come.
+13. **PingCraft's own interface icons** (maintainer, 2026-11-25). A set of a few dozen original icons, drawn for
+    PingCraft as SVGs in the design's language (hairline strokes, square ends): reply, forward, react, more, pin,
+    unpin, mute and unmute, edit, delete, select, copy, details, jump to latest, search, the encryption marks, and
+    a mark for each network that is our own drawing, never a network's logo (clean room). Designed in FigCraft first
+    (page "Components", where the draft frames' icons are placeholders), then drawn in egui in place of the text
+    marks used today (📌, 🔕, "…", "×", "›"). Each recorded in `ATTRIBUTION.md`; checked with craft-libs `ui`
+    first (house rule 16).
 
 ## Later, not yet planned
 
