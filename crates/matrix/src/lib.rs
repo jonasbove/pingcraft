@@ -4,6 +4,20 @@
 
 pub use pingcraft_core as core;
 
+// Before the modules, so they can use it.
+/// The fixed prefix of PingCraft's own data on the server (account data and any event types of its own), the same
+/// on every server, whoever runs it: a reverse domain PingCraft controls (GLOSSARY.md, "Namespace"). Each name is
+/// this, a dot and the name, written out with [`namespaced!`] so it stays a `&'static str`.
+pub const NAMESPACE: &str = "io.github.jonasbove.pingcraft";
+
+/// A name in PingCraft's [`NAMESPACE`], as a string literal.
+macro_rules! namespaced {
+    ($name:literal) => {
+        concat!("io.github.jonasbove.pingcraft.", $name)
+    };
+}
+pub(crate) use namespaced;
+
 mod bridge_info;
 mod chat_settings;
 #[cfg(not(target_arch = "wasm32"))]

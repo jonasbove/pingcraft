@@ -386,7 +386,7 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
     chats still count as unread but make no notification. Possibly mentions-only for group chats.
     Built: the chat's "…" menu mutes it for an hour, a day, a week or until turned back on, and turns it back on.
     Muting is a push rule on the server, so the user's other Matrix apps follow it; the end time is kept in the
-    chat's room account data (`org.pingcraft.mute_until`) and PingCraft turns notifications back on at that time
+    chat's room account data (`io.github.jonasbove.pingcraft.mute_until`) and PingCraft turns notifications back on at that time
     while it runs (a push rule has no end time; if PingCraft is not running, it happens at its next start). Muted
     chats show a struck bell and a quiet count, and still count as unread. Open: muting a whole network, "until a
     time" (needs a date and time picker), mentions-only. PingCraft's own desktop notifications (milestone 6,

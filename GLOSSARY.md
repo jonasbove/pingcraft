@@ -45,6 +45,12 @@ _Avoid_: connector, puppet, plugin
 The family a bridge comes from, such as mautrix.
 _Avoid_: bridge vendor, backend
 
+**Namespace**:
+The fixed prefix of PingCraft's own data on a server, `io.github.jonasbove.pingcraft` (for example the account
+data `io.github.jonasbove.pingcraft.mute_until`). The same on every server, whoever runs it (maintainer,
+2026-11-25); `pingcraft_matrix::NAMESPACE` in the code.
+_Avoid_: `org.pingcraft` (a domain PingCraft does not hold)
+
 **Risk level**:
 How likely a network is to restrict or ban an account for being connected through a bridge, shown to the user
 before they connect it.

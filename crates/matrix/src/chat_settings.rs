@@ -19,7 +19,7 @@ use crate::inbox::chat_from_room;
 
 /// Room account data where PingCraft keeps when a mute ends. Push rules have no end time; PingCraft turns the
 /// notifications back on itself, while it runs.
-pub(crate) const MUTE_UNTIL: &str = "org.pingcraft.mute_until";
+pub(crate) const MUTE_UNTIL: &str = crate::namespaced!("mute_until");
 
 /// When a chat's mute ends, from its room account data: `None` when PingCraft set no end.
 pub(crate) async fn mute_until(room: &Room) -> Option<Timestamp> {
@@ -131,4 +131,17 @@ pub(crate) async fn draft(room: &Room) -> Option<String> {
 /// Whether a room is muted, by the rule the sync last reported.
 pub(crate) fn is_muted(room: &Room) -> bool {
     room.cached_user_defined_notification_mode() == Some(RoomNotificationMode::Mute)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MUTE_UNTIL;
+
+    /// The name other Matrix apps and later versions find the data under: it must not change by accident.
+    #[test]
+    fn mute_until_is_in_pingcraft_namespace() {
+        assert_eq!(crate::NAMESPACE, "io.github.jonasbove.pingcraft");
+        assert_eq!(MUTE_UNTIL, "io.github.jonasbove.pingcraft.mute_until");
+        assert!(MUTE_UNTIL.starts_with(&format!("{}.", crate::NAMESPACE)));
+    }
 }
