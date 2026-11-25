@@ -213,6 +213,12 @@ Goal: a user connects Telegram, Signal and WhatsApp accounts from PingCraft, aft
       or sign it out.
     - **Sign out** of this device, with a warning when the recovery key is not set up, since this device's message
       keys would then be lost.
+12. **History as an opt-in for each connection** (maintainer, 2026-11-25). When connecting a network, PingCraft
+    asks whether to copy the account's recent history, off by default. Without it, a chat appears when a message
+    arrives, with messages from then on (the stack's default since 2026-11-25). Spike first: mautrix's backfill
+    is one setting for the whole bridge, not per login, and backfilling needs the homeserver to accept messages
+    with past timestamps from the bridge; check whether tuwunel does, and how a per-login choice can be made
+    (per-portal backfill after login, a per-user setting, or a provisioning call), before building the question.
 
 ## Milestone 4: web build and the CraftCloud option
 

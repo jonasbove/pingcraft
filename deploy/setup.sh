@@ -62,8 +62,8 @@ run_bridge() {
 
 # PingCraft's overrides of every bridge's defaults (all bridges are mautrix bridgev2), with the bridge's service
 # name, which is also its Postgres database. ADR 0004: encryption required, keys pickled, quiet logs.
-# Privacy: no portals are created automatically and history is not imported; a chat is bridged only when the user
-# starts it from Matrix.
+# Chats (maintainer, 2026-11-25): a chat is created when a message arrives in it, or when the user starts it, with
+# messages from then on. No chats are made at login and no history is imported.
 common_overrides() {
 	cat <<YQ
 		.homeserver.address = "http://proxy:8008" |
@@ -72,7 +72,7 @@ common_overrides() {
 		.appservice.address = "http://$1:" + (.appservice.port | tostring) |
 		.database.type = "postgres" |
 		.database.uri = "postgres://bridges:" + strenv(DB_PW) + "@bridge-db/$1?sslmode=disable" |
-		.bridge.portal_create_filter.mode = "allow" |
+		.bridge.portal_create_filter.mode = "deny" |
 		.bridge.portal_create_filter.list = [] |
 		.bridge.permissions = {"*": "relay"} |
 		.bridge.permissions[strenv(SN)] = "user" |
@@ -107,6 +107,13 @@ setup_bridge() {
 	if grep -q 'address: http://homeserver:8008$' "data/$service/config.yaml"; then
 		echo "setup: pointing the $service bridge at the proxy"
 		run_bridge "$service" yq -i '.homeserver.address = "http://proxy:8008"' /data/config.yaml
+	fi
+	# Configurations written before 2026-11-25 allowed no chats at all, so incoming messages were dropped. Move them
+	# to "a chat for each new message" once; a filter someone has edited (a non-empty list) is left alone.
+	if grep -A6 '^    portal_create_filter:' "data/$service/config.yaml" | grep -q '^        mode: allow$' &&
+		grep -A10 '^    portal_create_filter:' "data/$service/config.yaml" | grep -q '^        list: \[\]$'; then
+		echo "setup: letting the $service bridge create a chat when a message arrives"
+		run_bridge "$service" yq -i '.bridge.portal_create_filter.mode = "deny"' /data/config.yaml
 	fi
 	if [ ! -s "data/$service/registration.yaml" ]; then
 		echo "setup: generating the $service bridge registration"

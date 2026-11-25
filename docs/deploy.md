@@ -160,7 +160,8 @@ Until PingCraft's own client can do this (milestone 3), use any Matrix client.
    is encrypted. The bridge ignores unencrypted messages.
 2. **Log in:** send `login phone` (or `login qr`), then answer each question in its own message: your number with
    its country code, the code Telegram sends to your app, then your two-step password if you have one.
-3. **Bridge one chat:** send `start-chat <Telegram username>`. Nothing is bridged until you do this for a chat.
+3. **Chats:** a chat appears in Matrix when a message arrives in it, with messages from then on; your existing
+   chats and their history are not copied. To message someone first, send `start-chat <Telegram username>`.
 
 Read ADR 0005 for what Telegram allows and what can get an account restricted.
 
