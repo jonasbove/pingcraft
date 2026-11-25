@@ -66,7 +66,7 @@ It never prints a secret, and it never overwrites anything that exists, so it is
 The bridge configuration it writes:
 
 - encryption on the Matrix side is required;
-- no chat history is imported;
+- no chat history is imported (why: "Chat history" in [PLAN.md](../PLAN.md), under "Later, not yet planned");
 - a chat is bridged when a message arrives in it, or when you start it; none are copied at login;
 - logs show warnings and errors only.
 

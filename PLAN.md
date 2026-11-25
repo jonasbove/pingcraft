@@ -213,12 +213,8 @@ Goal: a user connects Telegram, Signal and WhatsApp accounts from PingCraft, aft
       or sign it out.
     - **Sign out** of this device, with a warning when the recovery key is not set up, since this device's message
       keys would then be lost.
-12. **History as an opt-in for each connection** (maintainer, 2026-11-25). When connecting a network, PingCraft
-    asks whether to copy the account's recent history, off by default. Without it, a chat appears when a message
-    arrives, with messages from then on (the stack's default since 2026-11-25). Spike first: mautrix's backfill
-    is one setting for the whole bridge, not per login, and backfilling needs the homeserver to accept messages
-    with past timestamps from the bridge; check whether tuwunel does, and how a per-login choice can be made
-    (per-portal backfill after login, a per-user setting, or a provisioning call), before building the question.
+12. **History as an opt-in for each connection: not doing it for now** (maintainer, 2026-11-25, after a spike).
+    PingCraft imports no history; see "Chat history" under "Later, not yet planned" for why and what would change it.
 
 ## Milestone 4: web build and the CraftCloud option
 
@@ -259,6 +255,26 @@ Starts when mautrix-discord releases its bridgev2 rewrite (ADR 0008).
   - one toggle per network, or per account (two Telegram accounts);
   - how the toggles behave with many networks, and with colour-blind users (the names stay, so colour is never the
     only cue).
+
+- **Chat history** (maintainer, 2026-11-25: not for now). PingCraft copies no earlier messages: a chat appears when
+  a message arrives in it, with messages from then on. An opt-in asked at each connection was wanted, but a spike
+  (bridge images v0.2611.0 on mautrix-go v0.33.0, tuwunel v2.0.0) found it cannot be done cleanly today:
+  - **One setting per bridge.** mautrix's history import (backfill) is configured for the whole bridge. There is
+    no per-login switch, and the provisioning API's login takes no options.
+  - **Only when a chat is created.** tuwunel accepts a bridge's messages with their original times (the
+    appservice `ts` parameter), but has no batch sending, so history can only be added while a chat's room is
+    first created, never later to a room that already has messages. The choice could not be changed afterwards.
+  - **At linking, for WhatsApp and Signal.** WhatsApp sends its history once, when the phone is linked (from the
+    code; not tested), and Signal only offers to transfer history if the bridge asks when linking. So the choice
+    would have to be made then, by the whole bridge.
+  - **Every workaround costs too much for now:** two copies of each bridge (with and without history) doubles the
+    containers and shows a contact twice if an account is linked to both; patching the bridges for a per-login
+    flag means running modified AGPL bridges (against ADR 0002); turning history on for everyone and hiding it in
+    PingCraft still copies it onto the server.
+
+  Worth revisiting if mautrix gains a per-login backfill option, or tuwunel gains batch sending. A Signal-only first
+  step is possible (turn backfill on for Signal and let the person accept or decline the transfer on the phone),
+  if the phone is confirmed to offer that choice.
 
 - **MailCraft integration** (raised by the maintainer, 2026-11-24). What it means is still open: for example,
   mail as one more network in the inbox, or PingCraft chats shown in MailCraft. It needs its own ADR before any
