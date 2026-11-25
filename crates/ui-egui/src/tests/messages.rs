@@ -267,3 +267,15 @@ fn deleting_several_of_your_messages_asks_once() {
     assert!(matches!(&sent[..], [Command::Delete { message, .. }] if message.0 == "2"), "{sent:?}");
     assert!(h.query_by_label("1 selected").is_none());
 }
+
+#[test]
+fn right_clicking_a_message_opens_its_menu() {
+    let fake = Fake::default();
+    let mut h = book_club(&fake);
+    // The message's own text (the reply further down quotes it too).
+    h.get_all_by_label("Next meeting on Thursday?").next().unwrap().click_secondary();
+    h.run();
+    h.get_by_label("Reply").click();
+    h.run();
+    h.get_by_label("Replying to Lars Holm");
+}

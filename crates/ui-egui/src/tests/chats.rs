@@ -162,3 +162,23 @@ fn jump_to_latest_shows_when_scrolled_up() {
     h.run();
     assert!(h.query_by_label("Jump to latest").is_none(), "back at the newest message");
 }
+
+#[test]
+fn sending_a_kept_draft_forgets_it() {
+    let fake = Fake::default();
+    let mut h = signed_in(&fake);
+    let mut book = chat("!book", "Book club", "Telegram", 0, None);
+    book.draft = Some("see you there".into());
+    fake.tell([Event::Inbox(InboxChange::Upsert(book))]);
+    h.run();
+    h.get_by_label_contains("Book club, on Telegram").click();
+    h.run();
+    fake.take();
+    h.get_by_label("SEND").click();
+    h.run();
+    let sent = fake.take();
+    assert!(
+        matches!(&sent[..], [Command::SendText { text, .. }, Command::SaveDraft { text: kept, .. }] if text == "see you there" && kept.is_empty()),
+        "{sent:?}"
+    );
+}

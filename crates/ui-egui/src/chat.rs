@@ -77,7 +77,7 @@ pub fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, out: &mu
             selection_bar(ui, open);
         }
     } else {
-        composer(ui, open, &name, chat.map(|c| &c.network), out);
+        composer(ui, open, &name, chat, out);
     }
     // The timeline, newest at the bottom.
     egui::CentralPanel::default().frame(egui::Frame::new().inner_margin(Margin::symmetric(24, 16))).show(ui, |ui| {
@@ -386,7 +386,8 @@ fn details_sheet(ctx: &egui::Context, open: &mut OpenChat, chat: Option<&Chat>) 
 }
 
 /// The message field and SEND, with a bar over them while replying to a message or editing one of the user's.
-fn composer(ui: &mut Ui, open: &mut OpenChat, name: &str, network: Option<&pingcraft_core::Network>, out: &mut Out) {
+fn composer(ui: &mut Ui, open: &mut OpenChat, name: &str, chat: Option<&Chat>, out: &mut Out) {
+    let network = chat.map(|c| &c.network);
     let t = Tokens::get(ui.ctx());
     let editing = open.editing.as_ref().map(|(id, _)| id.clone());
     let replying = open.replying.as_ref().and_then(|id| open.message(id)).map(|m| (m.sender.clone(), m.own, crate::view::preview_text(&m.body)));
@@ -460,6 +461,7 @@ fn composer(ui: &mut Ui, open: &mut OpenChat, name: &str, network: Option<&pingc
         return;
     }
     let text = std::mem::take(&mut open.draft).trim().to_owned();
+    let chat_kept = chat;
     let chat = open.id.clone();
     if open.typing_told.take().is_some() {
         out.push(Command::Typing { chat: chat.clone(), typing: false });
@@ -472,6 +474,10 @@ fn composer(ui: &mut Ui, open: &mut OpenChat, name: &str, network: Option<&pingc
         (None, Some(to)) => Command::Reply { chat, to, text },
         (None, None) => Command::SendText { chat, text },
     });
+    // The draft kept in the store has been sent: forget it, or it would come back.
+    if let Some(c) = chat_kept.filter(|c| c.draft.is_some()) {
+        out.push(Command::SaveDraft { chat: c.id.clone(), text: String::new() });
+    }
 }
 
 /// How often the chat is told again that the user is still typing (servers drop it after about 30 seconds).

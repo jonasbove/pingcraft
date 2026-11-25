@@ -155,7 +155,12 @@ fn contents(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out, act: &mu
     {
         *act = Some(a);
     }
-    body(ui, &message.body);
+    // The text is selectable, so it takes right-clicks itself: it opens the same menu.
+    body(ui, &message.body).context_menu(|ui| {
+        if let Some(a) = menu(ui, message, cx, out) {
+            *act = Some(a);
+        }
+    });
     if !message.reactions.is_empty() {
         reactions(ui, message, cx, out);
     }
@@ -318,28 +323,25 @@ fn chip(ui: &mut Ui, reaction: &Reaction, enabled: bool) -> egui::Response {
     response.on_hover_text(names)
 }
 
-fn body(ui: &mut Ui, body: &MessageBody) {
+fn body(ui: &mut Ui, body: &MessageBody) -> egui::Response {
     let t = Tokens::get(ui.ctx());
     match body {
-        MessageBody::Text(text) => {
-            ui.add(egui::Label::new(RichText::new(text).size(14.0)).wrap());
-        }
+        MessageBody::Text(text) => ui.add(egui::Label::new(RichText::new(text).size(14.0)).wrap()),
         MessageBody::WaitingForKey => {
-            egui::Frame::new().fill(t.sunken).stroke(t.hairline()).inner_margin(Margin::same(14)).show(ui, |ui| {
-                ui.set_max_width(500.0);
-                ui.label(RichText::new(tl!("Waiting for the key to this message")).size(14.0));
-                note(ui, tl!("It was sent before this device could read it. It opens by itself once one of your other devices, or your key backup, shares the key."));
-            });
+            egui::Frame::new()
+                .fill(t.sunken)
+                .stroke(t.hairline())
+                .inner_margin(Margin::same(14))
+                .show(ui, |ui| {
+                    ui.set_max_width(500.0);
+                    ui.label(RichText::new(tl!("Waiting for the key to this message")).size(14.0));
+                    note(ui, tl!("It was sent before this device could read it. It opens by itself once one of your other devices, or your key backup, shares the key."));
+                })
+                .response
         }
-        MessageBody::Deleted => {
-            ui.label(RichText::new(tl!("Message deleted")).italics().size(13.0).color(t.muted));
-        }
-        MessageBody::Loading => {
-            ui.label(RichText::new("…").size(14.0).color(t.muted));
-        }
-        MessageBody::Unsupported(kind) => {
-            ui.label(RichText::new(unsupported(kind)).italics().size(14.0).color(t.muted));
-        }
+        MessageBody::Deleted => ui.label(RichText::new(tl!("Message deleted")).italics().size(13.0).color(t.muted)),
+        MessageBody::Loading => ui.label(RichText::new("…").size(14.0).color(t.muted)),
+        MessageBody::Unsupported(kind) => ui.label(RichText::new(unsupported(kind)).italics().size(14.0).color(t.muted)),
     }
 }
 
