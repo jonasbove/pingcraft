@@ -1,0 +1,27 @@
+[package]
+name = "pingcraft-notify"
+description = "PingCraft's desktop notifications, each operating system its own way. Desktop only; no Matrix SDK, no egui."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+pingcraft-core = { workspace = true }
+
+# Linux and the BSDs: the freedesktop notification spec over D-Bus, with zbus (pure Rust: no libdbus, no systemd).
+[target.'cfg(all(unix, not(target_os = "macos"), not(target_arch = "wasm32")))'.dependencies]
+zbus = "5"
+
+# Windows: WinRT toasts, through notify-rust (MIT OR Apache-2.0) and tauri-winrt-notification.
+[target.'cfg(target_os = "windows")'.dependencies]
+notify-rust = { version = "4.19", default-features = false }
+
+# macOS: UNUserNotificationCenter, notify-rust's opt-in backend for it.
+[target.'cfg(target_os = "macos")'.dependencies]
+notify-rust = { version = "4.19", default-features = false, features = ["preview-macos-un"] }

@@ -246,7 +246,36 @@ Starts when mautrix-discord releases its bridgev2 rewrite (ADR 0008).
 
 ## Milestone 6: polish
 
-1. Desktop notifications.
+1. **Desktop notifications** (maintainer, 2026-11-25), each operating system its own way, behind one small
+   interface (`pingcraft_core::notify::Notifier`) with a fake for tests, in a crate only the desktop app uses:
+   - **Linux and the BSDs:** the freedesktop notification spec over D-Bus (`org.freedesktop.Notifications`),
+     through a pure-Rust D-Bus client (zbus), so it needs no libdbus and works on any init system (systemd, runit,
+     OpenRC, s6), without systemd or logind. Without a notification service it says so once in the log and goes on.
+   - **macOS:** the native user notification center (`UNUserNotificationCenter`), which shows notifications only
+     for an app in a bundle with a bundle identifier, and after the user allows them.
+   - **Windows:** native toast notifications (WinRT), which need the app's AppUserModelID on a Start menu shortcut
+     (the installer's job).
+   - **Web:** nothing for now (the browser's Notification API later); the web build still compiles.
+
+   What notifies: a new message from someone else in a chat that is not muted, unless that chat is open and the
+   window has focus. The title is the chat's name, the body the sender and a short preview; message text never goes
+   in a log. Clicking a notification opens its chat where the platform reports clicks. A setting to leave previews
+   out comes with the Settings screen (milestone 3, ticket 11).
+
+   **Built (2026-11-25), checked on Linux only.** `pingcraft-notify`: zbus 5 (already in the tree through the
+   keyring) on Linux and the BSDs, with clicks from the `default` action; notify-rust 4.19 (MIT OR Apache-2.0) on
+   macOS (its `preview-macos-un` backend, which asks for permission at the first notification) and Windows
+   (tauri-winrt-notification, under the AppUserModelID the MSI's Start menu shortcut already carries). The Flatpak
+   may now talk to `org.freedesktop.Notifications`. The decision (which changes notify, and the text) is in
+   `pingcraft-ui-egui` and tested on its own and through the AccessKit tests with a fake notifier. craft-libs has no
+   notification API yet (its `platform` crate uses zbus for appearance only); this crate is a candidate for one.
+   Open:
+   - **Not tried against a real notification service,** on any system: only built, and on Linux tested without a
+     bus (it says so once and shows nothing).
+   - **macOS was not compiled** (no macOS target here); **Windows** was only checked (`cargo clippy` for
+     `aarch64-pc-windows-msvc`), not built or run; FreeBSD was checked the same way.
+   - The portable Windows zip has no shortcut with the AppUserModelID, so Windows may show no toasts from it.
+   - The web build shows none (the browser's Notification API later); the preview setting comes with Settings.
 2. Search.
 3. Media: images and files, over authenticated media.
 4. Reactions, edits and replies: now part of "Messages and chats" below.
@@ -325,8 +354,8 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
     chat's room account data (`org.pingcraft.mute_until`) and PingCraft turns notifications back on at that time
     while it runs (a push rule has no end time; if PingCraft is not running, it happens at its next start). Muted
     chats show a struck bell and a quiet count, and still count as unread. Open: muting a whole network, "until a
-    time" (needs a date and time picker), mentions-only; PingCraft has no notifications of its own yet
-    (milestone 6).
+    time" (needs a date and time picker), mentions-only. PingCraft's own desktop notifications (milestone 6,
+    ticket 1) leave muted chats out.
 11. **Notification sounds and colours.** Choose a sound for each network or chat (a few built-in sounds under an
     allowlisted licence, or none), and pick a chat's or network's accent colour, tied to the network colours under
     "Later". Builds on milestone 6's desktop notifications.

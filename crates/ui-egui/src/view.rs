@@ -331,6 +331,17 @@ pub fn inbox(ui: &mut Ui, state: &mut State, out: &mut Out) {
     forward_sheet(ui.ctx(), state, out);
 }
 
+/// Opens a chat from outside the inbox list (a notification was clicked), as clicking its row would.
+pub fn open_chat_from_elsewhere(state: &mut State, chat: pingcraft_core::ChatId, out: &mut Out) {
+    state.tab = Tab::Inbox;
+    if state.open.as_ref().is_some_and(|o| o.id == chat) {
+        return;
+    }
+    out.extend(state.leaving());
+    state.open_chat(chat.clone());
+    out.push(Command::OpenChat(chat));
+}
+
 /// Forwarding messages from the open chat: search, pick a chat, FORWARD.
 fn forward_sheet(ctx: &egui::Context, state: &mut State, out: &mut Out) {
     let Some(open) = state.open.as_mut() else { return };

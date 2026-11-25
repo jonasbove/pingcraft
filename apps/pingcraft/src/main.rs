@@ -75,7 +75,10 @@ fn main() -> ExitCode {
         Box::new(move |cc| {
             let ctx = cc.egui_ctx.clone();
             let engine = Engine::start(data, secrets, Arc::new(move || ctx.request_repaint()))?;
-            Ok(Box::new(Window { app: PingCraftApp::new(Box::new(engine)) }))
+            let mut app = PingCraftApp::new(Box::new(engine));
+            let ctx = cc.egui_ctx.clone();
+            app.set_notifier(pingcraft_notify::desktop(Arc::new(move || ctx.request_repaint())));
+            Ok(Box::new(Window { app }))
         }),
     );
     match result {

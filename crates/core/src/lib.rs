@@ -9,6 +9,7 @@ pub mod app;
 pub mod bridge;
 pub mod encryption;
 mod inbox;
+pub mod notify;
 
 pub use inbox::{Filter, Inbox, InboxChange};
 

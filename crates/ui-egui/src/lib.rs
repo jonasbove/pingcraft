@@ -9,6 +9,7 @@ mod accounts;
 mod chat;
 pub mod i18n;
 mod message;
+mod notify;
 mod state;
 mod theme;
 mod time;
@@ -20,6 +21,7 @@ mod tests;
 
 use egui::{Frame, Margin};
 use pingcraft_core::app::Backend;
+use pingcraft_core::notify::Notifier;
 
 pub use state::{Screen, State, Tab};
 pub use theme::Tokens;
@@ -35,11 +37,34 @@ pub struct PingCraftApp {
     backend: Box<dyn Backend>,
     pub state: State,
     styled: bool,
+    /// Shows desktop notifications; without one, none are shown.
+    notifier: Option<Box<dyn Notifier>>,
 }
 
 impl PingCraftApp {
     pub fn new(backend: Box<dyn Backend>) -> Self {
-        Self { backend, state: State::default(), styled: false }
+        Self { backend, state: State::default(), styled: false, notifier: None }
+    }
+
+    /// Shows desktop notifications through this notifier.
+    pub fn set_notifier(&mut self, notifier: Box<dyn Notifier>) {
+        self.notifier = Some(notifier);
+    }
+
+    /// Hands the frame's notifications to the notifier, and opens the chats whose notifications were clicked.
+    fn notifications(&mut self, ctx: &egui::Context, out: &mut view::Out) {
+        let shown = std::mem::take(&mut self.state.notifications);
+        let Some(notifier) = self.notifier.as_mut() else { return };
+        for n in shown {
+            notifier.show(n);
+        }
+        let clicked = notifier.clicked();
+        if let Some(chat) = clicked.last().cloned()
+            && self.state.screen == Screen::Inbox
+        {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            view::open_chat_from_elsewhere(&mut self.state, chat, out);
+        }
     }
 
     /// Draws one frame: applies what the backend said since the last one, then sends what the user did.
@@ -48,12 +73,14 @@ impl PingCraftApp {
             theme::install(ui.ctx());
             self.styled = true;
         }
+        let ctx = ui.ctx().clone();
+        self.state.focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
         for event in self.backend.poll() {
             self.state.apply(event);
         }
-        let ctx = ui.ctx().clone();
         let t = Tokens::get(&ctx);
         let mut out = Vec::new();
+        self.notifications(&ctx, &mut out);
         egui::Panel::top("header").exact_size(48.0).frame(Frame::new().fill(t.bg)).show(ui, |ui| view::header(ui, &mut self.state, &mut out));
         egui::Panel::bottom("footer").exact_size(34.0).frame(Frame::new().fill(t.bg)).show(ui, |ui| view::footer(ui, &self.state));
         egui::CentralPanel::default().frame(Frame::new().fill(t.sunken).inner_margin(Margin::ZERO)).show(ui, |ui| {

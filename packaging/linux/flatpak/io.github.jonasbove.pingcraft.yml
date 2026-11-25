@@ -27,6 +27,8 @@ finish-args:
   # KeePassXC), ADR 0004 and ADR 0009's addendum. Without it PingCraft asks for an unlock passphrase. The
   # Secret portal was not tried.
   - --talk-name=org.freedesktop.secrets
+  # Desktop notifications for new messages (milestone 6, ticket 1). The notification portal was not tried.
+  - --talk-name=org.freedesktop.Notifications
 modules:
   - name: pingcraft
     buildsystem: simple

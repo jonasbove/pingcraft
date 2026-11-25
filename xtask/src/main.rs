@@ -93,6 +93,7 @@ const LAYERS: &[(&str, u8)] = &[
     ("pingcraft-core", 0),
     ("pingcraft-keychain", 0),
     ("pingcraft-matrix", 1),
+    ("pingcraft-notify", 1),
     ("pingcraft-ui-egui", 2),
     ("pingcraft", 3),
     ("pingcraft-web", 3),

@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use pingcraft_core::app::{Command, Event, SignInProblem};
 use pingcraft_core::bridge::{BridgeError, BridgedNetwork, LoginStep};
 use pingcraft_core::encryption::{RecoveryKey, RecoveryStatus, Verification};
+use pingcraft_core::notify::Notification;
 use pingcraft_core::{Account, ChatId, ConnectionState, Filter, Inbox, InboxChange, Message, MessageBody, MessageDetails, MessageId, Network, Quote};
 use zeroize::Zeroizing;
 
@@ -292,6 +293,10 @@ pub struct State {
     pub verification: Option<Verification>,
     /// The last problem worth telling the user about, until they close it.
     pub problem: Option<String>,
+    /// Whether the window has focus, as of this frame.
+    pub focused: bool,
+    /// Desktop notifications to show, taken by the app each frame.
+    pub notifications: Vec<Notification>,
 }
 
 impl State {
@@ -333,10 +338,21 @@ impl State {
                 if matches!(change, InboxChange::Reset(_)) {
                     self.inbox_loaded = true;
                 }
+                // The open chat's messages are told about as they arrive (below).
+                if let InboxChange::Upsert(chat) = &change
+                    && self.inbox_loaded
+                    && self.open.as_ref().is_none_or(|o| o.id != chat.id)
+                    && let Some(n) = crate::notify::for_inbox_change(self.inbox.get(&chat.id), chat)
+                {
+                    self.notifications.push(n);
+                }
                 self.inbox.apply(change);
             }
             Event::Messages { chat, messages } => {
                 if let Some(open) = self.open.as_mut().filter(|o| o.id == chat) {
+                    if let Some(n) = crate::notify::for_open_chat(&open.messages, &messages, self.inbox.get(&chat), self.focused) {
+                        self.notifications.push(n);
+                    }
                     open.set_messages(messages);
                 }
             }

@@ -45,6 +45,23 @@ impl Fake {
     }
 }
 
+/// A notifier that keeps what it was asked to show, and reports the clicks a test makes.
+#[derive(Clone, Default)]
+struct FakeNotifier {
+    shown: Rc<RefCell<Vec<pingcraft_core::notify::Notification>>>,
+    clicks: Rc<RefCell<Vec<ChatId>>>,
+}
+
+impl pingcraft_core::notify::Notifier for FakeNotifier {
+    fn show(&mut self, notification: pingcraft_core::notify::Notification) {
+        self.shown.borrow_mut().push(notification);
+    }
+
+    fn clicked(&mut self) -> Vec<ChatId> {
+        std::mem::take(&mut *self.clicks.borrow_mut())
+    }
+}
+
 fn harness(fake: &Fake) -> Harness<'static, PingCraftApp> {
     let app = PingCraftApp::new(Box::new(fake.clone()));
     Harness::builder().with_size(egui::vec2(1200.0, 760.0)).build_ui_state(|ui, app: &mut PingCraftApp| app.ui(ui), app)
@@ -438,4 +455,30 @@ fn an_encrypted_chat_has_no_encryption_button() {
     h.run();
     h.get_by_label("Encrypted · via your bridge");
     assert!(h.query_by_label("Not encrypted: turn on encryption").is_none());
+}
+
+#[test]
+fn a_new_message_notifies_and_clicking_the_notification_opens_its_chat() {
+    let fake = Fake::default();
+    let notifier = FakeNotifier::default();
+    let mut h = signed_in(&fake);
+    h.state_mut().set_notifier(Box::new(notifier.clone()));
+    let mut book = chat("!book", "Book club", "Telegram", 3, Some(("Mei", "Bringing snacks")));
+    if let Some(m) = book.last_message.as_mut() {
+        m.at = Timestamp(1_795_000_100_000);
+    }
+    fake.tell([Event::Inbox(InboxChange::Upsert(book))]);
+    h.run();
+    let shown = notifier.shown.borrow().clone();
+    assert_eq!(shown.len(), 1, "{shown:?}");
+    assert_eq!((shown[0].title.as_str(), shown[0].body.as_str()), ("Book club", "Mei: Bringing snacks"));
+
+    h.get_by_label("ACCOUNTS").click();
+    h.run();
+    fake.take();
+    notifier.clicks.borrow_mut().push(ChatId("!book".into()));
+    h.run();
+    let sent = fake.take();
+    assert!(matches!(&sent[..], [Command::OpenChat(chat)] if chat.0 == "!book"), "{sent:?}");
+    assert_eq!(h.state().state.tab, crate::Tab::Inbox);
 }
