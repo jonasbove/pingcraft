@@ -6,7 +6,7 @@ use zeroize::Zeroizing;
 
 use crate::bridge::{Answers, BridgeError, BridgedNetwork, LoginStep, StepRef};
 use crate::encryption::{RecoveryKey, RecoveryStatus, Verification};
-use crate::{AccountId, ChatId, ConnectionState, InboxChange, Message, MessageId, Network};
+use crate::{AccountId, ChatId, ConnectionState, InboxChange, Message, MessageDetails, MessageId, Network};
 
 /// Something the user asked for. `Debug` never shows a password, passphrase or message text.
 pub enum Command {
@@ -51,6 +51,17 @@ pub enum Command {
     Delete {
         chat: ChatId,
         message: MessageId,
+    },
+    /// Asks for a message's details: [`Event::Details`] answers.
+    Details {
+        chat: ChatId,
+        message: MessageId,
+    },
+    /// Sends copies of messages from the open chat to another chat, as new messages from the user.
+    Forward {
+        from: ChatId,
+        messages: Vec<MessageId>,
+        to: ChatId,
     },
     LoadOlder(ChatId),
     /// The user saved the recovery key they were shown.
@@ -106,6 +117,10 @@ impl std::fmt::Debug for Command {
             Self::React { chat, message, .. } => f.debug_struct("React").field("chat", chat).field("message", message).finish_non_exhaustive(),
             Self::Edit { chat, message, .. } => f.debug_struct("Edit").field("chat", chat).field("message", message).finish_non_exhaustive(),
             Self::Delete { chat, message } => f.debug_struct("Delete").field("chat", chat).field("message", message).finish(),
+            Self::Details { chat, message } => f.debug_struct("Details").field("chat", chat).field("message", message).finish(),
+            Self::Forward { from, messages, to } => {
+                f.debug_struct("Forward").field("from", from).field("messages", messages).field("to", to).finish()
+            }
             Self::LoadOlder(c) => f.debug_tuple("LoadOlder").field(c).finish(),
             Self::RecoveryKeySaved => f.write_str("RecoveryKeySaved"),
             Self::Recover(key) => f.debug_tuple("Recover").field(key).finish(),
@@ -165,6 +180,12 @@ pub enum Event {
     Messages {
         chat: ChatId,
         messages: Vec<Message>,
+    },
+    /// A message's details, as asked for with [`Command::Details`].
+    Details {
+        chat: ChatId,
+        message: MessageId,
+        details: MessageDetails,
     },
     /// The open chat has no older messages.
     ReachedStart(ChatId),

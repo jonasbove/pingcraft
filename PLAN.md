@@ -292,12 +292,24 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
    deleted message leaves a "message deleted" line. What happens on the other network is checked per bridge.
    Built: DELETE in your own message's menu asks first, then redacts it; any deleted message shows "Message
    deleted". The sheet says whether it disappears on the network depends on the network.
-6. **Message details.** Sent and received times, delivery and read receipts where the network reports them, which
+6. **Done (2026-11-25), with gaps.** **Message details.** Sent and received times, delivery and read receipts where the network reports them, which
    network and account it came through, encryption state, and edit history.
-7. **Selecting and copying.** Select text inside a message and copy it; copy a whole message; select several
+   Built: DETAILS in the message's menu opens a sheet with when it was sent, the network (and that it came through
+   your bridge), its encryption in the header's words, who has read it and when (from read receipts, which the
+   timeline now tracks), and the earlier versions of an edited message (also ticket 4's gap). Open: a separate
+   "received" time (Matrix keeps one timestamp; a bridged message carries the network's), delivery receipts, and the
+   account line (`Chat.account` is still `None`, milestone 2 ticket 6). Per-bridge check of receipts pending.
+7. **Done (2026-11-25).** **Selecting and copying.** Select text inside a message and copy it; copy a whole message; select several
    messages to copy, forward or delete together.
-8. **Forwarding.** Forward one or more messages to another chat, on any connected network, with a note that it was
+   Built: message text is selectable (egui's selectable labels; not tested by dragging); COPY TEXT in the menu;
+   SELECT starts selecting, with a checkbox on each message and a bar instead of the composer: COPY ("sender,
+   time: text" per line), FORWARD, DELETE (only when all are yours; asks once) and CANCEL.
+8. **Done (2026-11-25), with gaps.** **Forwarding.** Forward one or more messages to another chat, on any connected network, with a note that it was
    forwarded where the network supports that.
+   Built: FORWARD in the menu or the selection bar opens a sheet to search and pick one chat; the text is sent there
+   as new messages from you, through that chat's send queue. The sheet says they don't say "forwarded": no bridge
+   carries that, so nothing marks them yet. Open: forwarding media (with milestone 6's media), several target
+   chats at once, and a "forwarded" mark if bridges gain one.
 9. **Pinning.** Pin messages inside a chat (shown at the top of the chat, synced to the network where the bridge
    carries pins), and pin chats to the top of the inbox.
 10. **Muting.** Mute a chat or a whole network, for an hour, a day, until turned back on, or until a time; muted

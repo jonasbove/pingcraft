@@ -15,6 +15,11 @@ pub fn clock(at: Timestamp) -> String {
     local(at).map(|t| t.format("%H:%M").to_string()).unwrap_or_default()
 }
 
+/// The full date and time, for a message's details: "Tuesday 24 November 2026 · 14:28:03".
+pub fn full(at: Timestamp) -> String {
+    local(at).map(|t| t.format("%A %-d %B %Y · %H:%M:%S").to_string()).unwrap_or_default()
+}
+
 /// What the inbox shows for a chat's last message: the time today, the weekday this week, else the date.
 pub fn short_time(at: Timestamp) -> String {
     short_time_at(at, Local::now())

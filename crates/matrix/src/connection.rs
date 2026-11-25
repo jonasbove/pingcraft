@@ -83,6 +83,15 @@ impl Connection {
         })
     }
 
+    /// Sends a text message to any chat in the inbox, open or not, through its send queue (so it is sent again
+    /// after a lost connection).
+    pub async fn send_text_to(&self, chat: &pingcraft_core::ChatId, text: &str) -> Result<(), String> {
+        let room_id = matrix_sdk::ruma::OwnedRoomId::try_from(chat.0.as_str()).map_err(|_| "no such chat".to_owned())?;
+        let room = self.client.get_room(&room_id).ok_or_else(|| "no such chat".to_owned())?;
+        let content = matrix_sdk::ruma::events::room::message::RoomMessageEventContent::text_plain(text);
+        room.send_queue().send(content.into()).await.map(|_| ()).map_err(|e| format!("the message could not be sent: {e}"))
+    }
+
     /// Ends the current sync connection and starts a new one, so the server is asked again now rather than when the
     /// long poll returns. The bridges' room-state watch keeps running.
     pub async fn refresh(&self) {

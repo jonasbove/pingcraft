@@ -201,3 +201,32 @@ async fn replying_reacting_editing_and_deleting() {
     chat.delete(&reply.id).await.unwrap();
     chat_until("the deletion", &mut chat, &mut last, |ms| ms.iter().find(|m| m.id == reply.id && m.body == MessageBody::Deleted).map(|_| ())).await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn details_show_edits_and_forwarding_sends_copies() {
+    let server = server_or_skip!();
+    let ana = sign_in_as(&server.homeserver, &server.user).await;
+    let room = create_room(&ana, &unique("Details"), true, None, vec![]).await;
+    let other = create_room(&ana, &unique("Elsewhere"), true, None, vec![]).await;
+    let (connection, mut chat) = open(&ana, &room).await;
+    let mut last = Vec::new();
+    chat.send_text("first words").await.unwrap();
+    let sent = chat_until("the message", &mut chat, &mut last, |ms| {
+        ms.iter().find(|m| text(m) == Some("first words") && m.state == SendState::Sent).cloned()
+    })
+    .await;
+    chat.edit(&sent.id, "second words").await.unwrap();
+    chat_until("the edit", &mut chat, &mut last, |ms| ms.iter().find(|m| m.id == sent.id && m.edited).map(|_| ())).await;
+    let details = chat.details(&sent.id).await.unwrap();
+    assert!(details.encrypted);
+    let versions: Vec<_> = details.versions.iter().map(|(_, b)| b.clone()).collect();
+    assert_eq!(versions, [MessageBody::Text("first words".into()), MessageBody::Text("second words".into())]);
+
+    for text in chat.texts(std::slice::from_ref(&sent.id)).await {
+        connection.send_text_to(&pingcraft_core::ChatId(other.to_string()), &text).await.unwrap();
+    }
+    drop(chat);
+    let mut elsewhere = within("the other chat to open", connection.open_chat(&pingcraft_core::ChatId(other.to_string()))).await.unwrap();
+    let mut last = Vec::new();
+    chat_until("the forwarded copy", &mut elsewhere, &mut last, |ms| ms.iter().find(|m| text(m) == Some("second words")).map(|_| ())).await;
+}

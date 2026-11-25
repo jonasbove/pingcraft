@@ -1,4 +1,5 @@
-//! One message in the open chat, and what can be done with it: reactions, replying, editing, deleting.
+//! One message in the open chat, and what can be done with it: reactions, replying, editing, deleting, copying,
+//! forwarding, selecting and its details.
 
 use egui::{Align, Color32, Layout, Margin, Rect, RichText, Sense, Stroke, Ui};
 use pingcraft_core::app::Command;
@@ -34,6 +35,12 @@ pub enum Act {
     Jump(MessageId),
     /// The quoted message is not loaded: load older ones.
     LoadOlder,
+    Forward(MessageId),
+    /// Start selecting, with this message ticked.
+    Select(MessageId),
+    /// Tick or untick while selecting.
+    Toggle(MessageId),
+    Details(MessageId),
 }
 
 /// The most names a reaction's accessible name lists before "and N more".
@@ -54,8 +61,32 @@ fn snippet(body: &MessageBody) -> String {
     short
 }
 
-/// One message. Returns its rectangle (to scroll to it) and what it asked for.
-pub fn message_view(ui: &mut Ui, message: &Message, chat: &ChatId, out: &mut Out) -> (Rect, Option<Act>) {
+/// One message. `ticked` is whether it is selected, while selecting. Returns its rectangle (to scroll to it) and
+/// what it asked for.
+pub fn message_view(ui: &mut Ui, message: &Message, chat: &ChatId, ticked: Option<bool>, out: &mut Out) -> (Rect, Option<Act>) {
+    let Some(on) = ticked else { return message_only(ui, message, chat, out) };
+    let t = Tokens::get(ui.ctx());
+    let mut act = None;
+    let row = egui::Frame::new().fill(if on { t.sunken } else { Color32::TRANSPARENT }).inner_margin(Margin::symmetric(8, 6)).show(ui, |ui| {
+        ui.horizontal_top(|ui| {
+            let mut value = on;
+            let label = fmt(tl!("Select: {sender}, {text}"), &[("sender", &who(message)), ("text", &snippet(&message.body))]);
+            let response = ui.add(egui::Checkbox::without_text(&mut value));
+            response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, &label));
+            if response.clicked() {
+                act = Some(Act::Toggle(message.id.clone()));
+            }
+            ui.vertical(|ui| {
+                ui.set_width(ui.available_width());
+                let (_, inner) = message_only(ui, message, chat, out);
+                act = act.take().or(inner);
+            });
+        });
+    });
+    (row.response.rect, act)
+}
+
+fn message_only(ui: &mut Ui, message: &Message, chat: &ChatId, out: &mut Out) -> (Rect, Option<Act>) {
     // Right-clicking anywhere on the message opens its menu. The area is the message's place in the last frame,
     // claimed before its contents so the buttons inside stay on top of it.
     let area_id = ui.scope_id().with(("message-area", &message.id.0));
@@ -185,7 +216,26 @@ fn menu(ui: &mut Ui, message: &Message, chat: &ChatId, out: &mut Out) -> Option<
     if item(ui, tl!("Reply"), message.can.reply) {
         act = Some(Act::Reply(message.id.clone()));
     }
-    if item(ui, tl!("Edit"), message.can.edit && matches!(message.body, MessageBody::Text(_))) {
+    let text = match &message.body {
+        MessageBody::Text(text) => Some(text),
+        _ => None,
+    };
+    if let Some(text) = text
+        && item(ui, tl!("Copy text"), true)
+    {
+        ui.ctx().copy_text(text.clone());
+        ui.close();
+    }
+    if item(ui, tl!("Forward"), text.is_some() && message.state == SendState::Sent) {
+        act = Some(Act::Forward(message.id.clone()));
+    }
+    if item(ui, tl!("Select"), true) {
+        act = Some(Act::Select(message.id.clone()));
+    }
+    if item(ui, tl!("Details"), true) {
+        act = Some(Act::Details(message.id.clone()));
+    }
+    if item(ui, tl!("Edit"), message.can.edit && text.is_some()) {
         act = Some(Act::Edit(message.id.clone()));
     }
     if message.can.delete {
@@ -281,18 +331,24 @@ fn body(ui: &mut Ui, body: &MessageBody) {
     }
 }
 
-/// Asks before deleting one of the user's messages.
-pub fn delete_sheet(ctx: &egui::Context, message: &Message, chat: &ChatId, chat_name: &str, out: &mut Out) -> bool {
+/// Asks before deleting some of the user's messages.
+pub fn delete_sheet(ctx: &egui::Context, messages: &[Message], chat: &ChatId, chat_name: &str, out: &mut Out) -> bool {
     let mut close = false;
+    let title = match messages {
+        [_] => tl!("Delete this message?").to_owned(),
+        _ => fmt(tl!("Delete {n} messages?"), &[("n", &messages.len().to_string())]),
+    };
     crate::widgets::sheet(
         ctx,
         "delete-message",
         560.0,
-        (tl!("Delete this message?"), &chat_name.to_uppercase()),
+        (&title, &chat_name.to_uppercase()),
         |ui| {
-            ui.label(RichText::new(snippet(&message.body)).size(13.0));
-            ui.label(RichText::new(tl!("It is deleted for everyone in this chat, and a “Message deleted” line stays in its place.")).size(14.0));
-            note(ui, tl!("PingCraft asks the network's bridge to delete it there too. Whether it disappears there depends on the network."));
+            for message in messages.iter().take(5) {
+                ui.label(RichText::new(snippet(&message.body)).size(13.0));
+            }
+            ui.label(RichText::new(tl!("They are deleted for everyone in this chat, and a “Message deleted” line stays in their place.")).size(14.0));
+            note(ui, tl!("PingCraft asks the network's bridge to delete them there too. Whether they disappear there depends on the network."));
         },
         |ui| {
             if button(ui, tl!("Cancel"), Kind::Secondary, true).clicked() {
@@ -300,11 +356,29 @@ pub fn delete_sheet(ctx: &egui::Context, message: &Message, chat: &ChatId, chat_
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if button(ui, tl!("Delete"), Kind::Danger, true).clicked() {
-                    out.push(Command::Delete { chat: chat.clone(), message: message.id.clone() });
+                    for message in messages {
+                        out.push(Command::Delete { chat: chat.clone(), message: message.id.clone() });
+                    }
                     close = true;
                 }
             });
         },
     );
     close
+}
+
+/// The selected messages as text, for the clipboard: "sender, time: text", one per line.
+pub fn copy_lines(messages: &[&Message]) -> String {
+    messages
+        .iter()
+        .map(|m| fmt(tl!("{sender}, {time}: {text}"), &[("sender", &who(m)), ("time", &crate::time::clock(m.at)), ("text", &full_text(&m.body))]))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn full_text(body: &MessageBody) -> String {
+    match body {
+        MessageBody::Text(text) => text.clone(),
+        other => preview_text(other),
+    }
 }

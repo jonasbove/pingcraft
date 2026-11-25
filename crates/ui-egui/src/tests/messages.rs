@@ -164,3 +164,106 @@ fn a_quote_goes_to_the_original_or_loads_older_messages() {
     let sent = fake.take();
     assert!(matches!(&sent[..], [Command::LoadOlder(chat)] if chat.0 == "!book"), "{sent:?}");
 }
+
+/// What the last frame put on the clipboard.
+fn copied(h: &Harness<'static, PingCraftApp>) -> Option<String> {
+    h.output().platform_output.commands.iter().find_map(|c| match c {
+        egui::OutputCommand::CopyText(text) => Some(text.clone()),
+        _ => None,
+    })
+}
+
+#[test]
+fn a_message_can_be_copied_from_its_menu() {
+    let fake = Fake::default();
+    let mut h = book_club(&fake);
+    actions(&mut h, "Lars Holm", "Next meeting on Thursday?");
+    h.get_by_label("Copy text").click();
+    h.step();
+    assert_eq!(copied(&h).as_deref(), Some("Next meeting on Thursday?"));
+}
+
+#[test]
+fn message_details_show_when_it_was_sent_who_read_it_and_earlier_versions() {
+    use pingcraft_core::MessageDetails;
+    let fake = Fake::default();
+    let mut h = book_club(&fake);
+    actions(&mut h, "You", "Thursday works.");
+    h.get_by_label("Details").click();
+    h.run();
+    let sent = fake.take();
+    assert!(matches!(&sent[..], [Command::Details { message, .. }] if message.0 == "2"), "{sent:?}");
+    h.get_by_label("Message details");
+    h.get_by_label("Loading…");
+    fake.tell([Event::Details {
+        chat: ChatId("!book".into()),
+        message: MessageId("2".into()),
+        details: MessageDetails {
+            sent: pingcraft_core::Timestamp(1_795_000_000_000),
+            encrypted: true,
+            read_by: vec![("Mei Tanaka".into(), Some(pingcraft_core::Timestamp(1_795_000_060_000)))],
+            versions: vec![
+                (Some(pingcraft_core::Timestamp(1_795_000_000_000)), text("Thursday is fine.")),
+                (Some(pingcraft_core::Timestamp(1_795_000_030_000)), text("Thursday works.")),
+            ],
+        },
+    }]);
+    h.run();
+    h.get_by_label_contains("Mei Tanaka "); // "Mei Tanaka 14:28", the read receipt
+    h.get_by_label("Thursday is fine.");
+    h.get_by_label("Encrypted between your server and you; the bridge reads it to pass it on");
+    h.get_by_label("CLOSE").click();
+    h.run();
+    assert!(h.state().state.open.as_ref().unwrap().details.is_none(), "closed in state");
+    assert!(h.query_by_label("Message details").is_none());
+}
+
+#[test]
+fn several_messages_can_be_selected_copied_and_forwarded() {
+    let fake = Fake::default();
+    let mut h = book_club(&fake);
+    actions(&mut h, "Lars Holm", "Next meeting on Thursday?");
+    h.get_by_label("Select").click();
+    h.run();
+    h.get_by_label("1 selected");
+    h.get_by_label("Select: You, Thursday works.").click();
+    h.run();
+    h.get_by_label("2 selected");
+    assert!(h.get_by_label("DELETE").accesskit_node().is_disabled(), "Lars's message is not the user's to delete");
+    h.get_by_label("COPY").click();
+    h.step();
+    let text = copied(&h).unwrap_or_default();
+    assert!(text.contains("Lars Holm") && text.contains("Next meeting on Thursday?") && text.contains("Thursday works."), "{text}");
+
+    h.get_by_label("FORWARD").click();
+    h.run();
+    h.get_by_label("Forward 2 messages");
+    h.get_by_role_and_label(egui::accesskit::Role::RadioButton, "Lars Holm, on Matrix").click();
+    h.run();
+    h.get_by_label("FORWARD").click();
+    h.run();
+    let sent = fake.take();
+    assert!(
+        matches!(&sent[..], [Command::Forward { from, messages, to }]
+            if from.0 == "!book" && to.0 == "!lars" && messages.iter().map(|m| m.0.as_str()).collect::<Vec<_>>() == ["1", "2"]),
+        "{sent:?}"
+    );
+    assert!(h.query_by_label("2 selected").is_none(), "forwarding ends the selection");
+}
+
+#[test]
+fn deleting_several_of_your_messages_asks_once() {
+    let fake = Fake::default();
+    let mut h = book_club(&fake);
+    actions(&mut h, "You", "Thursday works.");
+    h.get_by_label("Select").click();
+    h.run();
+    h.get_by_label("DELETE").click();
+    h.run();
+    h.get_by_label("Delete this message?");
+    h.get_by_label("DELETE").click();
+    h.run();
+    let sent = fake.take();
+    assert!(matches!(&sent[..], [Command::Delete { message, .. }] if message.0 == "2"), "{sent:?}");
+    assert!(h.query_by_label("1 selected").is_none());
+}

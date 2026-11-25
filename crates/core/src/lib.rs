@@ -183,6 +183,19 @@ impl Message {
     }
 }
 
+/// More about one message, for its details sheet.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct MessageDetails {
+    /// When it was sent, as the server (or, for a bridged message, the network) dated it.
+    pub sent: Timestamp,
+    /// Whether it was end-to-end encrypted on the Matrix side.
+    pub encrypted: bool,
+    /// Who has read it, by name, and when, where read receipts reach the server.
+    pub read_by: Vec<(String, Option<Timestamp>)>,
+    /// Its versions, oldest first, when it was edited; empty otherwise.
+    pub versions: Vec<(Option<Timestamp>, MessageBody)>,
+}
+
 /// What the user may do with one message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Abilities {

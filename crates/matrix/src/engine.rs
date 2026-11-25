@@ -414,6 +414,8 @@ impl Worker {
             | Command::React { .. }
             | Command::Edit { .. }
             | Command::Delete { .. }
+            | Command::Details { .. }
+            | Command::Forward { .. }
             | Command::LoadOlder(_)) => match chat_command(s, command).await {
                 Ok(Some(event)) => {
                     self.emit.send(event);
@@ -507,6 +509,16 @@ async fn chat_command(s: &SignedIn, command: Command) -> Result<Option<Event>, S
         Command::React { chat, message, key } if is_open(&chat) => timeline.react(&message, &key).await,
         Command::Edit { chat, message, text } if is_open(&chat) => timeline.edit(&message, &text).await,
         Command::Delete { chat, message } if is_open(&chat) => timeline.delete(&message).await,
+        Command::Details { chat, message } if is_open(&chat) => {
+            let details = timeline.details(&message).await.map_err(|e| e.to_string())?;
+            return Ok(Some(Event::Details { chat, message, details }));
+        }
+        Command::Forward { from, messages, to } if is_open(&from) => {
+            for text in timeline.texts(&messages).await {
+                s.connection.send_text_to(&to, &text).await?;
+            }
+            return Ok(None);
+        }
         Command::LoadOlder(chat) if is_open(&chat) => {
             return match timeline.load_older(PAGE).await {
                 Ok(true) => Ok(Some(Event::ReachedStart(chat))),

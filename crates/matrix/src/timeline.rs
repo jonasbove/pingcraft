@@ -17,9 +17,9 @@ use matrix_sdk_ui::Timeline;
 use matrix_sdk_ui::eyeball_im::Vector;
 use matrix_sdk_ui::timeline::{
     EventSendState, EventTimelineItem, InReplyToDetails, MsgLikeContent, MsgLikeKind, Profile, RoomExt, TimelineDetails, TimelineItem,
-    TimelineItemContent, TimelineUniqueId,
+    TimelineItemContent, TimelineReadReceiptTracking, TimelineUniqueId,
 };
-use pingcraft_core::{Abilities, ChatId, Message, MessageBody, MessageId, Quote, Reaction, SendState, Timestamp};
+use pingcraft_core::{Abilities, ChatId, Message, MessageBody, MessageDetails, MessageId, Quote, Reaction, SendState, Timestamp};
 use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
 
 use crate::connection::Connection;
@@ -74,7 +74,9 @@ impl Connection {
         let room_id = OwnedRoomId::try_from(chat.0.as_str()).map_err(|_| TimelineError::UnknownChat)?;
         let room = rooms.room(&room_id).map_err(|_| TimelineError::UnknownChat)?;
         rooms.set_room_subscriptions(&[&room_id]).await;
-        let timeline = room.timeline().await.map_err(sdk)?;
+        // Read receipts are tracked for the details sheet's "read by".
+        let timeline =
+            room.timeline_builder().track_read_marker_and_receipts(TimelineReadReceiptTracking::MessageLikeEvents).build().await.map_err(sdk)?;
         // Shared with the task that fetches quoted messages. The SDK's timeline is Send and Sync on the desktop; in
         // the browser it is neither, and there everything runs on one thread anyway.
         #[cfg_attr(target_arch = "wasm32", allow(clippy::arc_with_non_send_sync))]
@@ -185,6 +187,65 @@ impl ChatTimeline {
     pub async fn delete(&self, message: &MessageId) -> Result<(), TimelineError> {
         let item = self.item(message).await?;
         self.timeline.redact(&item.identifier(), None).await.map_err(sdk)
+    }
+
+    /// A message's details: when it was sent, whether it was encrypted, who has read it, and its earlier versions.
+    pub async fn details(&self, message: &MessageId) -> Result<MessageDetails, TimelineError> {
+        let items = self.timeline.items().await;
+        let at = items.iter().position(|i| i.unique_id() == &TimelineUniqueId(message.0.clone())).ok_or(TimelineError::NoSuchMessage)?;
+        let item = items.get(at).and_then(|i| i.as_event()).ok_or(TimelineError::NoSuchMessage)?;
+        let names: HashMap<OwnedUserId, String> = items
+            .iter()
+            .filter_map(|i| i.as_event())
+            .filter_map(|e| match e.sender_profile() {
+                TimelineDetails::Ready(Profile { display_name: Some(name), .. }) => Some((e.sender().to_owned(), name.clone())),
+                _ => None,
+            })
+            .collect();
+        let name = |u: &UserId| names.get(u).cloned().unwrap_or_else(|| u.to_string());
+        // A receipt sits on the newest message its user has read, so whoever has one here or further down has read it.
+        let mut read_by: Vec<(String, Option<Timestamp>)> = Vec::new();
+        let mut seen: HashSet<OwnedUserId> = HashSet::new();
+        for later in items.iter().skip(at).filter_map(|i| i.as_event()) {
+            for (user, receipt) in later.read_receipts() {
+                if user != item.sender() && seen.insert(user.clone()) {
+                    read_by.push((name(user), receipt.ts.map(|ts| Timestamp(u64::from(ts.0)))));
+                }
+            }
+        }
+        let edited = matches!(item.content(), TimelineItemContent::MsgLike(c) if matches!(&c.kind, MsgLikeKind::Message(m) if m.is_edited()));
+        let versions = match item.event_id() {
+            Some(event) if edited => self
+                .timeline
+                .edit_revisions(event)
+                .await
+                .map_err(sdk)?
+                .into_iter()
+                .map(|r| {
+                    let body = match &r.content {
+                        TimelineItemContent::MsgLike(c) => kind_body(&c.kind),
+                        _ => MessageBody::Unsupported("message".into()),
+                    };
+                    (r.timestamp.map(|ts| Timestamp(u64::from(ts.0))), body)
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
+        Ok(MessageDetails { sent: Timestamp(u64::from(item.timestamp().0)), encrypted: item.encryption_info().is_some(), read_by, versions })
+    }
+
+    /// The text of these messages, in the order given; messages without text (media, deleted ones) are left out.
+    pub async fn texts(&self, messages: &[MessageId]) -> Vec<String> {
+        let mut out = Vec::new();
+        for id in messages {
+            if let Ok(item) = self.item(id).await
+                && let TimelineItemContent::MsgLike(c) = item.content()
+                && let MessageBody::Text(text) = kind_body(&c.kind)
+            {
+                out.push(text);
+            }
+        }
+        out
     }
 
     /// Asks for older messages. Returns whether the start of the chat has been reached.

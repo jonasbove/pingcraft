@@ -9,10 +9,9 @@ use pingcraft_core::{Chat, ConnectionState, Filter, MessageBody};
 use zeroize::Zeroizing;
 
 use crate::i18n::{fmt, trn};
-use crate::message::Act;
-use crate::state::{NetworkEntry, OpenChat, Screen, State, Tab};
+use crate::state::{NetworkEntry, Screen, State, Tab};
 use crate::theme::Tokens;
-use crate::time::{day_label, short_time};
+use crate::time::short_time;
 use crate::tl;
 use crate::widgets::{Kind, avatar, button, field, hud, mark, network_name, network_tag, note, problem, unread};
 
@@ -319,10 +318,64 @@ pub fn inbox(ui: &mut Ui, state: &mut State, out: &mut Out) {
     egui::CentralPanel::default().frame(egui::Frame::new().fill(t.bg)).show(ui, |ui| match state.open.as_mut() {
         Some(open) => {
             let chat = state.inbox.get(&open.id).cloned();
-            chat_view(ui, open, chat.as_ref(), out);
+            crate::chat::chat_view(ui, open, chat.as_ref(), out);
         }
         None => empty_chat(ui, state, out),
     });
+    forward_sheet(ui.ctx(), state, out);
+}
+
+/// Forwarding messages from the open chat: search, pick a chat, FORWARD.
+fn forward_sheet(ctx: &egui::Context, state: &mut State, out: &mut Out) {
+    let Some(open) = state.open.as_mut() else { return };
+    let Some(forwarding) = open.forwarding.as_mut() else { return };
+    let from = open.id.clone();
+    let count = forwarding.messages.len();
+    let title = match count {
+        1 => tl!("Forward a message").to_owned(),
+        n => fmt(tl!("Forward {n} messages"), &[("n", &n.to_string())]),
+    };
+    let chats: Vec<Chat> = state.inbox.visible(Filter::All, &forwarding.search).filter(|c| c.id != from).take(50).cloned().collect();
+    let (mut close, mut send) = (false, false);
+    let chosen = forwarding.to.is_some();
+    crate::widgets::sheet(
+        ctx,
+        "forward",
+        600.0,
+        (&title, tl!("To one of your chats")),
+        |ui| {
+            let search = ui.add(egui::TextEdit::singleline(&mut forwarding.search).hint_text(tl!("Search chats")).desired_width(f32::INFINITY));
+            search.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, tl!("Search chats")));
+            ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
+                for chat in &chats {
+                    let on = forwarding.to.as_ref() == Some(&chat.id);
+                    let label = fmt(tl!("{chat}, on {network}"), &[("chat", &chat.name), ("network", &network_name(&chat.network))]);
+                    let response = ui.add(egui::RadioButton::new(on, &chat.name));
+                    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::RadioButton, true, on, &label));
+                    if response.clicked() {
+                        forwarding.to = Some(chat.id.clone());
+                    }
+                }
+            });
+            note(
+                ui,
+                tl!("They are sent as new messages from you, on that chat's network. They don't say “forwarded”: the bridges don't carry that yet."),
+            );
+        },
+        |ui| {
+            close = button(ui, tl!("Cancel"), Kind::Secondary, true).clicked();
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                send = button(ui, tl!("Forward"), Kind::Primary, chosen).clicked();
+            });
+        },
+    );
+    if send && let Some(to) = forwarding.to.clone() {
+        out.push(Command::Forward { from, messages: forwarding.messages.clone(), to });
+        open.selected = None;
+    }
+    if send || close {
+        open.forwarding = None;
+    }
 }
 
 fn inbox_list(ui: &mut Ui, state: &mut State, out: &mut Out) {
@@ -503,44 +556,6 @@ fn chat_row(ui: &mut Ui, chat: &Chat, selected: bool) -> egui::Response {
     response
 }
 
-/// Offers to turn on end-to-end encryption in a chat that has none.
-fn encrypt_sheet(ctx: &egui::Context, open: &mut OpenChat, name: &str, out: &mut Out) {
-    let mut close = false;
-    let mut turn_on = false;
-    crate::widgets::sheet(
-        ctx,
-        "encrypt-chat",
-        520.0,
-        (tl!("Turn on encryption"), &name.to_uppercase()),
-        |ui| {
-            ui.spacing_mut().item_spacing.y = 10.0;
-            ui.label(
-                RichText::new(tl!("New messages in this chat will be end-to-end encrypted: only the people in it can read them, not the server."))
-                    .size(14.0),
-            );
-            note(
-                ui,
-                tl!(
-                    "Encryption can't be turned off again. Messages sent before stay unencrypted. Everyone in the chat needs an app that supports encryption to read new messages."
-                ),
-            );
-            note(ui, tl!("Turning it on needs permission to change the chat's settings. If you don't have it, ask someone who does."));
-        },
-        |ui| {
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                turn_on = button(ui, tl!("Turn on encryption"), Kind::Primary, true).clicked();
-                close = button(ui, tl!("Cancel"), Kind::Secondary, true).clicked();
-            });
-        },
-    );
-    if turn_on {
-        out.push(Command::EnableEncryption(open.id.clone()));
-    }
-    if turn_on || close {
-        open.encrypt_sheet = false;
-    }
-}
-
 fn empty_chat(ui: &mut Ui, state: &mut State, out: &mut Out) {
     let t = Tokens::get(ui.ctx());
     ui.add_space(ui.available_height() / 3.0);
@@ -557,202 +572,6 @@ fn empty_chat(ui: &mut Ui, state: &mut State, out: &mut Out) {
             note(ui, tl!("Choose a chat on the left."));
         }
     });
-}
-
-// -----------------------------------------------------------------------------------------------------------------
-// The open chat
-
-fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, out: &mut Out) {
-    let t = Tokens::get(ui.ctx());
-    let name = chat.map(|c| c.name.clone()).unwrap_or_default();
-    // The header.
-    egui::Panel::top("chat-header").exact_size(64.0).frame(egui::Frame::new().inner_margin(Margin::symmetric(24, 0))).show(ui, |ui| {
-        ui.horizontal_centered(|ui| {
-            avatar(ui, &name, 36.0);
-            ui.vertical(|ui| {
-                // Centre the name and tag on the avatar: a vertical block in a centred row starts at the top.
-                let name_h = ui.fonts_mut(|f| f.row_height(&egui::FontId::proportional(16.0)));
-                let tag_h = ui.fonts_mut(|f| f.row_height(&egui::FontId::monospace(10.0))) + 2.0;
-                let height = if chat.is_some() { name_h + ui.spacing().item_spacing.y + tag_h } else { name_h };
-                ui.add_space(((ui.available_height() - height) / 2.0).max(0.0));
-                ui.label(RichText::new(&name).size(16.0).strong().color(t.ink_strong));
-                if let Some(chat) = chat {
-                    network_tag(ui, &chat.network);
-                }
-            });
-            if let Some(chat) = chat {
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    let (text, color) = match (chat.encrypted, chat.network.is_matrix()) {
-                        (true, true) => (tl!("End-to-end encrypted"), t.good),
-                        (true, false) => (tl!("Encrypted · via your bridge"), t.muted),
-                        (false, _) => (tl!("Not encrypted"), t.warn),
-                    };
-                    if chat.encrypted {
-                        egui::Frame::new().stroke(t.hairline()).inner_margin(Margin::symmetric(10, 5)).show(ui, |ui| {
-                            ui.label(RichText::new(text).size(12.5).color(color));
-                        });
-                    } else {
-                        // Not encrypted: a button that offers to turn it on.
-                        let badge = egui::Button::new(RichText::new(text).size(12.5).color(color))
-                            .stroke(t.hairline())
-                            .corner_radius(egui::CornerRadius::ZERO);
-                        let response = crate::widgets::animated(ui, badge, true, Color32::TRANSPARENT, t.line);
-                        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, tl!("Not encrypted: turn on encryption")));
-                        if response.clicked() {
-                            open.encrypt_sheet = true;
-                        }
-                    }
-                });
-            }
-        });
-    });
-    if open.encrypt_sheet {
-        encrypt_sheet(ui.ctx(), open, &name, out);
-    }
-    // The composer, with the reply or edit bar over it.
-    composer(ui, open, &name, chat.map(|c| &c.network), out);
-    // The timeline, newest at the bottom.
-    egui::CentralPanel::default().frame(egui::Frame::new().inner_margin(Margin::symmetric(24, 16))).show(ui, |ui| {
-        ScrollArea::vertical().stick_to_bottom(true).auto_shrink([false, false]).show(ui, |ui| {
-            if !open.at_start && !open.messages.is_empty() && button(ui, tl!("Load older messages"), Kind::Secondary, true).clicked() {
-                out.push(Command::LoadOlder(open.id.clone()));
-            }
-            let mut last_day = String::new();
-            let mut acts = Vec::new();
-            for message in &open.messages {
-                let day = day_label(message.at);
-                if day != last_day {
-                    divider(ui, &day);
-                    last_day = day;
-                }
-                let (rect, act) = crate::message::message_view(ui, message, &open.id, out);
-                if open.jump_to.as_ref() == Some(&message.id) {
-                    ui.scroll_to_rect(rect, Some(Align::Center));
-                }
-                acts.extend(act);
-                ui.add_space(14.0);
-            }
-            open.jump_to = None;
-            for act in acts {
-                apply(open, act, out);
-            }
-        });
-    });
-    if let Some(message) = open.deleting.as_ref().and_then(|id| open.message(id)).cloned()
-        && crate::message::delete_sheet(ui.ctx(), &message, &open.id, &name, out)
-    {
-        open.deleting = None;
-    }
-}
-
-/// Does what a message asked for.
-fn apply(open: &mut OpenChat, act: Act, out: &mut Out) {
-    match act {
-        Act::Reply(id) => {
-            open.stop_editing();
-            open.replying = Some(id);
-        }
-        Act::Edit(id) => open.edit(id),
-        Act::Delete(id) => open.deleting = Some(id),
-        Act::Jump(id) => open.jump_to = Some(id),
-        Act::LoadOlder => {
-            if !open.at_start {
-                out.push(Command::LoadOlder(open.id.clone()));
-            }
-        }
-    }
-}
-
-/// The message field and SEND, with a bar over them while replying to a message or editing one of the user's.
-fn composer(ui: &mut Ui, open: &mut OpenChat, name: &str, network: Option<&pingcraft_core::Network>, out: &mut Out) {
-    let t = Tokens::get(ui.ctx());
-    let editing = open.editing.as_ref().map(|(id, _)| id.clone());
-    let replying = open.replying.as_ref().and_then(|id| open.message(id)).map(|m| (m.sender.clone(), m.own, crate::view::preview_text(&m.body)));
-    let mut send = false;
-    egui::Panel::bottom("composer").frame(egui::Frame::new().inner_margin(Margin::ZERO)).show(ui, |ui| {
-        let bar = |ui: &mut Ui, title: &str, line: &str, cancel: &str| -> bool {
-            let mut cancelled = false;
-            egui::Frame::new().fill(t.sunken).inner_margin(Margin::symmetric(24, 10)).show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.horizontal(|ui| {
-                    ui.vertical(|ui| {
-                        ui.label(RichText::new(title).monospace().size(11.0).color(t.accent_ink));
-                        ui.add(egui::Label::new(RichText::new(line).size(12.5).color(t.muted)).truncate());
-                    });
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        let x = ui.add(
-                            egui::Button::new(RichText::new("×").size(13.0))
-                                .stroke(Stroke::new(1.0, t.line_strong))
-                                .corner_radius(egui::CornerRadius::ZERO)
-                                .min_size(Vec2::splat(30.0)),
-                        );
-                        x.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, cancel));
-                        cancelled = x.clicked();
-                    });
-                });
-            });
-            cancelled
-        };
-        if editing.is_some() {
-            let what = match network {
-                Some(n) if !n.is_matrix() => fmt(
-                    tl!("Edited messages say “edited”. Whether the edit reaches {network} depends on its bridge."),
-                    &[("network", &network_name(n))],
-                ),
-                _ => tl!("Edited messages say “edited”.").to_owned(),
-            };
-            if bar(ui, tl!("Editing your message"), &what, tl!("Cancel editing")) {
-                open.stop_editing();
-            }
-        } else if let Some((sender, own, line)) = &replying {
-            let sender = if *own { tl!("yourself").to_owned() } else { sender.clone() };
-            if bar(ui, &fmt(tl!("Replying to {sender}"), &[("sender", &sender)]), line, tl!("Cancel reply")) {
-                open.replying = None;
-            }
-        }
-        egui::Frame::new().inner_margin(Margin::symmetric(24, 20)).show(ui, |ui| {
-            ui.horizontal(|ui| {
-                let label = fmt(tl!("Message {chat}"), &[("chat", name)]);
-                let width = ui.available_width() - 100.0;
-                let edit = egui::TextEdit::singleline(&mut open.draft).hint_text(&label).desired_width(width).margin(Margin::symmetric(10, 8));
-                let response = ui.add(edit);
-                response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, &label));
-                if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    send = true;
-                    response.request_focus();
-                }
-                let verb = if editing.is_some() { tl!("Save") } else { tl!("Send") };
-                send |= button(ui, verb, Kind::Primary, !open.draft.trim().is_empty()).clicked();
-            });
-        });
-    });
-    if !send || open.draft.trim().is_empty() {
-        return;
-    }
-    let text = std::mem::take(&mut open.draft).trim().to_owned();
-    let chat = open.id.clone();
-    out.push(match (open.editing.take(), open.replying.take()) {
-        (Some((message, before)), _) => {
-            open.draft = before;
-            Command::Edit { chat, message, text }
-        }
-        (None, Some(to)) => Command::Reply { chat, to, text },
-        (None, None) => Command::SendText { chat, text },
-    });
-}
-
-fn divider(ui: &mut Ui, label: &str) {
-    let t = Tokens::get(ui.ctx());
-    ui.add_space(6.0);
-    ui.horizontal(|ui| {
-        let w = (ui.available_width() - 160.0).max(20.0) / 2.0;
-        let (left, _) = ui.allocate_exact_size(Vec2::new(w, 12.0), Sense::hover());
-        ui.painter().hline(left.x_range(), left.center().y, t.hairline());
-        hud(ui, label, t.muted);
-        let (right, _) = ui.allocate_exact_size(Vec2::new(w, 12.0), Sense::hover());
-        ui.painter().hline(right.x_range(), right.center().y, t.hairline());
-    });
-    ui.add_space(6.0);
 }
 
 // -----------------------------------------------------------------------------------------------------------------

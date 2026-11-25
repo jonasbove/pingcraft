@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use pingcraft_core::app::{Event, SignInProblem};
 use pingcraft_core::bridge::{BridgeError, BridgedNetwork, LoginStep};
 use pingcraft_core::encryption::{RecoveryKey, RecoveryStatus, Verification};
-use pingcraft_core::{Account, ChatId, ConnectionState, Filter, Inbox, InboxChange, Message, MessageBody, MessageId, Network};
+use pingcraft_core::{Account, ChatId, ConnectionState, Filter, Inbox, InboxChange, Message, MessageBody, MessageDetails, MessageId, Network};
 use zeroize::Zeroizing;
 
 use crate::i18n::fmt;
@@ -154,10 +154,24 @@ pub struct OpenChat {
     pub replying: Option<MessageId>,
     /// The user's own message the composer is editing, and the draft it set aside.
     pub editing: Option<(MessageId, String)>,
-    /// The message the user asked to delete, while they confirm it.
-    pub deleting: Option<MessageId>,
+    /// The messages the user asked to delete, while they confirm it.
+    pub deleting: Vec<MessageId>,
     /// A quoted message was clicked: scroll to it.
     pub jump_to: Option<MessageId>,
+    /// The details sheet: which message, and its details once they came.
+    pub details: Option<(MessageId, Option<MessageDetails>)>,
+    /// Selecting messages: the ones ticked. `None` when not selecting.
+    pub selected: Option<Vec<MessageId>>,
+    /// The forward sheet.
+    pub forwarding: Option<Forwarding>,
+}
+
+/// Forwarding messages from the open chat: which ones, and where to.
+#[derive(Debug, Clone, Default)]
+pub struct Forwarding {
+    pub messages: Vec<MessageId>,
+    pub to: Option<ChatId>,
+    pub search: String,
 }
 
 impl OpenChat {
@@ -170,9 +184,29 @@ impl OpenChat {
             encrypt_sheet: false,
             replying: None,
             editing: None,
-            deleting: None,
+            deleting: Vec::new(),
             jump_to: None,
+            details: None,
+            selected: None,
+            forwarding: None,
         }
+    }
+
+    /// Ticks or unticks a message while selecting.
+    pub fn toggle(&mut self, id: MessageId) {
+        let Some(selected) = self.selected.as_mut() else { return };
+        match selected.iter().position(|m| *m == id) {
+            Some(i) => {
+                selected.remove(i);
+            }
+            None => selected.push(id),
+        }
+    }
+
+    /// The selected messages, in the chat's order.
+    pub fn selection(&self) -> Vec<&Message> {
+        let selected = self.selected.as_deref().unwrap_or_default();
+        self.messages.iter().filter(|m| selected.contains(&m.id)).collect()
     }
 
     pub fn message(&self, id: &MessageId) -> Option<&Message> {
@@ -205,8 +239,13 @@ impl OpenChat {
         if gone(&self.replying, &self.messages) {
             self.replying = None;
         }
-        if gone(&self.deleting, &self.messages) {
-            self.deleting = None;
+        let list = &self.messages;
+        self.deleting.retain(|id| list.iter().any(|m| &m.id == id));
+        if let Some(selected) = self.selected.as_mut() {
+            selected.retain(|id| list.iter().any(|m| &m.id == id));
+        }
+        if gone(&self.details.as_ref().map(|(id, _)| id.clone()), &self.messages) {
+            self.details = None;
         }
         if gone(&self.editing.as_ref().map(|(id, _)| id.clone()), &self.messages) {
             self.stop_editing();
@@ -281,6 +320,14 @@ impl State {
             Event::Messages { chat, messages } => {
                 if let Some(open) = self.open.as_mut().filter(|o| o.id == chat) {
                     open.set_messages(messages);
+                }
+            }
+            Event::Details { chat, message, details } => {
+                if let Some(open) = self.open.as_mut().filter(|o| o.id == chat)
+                    && let Some((id, shown)) = open.details.as_mut()
+                    && *id == message
+                {
+                    *shown = Some(details);
                 }
             }
             Event::ReachedStart(chat) => {
