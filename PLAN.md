@@ -173,8 +173,9 @@ Goal: a user connects Telegram, Signal and WhatsApp accounts from PingCraft, aft
 
    tuwunel serves it, but the bridges reach it only the federation way: HTTPS to the server name, never at a
    private address. The fix, built with ticket 3: inside the stack, the reverse proxy answers to the server name with
-   a certificate the bridges trust, on a network outside RFC 1918, and forwards only that endpoint. Open, for the
-   maintainer: proposing upstream that a bridge checks its own server's tokens at `homeserver.address`.
+   a certificate the bridges trust, on a network outside RFC 1918, and forwards only that endpoint. The upstream
+   proposal (a bridge checking its own server's tokens at `homeserver.address`) is dropped and the workaround
+   stays (maintainer, 2026-11-25; ADR 0003's second addendum).
 3. **Done.** **Route each bridge's `/_matrix/provision`** through the reverse proxy, and document it.
    A Caddy proxy is now the stack's one way in (`deploy/Caddyfile`, docs/deploy.md section 7): the homeserver, and
    each bridge's `/_matrix/provision/v3/` under `/_pingcraft/bridges/<network>/`, nothing else of a bridge. Inside

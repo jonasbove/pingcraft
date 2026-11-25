@@ -81,8 +81,8 @@ Findings:
 
 The fix chosen, within point 4 above. It is built (milestone 3, ticket 3) and **approved by the maintainer
 (2026-11-25)**. It adds a reverse proxy to the server side that CLAUDE.md's "Decided" list and ADR 0010 describe.
-The cleaner fix, letting a bridge check tokens for its own server at `homeserver.address`, belongs upstream in
-mautrix-go; proposing it is a public contribution and waits for the maintainer.
+The cleaner fix, letting a bridge check tokens for its own server at `homeserver.address`, would belong upstream in
+mautrix-go; the maintainer dropped proposing it (2026-11-25, below).
 
 - Federation stays off. No bridge image changes (ADR 0002).
 - The compose project gets one reverse proxy (Caddy, Apache-2.0, pinned by digest).
@@ -101,6 +101,12 @@ For the maintainer:
 
 - **The bridges' guard against private addresses no longer applies to one name.** Inside the stack, it does not
   apply to the server name, on purpose.
-- **The clean fix is upstream.** A bridge could check tokens for its own server against the `homeserver.address`
-  it is configured with. Proposing that to mautrix-go is a public contribution, so it waits for the maintainer.
+- **The clean fix would be upstream.** A bridge could check tokens for its own server against the
+  `homeserver.address` it is configured with. Not proposed: see the next addendum.
 - **Ruled out:** handing the bridge the user's access token (point 4), and turning federation on (ADR 0010).
+
+## Addendum (2026-11-25): no upstream proposal
+
+The maintainer decided not to propose the `homeserver.address` change to mautrix-go. The workaround above (the
+reverse proxy answering the bridges' OpenID check inside the stack) stays as the way PingCraft works, not as a
+stopgap. Should mautrix-go change how a bridge checks `openid:` tokens on its own, this is looked at again.
