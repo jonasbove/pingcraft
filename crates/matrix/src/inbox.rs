@@ -200,6 +200,7 @@ pub(crate) async fn chat_from_room(room: &Room, own: Option<&UserId>) -> Chat {
             true => Some(crate::chat_settings::mute_until(room).await.map_or(Mute::UntilUnmuted, Mute::Until)),
         },
         marked_unread: room.is_marked_unread(),
+        draft: crate::chat_settings::draft(room).await,
     }
 }
 

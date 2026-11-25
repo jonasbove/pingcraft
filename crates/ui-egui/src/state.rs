@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use pingcraft_core::app::{Event, SignInProblem};
+use pingcraft_core::app::{Command, Event, SignInProblem};
 use pingcraft_core::bridge::{BridgeError, BridgedNetwork, LoginStep};
 use pingcraft_core::encryption::{RecoveryKey, RecoveryStatus, Verification};
 use pingcraft_core::{Account, ChatId, ConnectionState, Filter, Inbox, InboxChange, Message, MessageBody, MessageDetails, MessageId, Network, Quote};
@@ -168,6 +168,14 @@ pub struct OpenChat {
     pub pinned: Vec<Quote>,
     /// Which pin the pinned bar shows, counting from the newest.
     pub pin_shown: usize,
+    /// Who is typing, by name.
+    pub typing: Vec<String>,
+    /// When (egui's clock, seconds) the user was last said to be typing; `None` when they are not.
+    pub typing_told: Option<f64>,
+    /// Whether the timeline was at its newest message in the last frame.
+    pub at_bottom: bool,
+    /// JUMP TO LATEST was clicked: scroll to the newest message.
+    pub to_bottom: bool,
 }
 
 /// Forwarding messages from the open chat: which ones, and where to.
@@ -195,6 +203,10 @@ impl OpenChat {
             forwarding: None,
             pinned: Vec::new(),
             pin_shown: 0,
+            typing: Vec::new(),
+            typing_told: None,
+            at_bottom: true,
+            to_bottom: false,
         }
     }
 
@@ -328,6 +340,11 @@ impl State {
                     open.set_messages(messages);
                 }
             }
+            Event::Typing { chat, names } => {
+                if let Some(open) = self.open.as_mut().filter(|o| o.id == chat) {
+                    open.typing = names;
+                }
+            }
             Event::Pinned { chat, pinned } => {
                 if let Some(open) = self.open.as_mut().filter(|o| o.id == chat) {
                     open.pinned = pinned;
@@ -417,12 +434,34 @@ impl State {
         }
     }
 
-    /// Opens a chat (the caller tells the backend).
+    /// Opens a chat (the caller tells the backend), with its draft in the composer.
     pub fn open_chat(&mut self, id: ChatId) {
         if self.open.as_ref().is_some_and(|o| o.id == id) {
             return;
         }
-        self.open = Some(OpenChat::new(id));
+        let mut open = OpenChat::new(id);
+        open.draft = self.inbox.get(&open.id).and_then(|c| c.draft.clone()).unwrap_or_default();
+        self.open = Some(open);
+    }
+
+    /// What to tell the backend when the user leaves the open chat: its draft, when it changed, and that they
+    /// stopped typing.
+    pub fn leaving(&self) -> Vec<Command> {
+        let Some(open) = &self.open else { return Vec::new() };
+        let mut out = Vec::new();
+        if open.typing_told.is_some() {
+            out.push(Command::Typing { chat: open.id.clone(), typing: false });
+        }
+        // A draft set aside for an edit is the draft.
+        let draft = match &open.editing {
+            Some((_, before)) => before.trim(),
+            None => open.draft.trim(),
+        };
+        let kept = self.inbox.get(&open.id).and_then(|c| c.draft.as_deref()).unwrap_or_default();
+        if draft != kept {
+            out.push(Command::SaveDraft { chat: open.id.clone(), text: draft.to_owned() });
+        }
+        out
     }
 }
 
@@ -444,6 +483,7 @@ mod tests {
             pinned: false,
             muted: None,
             marked_unread: false,
+            draft: None,
         }
     }
 

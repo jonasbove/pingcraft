@@ -270,3 +270,33 @@ async fn pins_mutes_and_marking_unread_reach_the_server() {
     assert!(connection.opened(&id).await.unwrap().is_some_and(|c| !c.marked_unread));
     assert_eq!(connection.mute(&id, None).await.unwrap().muted, None);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn drafts_are_kept_and_typing_is_seen() {
+    use pingcraft_core::ChatId;
+    use pingcraft_matrix::ChatUpdate;
+    let server = server_or_skip!();
+    let ana = sign_in_as(&server.homeserver, &server.user).await;
+    let ben = sign_in_as(&server.homeserver, &server.other).await;
+    let ben_id = ben.session.client.user_id().unwrap().to_owned();
+    let room = create_room(&ana, &unique("Typing"), true, Some(ben_id), vec![]).await;
+    join_and_say(&ben, &room, "here").await;
+    let (ana_connection, _ana_chat) = open(&ana, &room).await;
+    let id = ChatId(room.to_string());
+    assert_eq!(ana_connection.save_draft(&id, "not sent yet").await.unwrap().draft.as_deref(), Some("not sent yet"));
+    assert_eq!(ana_connection.save_draft(&id, "").await.unwrap().draft, None);
+
+    let (_ben_connection, mut ben_chat) = open(&ben, &room).await;
+    ana_connection.typing(&id, true).await.unwrap();
+    within("ana typing, seen by ben", async {
+        loop {
+            if let Some(ChatUpdate::Typing(names)) = ben_chat.next_update().await
+                && !names.is_empty()
+            {
+                return;
+            }
+        }
+    })
+    .await;
+    ana_connection.typing(&id, false).await.unwrap();
+}

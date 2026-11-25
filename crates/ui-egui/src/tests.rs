@@ -34,7 +34,13 @@ impl Fake {
         self.queue.borrow_mut().extend(events);
     }
 
+    /// The commands sent since the last call, leaving out "the user is typing", which comes with any typing.
     fn take(&self) -> Vec<Command> {
+        std::mem::take(&mut *self.sent.borrow_mut()).into_iter().filter(|c| !matches!(c, Command::Typing { .. })).collect()
+    }
+
+    /// Every command sent since the last call.
+    fn take_all(&self) -> Vec<Command> {
         std::mem::take(&mut *self.sent.borrow_mut())
     }
 }
@@ -45,7 +51,7 @@ fn harness(fake: &Fake) -> Harness<'static, PingCraftApp> {
 }
 
 /// Focuses the text field with this accessible name and types into it, as a user would.
-fn type_into(h: &mut Harness<'static, PingCraftApp>, label: &str, text: &str) {
+pub(super) fn type_into(h: &mut Harness<'static, PingCraftApp>, label: &str, text: &str) {
     use egui::accesskit::Role;
     let role = if h.query_by_role_and_label(Role::PasswordInput, label).is_some() { Role::PasswordInput } else { Role::TextInput };
     h.get_by_role_and_label(role, label).focus();
@@ -71,10 +77,11 @@ pub(super) fn chat(id: &str, name: &str, network: &str, unread: u32, preview: Op
         pinned: false,
         muted: None,
         marked_unread: false,
+        draft: None,
     }
 }
 
-fn message(id: &str, sender: &str, own: bool, body: MessageBody, state: SendState) -> Message {
+pub(super) fn message(id: &str, sender: &str, own: bool, body: MessageBody, state: SendState) -> Message {
     Message::new(MessageId(id.into()), sender, own, Timestamp(1_795_000_000_000), body, state)
 }
 

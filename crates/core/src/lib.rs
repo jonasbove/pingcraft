@@ -132,6 +132,8 @@ pub struct Chat {
     pub muted: Option<Mute>,
     /// The user marked it as unread.
     pub marked_unread: bool,
+    /// What the user typed and has not sent yet, kept in the encrypted store.
+    pub draft: Option<String>,
 }
 
 /// How long a chat stays muted.
@@ -306,6 +308,7 @@ mod tests {
             pinned: false,
             muted: None,
             marked_unread: false,
+            draft: None,
         };
         assert_eq!(chat.last_activity(), Timestamp(0));
         chat.last_message = Some(MessagePreview { sender: "Ana".into(), own: false, body: MessageBody::Text("hi".into()), at: Timestamp(5) });

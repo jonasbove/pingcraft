@@ -324,6 +324,8 @@ pub fn inbox(ui: &mut Ui, state: &mut State, out: &mut Out) {
         None => empty_chat(ui, state, out),
     });
     if leave {
+        // The chat's menu already sent CloseChat and MarkUnread.
+        out.extend(state.leaving());
         state.open = None;
     }
     forward_sheet(ui.ctx(), state, out);
@@ -430,6 +432,7 @@ fn inbox_list(ui: &mut Ui, state: &mut State, out: &mut Out) {
         for chat in &visible {
             let selected = state.open.as_ref().is_some_and(|o| o.id == chat.id);
             if chat_row(ui, chat, selected).clicked() && !selected {
+                out.extend(state.leaving());
                 state.open_chat(chat.id.clone());
                 out.push(Command::OpenChat(chat.id.clone()));
             }
@@ -490,10 +493,14 @@ fn chat_row(ui: &mut Ui, chat: &Chat, selected: bool) -> egui::Response {
     let t = Tokens::get(ui.ctx());
     let width = ui.available_width();
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 64.0), Sense::click());
-    let preview = chat.last_message.as_ref().map(|m| {
-        let who = if m.own { tl!("You").to_owned() } else { m.sender.clone() };
-        format!("{who}: {}", preview_text(&m.body))
-    });
+    let draft = chat.draft.as_deref().filter(|d| !selected && !d.is_empty());
+    let preview = match draft {
+        Some(d) => Some(fmt(tl!("Draft: {text}"), &[("text", d.lines().next().unwrap_or_default())])),
+        None => chat.last_message.as_ref().map(|m| {
+            let who = if m.own { tl!("You").to_owned() } else { m.sender.clone() };
+            format!("{who}: {}", preview_text(&m.body))
+        }),
+    };
     let mut name = fmt(tl!("{chat}, on {network}"), &[("chat", &chat.name), ("network", &network_name(&chat.network))]);
     if chat.pinned {
         name.push_str(", ");

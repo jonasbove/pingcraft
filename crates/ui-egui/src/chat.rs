@@ -81,7 +81,8 @@ pub fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, out: &mu
     }
     // The timeline, newest at the bottom.
     egui::CentralPanel::default().frame(egui::Frame::new().inner_margin(Margin::symmetric(24, 16))).show(ui, |ui| {
-        ScrollArea::vertical().stick_to_bottom(true).auto_shrink([false, false]).show(ui, |ui| {
+        let area = ScrollArea::vertical().stick_to_bottom(true).auto_shrink([false, false]);
+        let shown = area.show(ui, |ui| {
             if !open.at_start && !open.messages.is_empty() && button(ui, tl!("Load older messages"), Kind::Secondary, true).clicked() {
                 out.push(Command::LoadOlder(open.id.clone()));
             }
@@ -104,10 +105,28 @@ pub fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, out: &mu
                 ui.add_space(14.0);
             }
             open.jump_to = None;
+            if std::mem::take(&mut open.to_bottom) {
+                ui.scroll_to_cursor(Some(Align::BOTTOM));
+            }
             for act in acts {
                 apply(open, act, out);
             }
         });
+        let bottom = shown.state.clamped_offset().y + shown.inner_rect.height();
+        open.at_bottom = bottom >= shown.content_size.y - 24.0;
+        if !open.at_bottom {
+            // Over the bottom right of the timeline.
+            let size = Vec2::new(150.0, 34.0);
+            let rect = egui::Rect::from_min_size(shown.inner_rect.right_bottom() - size - Vec2::new(8.0, 8.0), size);
+            let jump = ui.put(
+                rect,
+                egui::Button::new(RichText::new(tl!("Jump to latest").to_uppercase()).monospace().size(11.0)).fill(Tokens::get(ui.ctx()).bg),
+            );
+            jump.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, tl!("Jump to latest")));
+            if jump.clicked() {
+                open.to_bottom = true;
+            }
+        }
     });
     let deleting: Vec<_> = open.messages.iter().filter(|m| open.deleting.contains(&m.id)).cloned().collect();
     let cx = Cx { chat: &open.id, pinned: &[] };
@@ -413,6 +432,11 @@ fn composer(ui: &mut Ui, open: &mut OpenChat, name: &str, network: Option<&pingc
                 open.replying = None;
             }
         }
+        if let Some(line) = typing_line(&open.typing) {
+            egui::Frame::new().inner_margin(Margin { left: 24, right: 24, top: 6, bottom: 0 }).show(ui, |ui| {
+                ui.label(RichText::new(line).size(12.5).color(t.muted));
+            });
+        }
         egui::Frame::new().inner_margin(Margin::symmetric(24, 20)).show(ui, |ui| {
             ui.horizontal(|ui| {
                 let label = fmt(tl!("Message {chat}"), &[("chat", name)]);
@@ -420,6 +444,9 @@ fn composer(ui: &mut Ui, open: &mut OpenChat, name: &str, network: Option<&pingc
                 let edit = egui::TextEdit::singleline(&mut open.draft).hint_text(&label).desired_width(width).margin(Margin::symmetric(10, 8));
                 let response = ui.add(edit);
                 response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, &label));
+                if response.changed() {
+                    tell_typing(open, ui.input(|i| i.time), out);
+                }
                 if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     send = true;
                     response.request_focus();
@@ -434,6 +461,9 @@ fn composer(ui: &mut Ui, open: &mut OpenChat, name: &str, network: Option<&pingc
     }
     let text = std::mem::take(&mut open.draft).trim().to_owned();
     let chat = open.id.clone();
+    if open.typing_told.take().is_some() {
+        out.push(Command::Typing { chat: chat.clone(), typing: false });
+    }
     out.push(match (open.editing.take(), open.replying.take()) {
         (Some((message, before)), _) => {
             open.draft = before;
@@ -442,6 +472,36 @@ fn composer(ui: &mut Ui, open: &mut OpenChat, name: &str, network: Option<&pingc
         (None, Some(to)) => Command::Reply { chat, to, text },
         (None, None) => Command::SendText { chat, text },
     });
+}
+
+/// How often the chat is told again that the user is still typing (servers drop it after about 30 seconds).
+const TYPING_AGAIN: f64 = 20.0;
+
+/// Tells the chat the user is typing (again, now and then, while they go on), or stopped (the field is empty).
+fn tell_typing(open: &mut OpenChat, now: f64, out: &mut Out) {
+    let typing = !open.draft.trim().is_empty() && open.editing.is_none();
+    match (typing, open.typing_told) {
+        (true, Some(at)) if now - at < TYPING_AGAIN => {}
+        (true, _) => {
+            open.typing_told = Some(now);
+            out.push(Command::Typing { chat: open.id.clone(), typing: true });
+        }
+        (false, Some(_)) => {
+            open.typing_told = None;
+            out.push(Command::Typing { chat: open.id.clone(), typing: false });
+        }
+        (false, None) => {}
+    }
+}
+
+/// Who is typing, in words.
+fn typing_line(names: &[String]) -> Option<String> {
+    match names {
+        [] => None,
+        [one] => Some(fmt(tl!("{name} is typing…"), &[("name", one)])),
+        [a, b] => Some(fmt(tl!("{a} and {b} are typing…"), &[("a", a), ("b", b)])),
+        _ => Some(tl!("Several people are typing…").to_owned()),
+    }
 }
 
 fn divider(ui: &mut Ui, label: &str) {

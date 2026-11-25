@@ -64,6 +64,8 @@ pub enum ChatUpdate {
     Messages(Vec<Message>),
     /// Its pinned messages, oldest pin first.
     Pinned(Vec<Quote>),
+    /// Who is typing in it now, by name (never the user).
+    Typing(Vec<String>),
 }
 
 /// An open chat. Its messages arrive as whole lists, oldest first; dropping it closes the chat.
@@ -95,16 +97,32 @@ impl Connection {
         let own = room.own_user_id().to_owned();
         let fetcher = Arc::clone(&timeline);
         let pins = room.pinned_event_ids_stream();
+        let (typing_guard, typing) = room.subscribe_to_typing_notifications();
+        let typing = futures_util::stream::unfold(typing, |mut rx| async move {
+            loop {
+                match rx.recv().await {
+                    Ok(users) => return Some((users, rx)),
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
+                }
+            }
+        });
         let task = spawn(async move {
+            // Typing notices come for as long as this is held.
+            let _typing_guard = typing_guard;
             enum Wake {
                 Items(Vec<matrix_sdk_ui::eyeball_im::VectorDiff<Arc<TimelineItem>>>),
                 Pins(Vec<OwnedEventId>),
+                Typing(Vec<OwnedUserId>),
             }
             let mut items: Vector<Arc<TimelineItem>> = items;
             let mut pinned: Vec<OwnedEventId> = Vec::new();
             // Replies to messages that are not loaded: each original is asked for once.
             let mut asked: HashSet<OwnedEventId> = HashSet::new();
-            let mut wakes = pin!(futures_util::stream::select(updates.map(Wake::Items), pins.map(Wake::Pins)));
+            let mut wakes = pin!(futures_util::stream::select(
+                futures_util::stream::select(updates.map(Wake::Items), pins.map(Wake::Pins)),
+                typing.map(Wake::Typing)
+            ));
             let mut changed = (true, true);
             loop {
                 if changed.0 {
@@ -133,6 +151,13 @@ impl Connection {
                     Some(Wake::Pins(ids)) => {
                         pinned = ids;
                         (false, true)
+                    }
+                    Some(Wake::Typing(users)) => {
+                        let names = typing_names(&items, &users);
+                        if tx.send(ChatUpdate::Typing(names)).is_err() {
+                            return;
+                        }
+                        (false, false)
                     }
                 };
             }
@@ -377,6 +402,25 @@ fn message(id: &TimelineUniqueId, event: &EventTimelineItem, known: &Known<'_>, 
         delete: !deleted && event.is_own(),
     };
     Some(m)
+}
+
+/// The names of the people typing, from the loaded messages' senders (their ID when none of their messages is
+/// loaded). At most a few: more than two are said as "several".
+fn typing_names(items: &Vector<Arc<TimelineItem>>, users: &[OwnedUserId]) -> Vec<String> {
+    users
+        .iter()
+        .take(5)
+        .map(|user| {
+            items
+                .iter()
+                .filter_map(|i| i.as_event())
+                .find_map(|e| match e.sender_profile() {
+                    TimelineDetails::Ready(Profile { display_name: Some(name), .. }) if e.sender() == user => Some(name.clone()),
+                    _ => None,
+                })
+                .unwrap_or_else(|| user.to_string())
+        })
+        .collect()
 }
 
 /// The pinned messages as quotes, oldest pin first. One that is not loaded has no message and no text yet.

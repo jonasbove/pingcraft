@@ -115,6 +115,7 @@ mod tests {
             pinned: false,
             muted: None,
             marked_unread: false,
+            draft: None,
         }
     }
 

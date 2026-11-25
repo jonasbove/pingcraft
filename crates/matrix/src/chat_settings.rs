@@ -1,5 +1,6 @@
 //! A chat's own settings: pinned to the top of the inbox (the `m.favourite` tag), muted (a push rule, with the time
-//! it ends in PingCraft's own room account data), and marked unread (`m.marked_unread`).
+//! it ends in PingCraft's own room account data), marked unread (`m.marked_unread`), and the user's draft (in the
+//! SDK's encrypted state store on this device, never in a plain file: ADR 0004).
 //!
 //! Each change goes to the server, which keeps it for the user's other Matrix apps too. The inbox learns of it with
 //! the next sync; each call also returns the chat as it now is, so the interface does not wait for that.
@@ -9,6 +10,7 @@ use matrix_sdk::notification_settings::RoomNotificationMode;
 use matrix_sdk::ruma::OwnedRoomId;
 use matrix_sdk::ruma::events::RoomAccountDataEventType;
 use matrix_sdk::ruma::serde::Raw;
+use matrix_sdk::store::{ComposerDraft, ComposerDraftType};
 use pingcraft_core::{Chat, ChatId, Mute, Timestamp};
 use serde_json::json;
 
@@ -78,6 +80,28 @@ impl Connection {
         Ok(now)
     }
 
+    /// Keeps the user's draft for a chat, or (empty) forgets it.
+    pub async fn save_draft(&self, chat: &ChatId, text: &str) -> Result<Chat, String> {
+        let room = self.room(chat)?;
+        let text = text.trim();
+        let done = if text.is_empty() {
+            room.clear_composer_draft(None).await
+        } else {
+            let draft =
+                ComposerDraft { plain_text: text.to_owned(), html_text: None, draft_type: ComposerDraftType::NewMessage, attachments: Vec::new() };
+            room.save_composer_draft(draft, None).await
+        };
+        done.map_err(|e| problem("the draft could not be kept", e))?;
+        let mut now = self.chat_now(&room).await;
+        now.draft = (!text.is_empty()).then(|| text.to_owned());
+        Ok(now)
+    }
+
+    /// Tells a chat whether the user is typing.
+    pub async fn typing(&self, chat: &ChatId, typing: bool) -> Result<(), String> {
+        self.room(chat)?.typing_notice(typing).await.map_err(|e| problem("could not tell the chat you are typing", e))
+    }
+
     /// Takes the "marked unread" off a chat that was opened. Harmless when it has none.
     pub async fn opened(&self, chat: &ChatId) -> Result<Option<Chat>, String> {
         let room = self.room(chat)?;
@@ -97,6 +121,11 @@ async fn set_mute_until(room: &Room, until: u64) -> Result<(), String> {
         .await
         .map(|_| ())
         .map_err(|e| problem("the mute could not be saved", e))
+}
+
+/// The user's draft for a room, from the store.
+pub(crate) async fn draft(room: &Room) -> Option<String> {
+    room.load_composer_draft(None).await.ok().flatten().map(|d| d.plain_text).filter(|t| !t.trim().is_empty())
 }
 
 /// Whether a room is muted, by the rule the sync last reported.

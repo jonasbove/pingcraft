@@ -81,6 +81,16 @@ pub enum Command {
     },
     /// Marks a chat as unread. Opening it marks it read again.
     MarkUnread(ChatId),
+    /// Keeps what the user typed in a chat and has not sent, or (empty) forgets it.
+    SaveDraft {
+        chat: ChatId,
+        text: String,
+    },
+    /// Tells the chat whether the user is typing.
+    Typing {
+        chat: ChatId,
+        typing: bool,
+    },
     LoadOlder(ChatId),
     /// The user saved the recovery key they were shown.
     RecoveryKeySaved,
@@ -145,6 +155,8 @@ impl std::fmt::Debug for Command {
             Self::PinChat { chat, pin } => f.debug_struct("PinChat").field("chat", chat).field("pin", pin).finish(),
             Self::Mute { chat, mute } => f.debug_struct("Mute").field("chat", chat).field("mute", mute).finish(),
             Self::MarkUnread(c) => f.debug_tuple("MarkUnread").field(c).finish(),
+            Self::SaveDraft { chat, .. } => f.debug_struct("SaveDraft").field("chat", chat).finish_non_exhaustive(),
+            Self::Typing { chat, typing } => f.debug_struct("Typing").field("chat", chat).field("typing", typing).finish(),
             Self::LoadOlder(c) => f.debug_tuple("LoadOlder").field(c).finish(),
             Self::RecoveryKeySaved => f.write_str("RecoveryKeySaved"),
             Self::Recover(key) => f.debug_tuple("Recover").field(key).finish(),
@@ -216,6 +228,11 @@ pub enum Event {
         chat: ChatId,
         pinned: Vec<Quote>,
     },
+    /// Who is typing in the open chat now, by name (never the user).
+    Typing {
+        chat: ChatId,
+        names: Vec<String>,
+    },
     /// The open chat has no older messages.
     ReachedStart(ChatId),
     /// The first sign-in made a recovery key: show it until the user has saved it.
@@ -275,6 +292,7 @@ mod tests {
             Command::Reply { chat: crate::ChatId("!a".into()), to: crate::MessageId("m".into()), text: "private reply".into() },
             Command::Edit { chat: crate::ChatId("!a".into()), message: crate::MessageId("m".into()), text: "private edit".into() },
             Command::React { chat: crate::ChatId("!a".into()), message: crate::MessageId("m".into()), key: "🫣".into() },
+            Command::SaveDraft { chat: crate::ChatId("!a".into()), text: "unsent draft".into() },
             Command::AnswerLogin {
                 step: crate::bridge::StepRef {
                     network: crate::Network::from_id("telegram"),
@@ -291,7 +309,18 @@ mod tests {
             },
         ];
         let shown = format!("{commands:?}");
-        for secret in ["hunter2", "correct horse", "EsTc", "private words", "12345678", "two-step secret", "private reply", "private edit", "🫣"] {
+        for secret in [
+            "hunter2",
+            "correct horse",
+            "EsTc",
+            "private words",
+            "12345678",
+            "two-step secret",
+            "private reply",
+            "private edit",
+            "🫣",
+            "unsent draft",
+        ] {
             assert!(!shown.contains(secret), "{shown}");
         }
         assert!(shown.contains("example.org"));

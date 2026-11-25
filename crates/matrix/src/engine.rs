@@ -195,6 +195,11 @@ impl Worker {
                 Woke::Inbox(Some(change)) => self.inbox(change),
                 Woke::Chat(Some(crate::timeline::ChatUpdate::Messages(messages))) => self.messages(messages).await,
                 Woke::Chat(Some(crate::timeline::ChatUpdate::Pinned(pinned))) => self.pinned(pinned),
+                Woke::Chat(Some(crate::timeline::ChatUpdate::Typing(names))) => {
+                    if let Some((chat, _)) = self.signed_in.as_ref().and_then(|s| s.chat.as_ref()) {
+                        self.emit.send(Event::Typing { chat: chat.clone(), names });
+                    }
+                }
                 Woke::Incoming(Some(flow)) => self.incoming(flow),
                 Woke::Verification(Some(state)) => self.emit.send(Event::Verification(Some(state))),
                 Woke::Bridge(Some(done)) => {
@@ -537,6 +542,12 @@ impl Worker {
             Command::PinChat { chat, pin } => s.connection.pin_chat(&chat, pin).await.map(|c| upsert = Some(c)),
             Command::Mute { chat, mute } => s.connection.mute(&chat, mute).await.map(|c| upsert = Some(c)),
             Command::MarkUnread(chat) => s.connection.mark_unread(&chat).await.map(|c| upsert = Some(c)),
+            Command::SaveDraft { chat, text } => s.connection.save_draft(&chat, &text).await.map(|c| upsert = Some(c)),
+            // Typing notices are a courtesy: one that fails is not worth a problem bar.
+            Command::Typing { chat, typing } => {
+                let _ = s.connection.typing(&chat, typing).await;
+                Ok(())
+            }
             Command::Refresh => refresh(s).await,
             command @ (Command::LoadNetworks
             | Command::StartLogin { .. }

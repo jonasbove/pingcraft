@@ -335,6 +335,15 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
     (right-click and a keyboard shortcut, through `craft-libs` `menu` and `keymap`).
     - **Mark as unread: done (2026-11-25).** In the chat's "…" menu (`m.marked_unread`); it leaves the chat, the
       row gets an accent mark and counts under UNREAD, and opening the chat takes the mark off.
+    - **Drafts kept per chat: done (2026-11-25).** Leaving a chat keeps what was typed in the SDK's composer
+      draft, in the encrypted state store (never a plain file, ADR 0004), so it survives a restart; the inbox row
+      says "Draft: …" and the text comes back when the chat is opened. Open: a reply or edit in progress is not kept
+      with it, and the draft of the chat that is open when PingCraft closes is not saved yet.
+    - **Typing indicators: done (2026-11-25).** "Lars Holm is typing…" over the composer (two names, or
+      "several people"); PingCraft tells the chat while the user types (again every 20 s) and when they send or
+      empty the field. Per-bridge check pending.
+    - **Jump to latest: done (2026-11-25).** JUMP TO LATEST over the timeline when it is scrolled up.
+    - **Archive a chat:** not built (no frame yet).
     - **Context menu: done, without shortcuts.** A message's menu opens from its "…" button or a right-click;
       the keyboard shortcuts in the design (through `craft-keymap`) are still to come.
 
