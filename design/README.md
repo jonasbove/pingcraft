@@ -23,7 +23,7 @@ copies in `exports/2x/`.
 | Tokens & type | text styles, colour tokens (dark, light); `exports/_tokens.png` |
 | Components | the library below; `exports/_components.png` |
 | **M2 · Client** (1200×760 window) | `sign-in`, `recovery-key`, `inbox`, `inbox-light`, `inbox-networks`, `inbox-empty`, `chat-states`, `verify-device`, `unlock` |
-| **M3 · Preview** (1200×760 window) | `connect-network`, `connect-risk` (both carry the "Preview · M3" tag) |
+| **M3 · Accounts** (1200×760 window) | `connect-network`, `connect-risk`, `connect-choose`, `connect-qr`, `connect-phone`, `remove-account` (as built, 2026-11-25) |
 | **Messages · Draft** (1200×760 window) | `chat-actions`, `chat-own-menu`, `delete-message`, `chat-reply`, `chat-edit`, `chat-select`, `message-details`, `forward`, `chat-menu` (all carry the "Draft · for review" tag) |
 
 `inbox.png` is the main screen.
@@ -61,7 +61,7 @@ copies in `exports/2x/`.
     (hairline, HUD "TODAY · 24 NOV", hairline). Other people's messages have no box: a 28 px avatar, the sender in
     Body 13 Medium, the time in Mono 12, then the text. Your own messages sit on the right in a square box with the
     accent wash and a 2 px accent_ink rule on the right edge; the head says "You", the time and the state ("✓ Sent").
-    The box is as wide as the text, from 260 to 460 px. The composer has a message field and SEND.
+    The box is as wide as the text, from 260 to 460 px. The composer has the emoji picker's button (a smile; the app draws a colour emoji), a message field and SEND.
 - **inbox-empty:** no accounts yet. The hero "Your chats, *one* inbox.", two paragraphs (networks are connected
   through bridges, a small program on your server; connecting from inside PingCraft comes in a later version),
   HOW TO CONNECT and CHECK AGAIN, and a meta line. On the right, the networks PingCraft can connect with how you log
@@ -75,35 +75,46 @@ copies in `exports/2x/`.
   list), a note on what a mismatch means, and THEY DON'T MATCH / THEY MATCH.
 - **unlock:** used on the web and on desktops without a keychain (ADR 0004). Why a passphrase is needed here,
   PASSPHRASE with SHOW, what to do if it is forgotten, SIGN OUT and UNLOCK.
-- **connect-network** (Preview · M3): the hero "Connect a *network*.", then the four networks as cards that share
-  hairlines: a strip with the number and the risk level badge, the name in Archivo 22, how you log in, the user's
-  accounts on that network, and CONNECT. WhatsApp's CONNECT is shown as the primary (it is the one opened in
-  `connect-risk`). These frames show the state before WhatsApp was connected (3 accounts: Telegram, Signal and
-  Matrix), so they don't match the M2 inbox's 4 accounts on purpose. Discord is muted with LATER and "NOT YET": its bridge is not ready, and it has two risk levels
-  (bot login low, your own account high; ADR 0008).
-- **connect-risk** (Preview · M3): the risk screen before connecting WhatsApp. A risk scale (LOW / MEDIUM /
-  MEDIUM-HIGH / HIGH with MEDIUM-HIGH on), then four short blocks in our own words from ADR 0007: what could happen,
-  what makes it more likely, keeping the phone online (the link drops after about 14 days; a warning at 12), and
-  where the messages are (the bridge on your server can read them). Then the "I understand… and I want to connect it
-  anyway" checkbox, CANCEL and CONNECT WHATSAPP.
+- **connect-network:** the ACCOUNTS tab as built: the hero "Connect a *network*.", then the four networks as cards
+  that share hairlines (a strip with the number and the risk level badge, the name in Archivo 22, how you log in,
+  the accounts on that network, and the card's action), the risk note, and YOUR ACCOUNTS: one row per account with
+  its network tag, its name, its state in words and colour, and REMOVE. Telegram is connected (CONNECTED in
+  `good` instead of a button), Signal's account is logged out (RECONNECT, and "Logged out: connect it again" in
+  `bad`), WhatsApp has none (+ CONNECT), and Discord is muted with LATER and NOT YET: its bridge is not ready, and it
+  has two risk levels (bot login low, your own account high; ADR 0008).
+- **connect-risk:** the risk screen before connecting WhatsApp. A risk scale (LOW / MEDIUM / MEDIUM-HIGH / HIGH
+  with MEDIUM-HIGH on), then four short blocks in our own words from ADR 0007: what could happen, what makes it
+  more likely, keeping the phone online (the link drops after about 14 days; the bridge warns at 12), and where the
+  messages are (the bridge on your server can read them). Then the "I understand… and I want to connect it anyway"
+  checkbox, CANCEL and → CONNECT WHATSAPP, which stays off until the box is ticked.
+- **connect-choose:** when the bridge offers more than one way to log in: each way as a button with the bridge's
+  own words next to it (sample words here), and CANCEL.
+- **connect-qr:** a login step that shows something: the bridge's instructions, the QR code to scan (a made-up
+  pattern in the frame, not a real code) and "Waiting for you… This updates by itself."
+- **connect-phone:** a login step that asks something: the bridge's instructions, PHONE NUMBER (its hint is the
+  app's sample number) with the bridge's description under it, CANCEL and CONTINUE.
+- **remove-account:** asks before an account is removed: the bridge logs it out of its network; its chats may leave
+  the inbox, and it can be connected again later.
 
 ## Messages and chats (draft for review)
 
 PLAN.md's "Messages and chats": what you can do with a message and with a chat. **Draft · for review**: built in
-the existing language for the maintainer to look at, not approved. `tools/messages.py` builds them.
+the existing language for the maintainer to look at, not approved, and redrawn on 2026-11-25 to match the app as
+built (where it differed from the first draft, PLAN.md lists it). `tools/messages.py` builds them.
 
-- **chat-actions:** a hovered message is sunken, with a bar on its top right: the quick reactions, REACT (more
-  emoji, later), REPLY and "…". "…" opens the message's menu: Reply, React, Copy text, Forward, Pin in this chat,
-  Select, Details, each with its key. Also shown: reactions under a message (a chip per emoji with its count, in
+- **chat-actions:** every message has a "…" after its time (no bar on hover, so a keyboard and a screen reader
+  reach it); it, or a right-click on the message, opens the message's menu: the quick reactions (recently used
+  first), More reactions… (the emoji picker), then Reply, Copy text, Forward, Pin in this chat, Select and Details,
+  without icons or keys yet (PLAN.md, "Messages and chats" 13 and craft-keymap). Also shown: reactions under a message (a chip per emoji with its count, in
   the accent when you are one of those who reacted), a reply (a one-line quote of the original under a 2 px rule,
   above the text; clicking it goes to the original), your own message saying "edited" after its time, a deleted
   message's line ("Message deleted", who and when), and the **pinned bar** under the chat header (the pinned
-  message in one line, "Pinned 1 of 2", ALL PINNED).
-- **chat-own-menu:** your own message's menu adds Edit and Delete (Delete in `bad`).
+  message in one line after "PINNED 1 OF 2", and "›" to step to the next pin).
+- **chat-own-menu:** your own message's menu adds Edit and Delete (Delete in `bad`); its "…" is in its head.
 - **delete-message:** the confirmation: the message quoted, that it is deleted for everyone and leaves a line, and
   that whether it disappears on the network depends on the network.
 - **chat-reply:** replying: a bar over the composer ("Replying to …", the original in one line, a close button).
-  Also: "Lars Holm is typing…" under the last message, JUMP TO LATEST over the timeline when it is scrolled up,
+  Also: "Lars Holm is typing…" over the composer, under the reply bar, JUMP TO LATEST over the timeline when it is scrolled up,
   and a draft kept in another chat ("Draft:" in accent_ink in its inbox row).
 - **chat-edit:** editing your message: it is sunken and says "Editing", the composer holds its text, SEND says
   SAVE, and the bar says whether the edit reaches the network depends on the bridge.
@@ -112,10 +123,11 @@ the existing language for the maintainer to look at, not approved. `tools/messag
   and CANCEL.
 - **message-details:** a sheet: the message, then when it was sent, the network and account it came through,
   encryption in the same words as the chat header, who has read it, whether it was edited, and the edit history.
-- **forward:** a sheet: search, the chats with a checkbox and their network tag, and that forwarded messages go
-  as new messages from you (the bridges don't carry "forwarded").
-- **chat-menu:** the chat header's "…": pin to (or unpin from) the top of the inbox, mark as unread, and mute for
-  an hour, a day, a week or until turned back on, with a note that a muted chat still counts as unread. The inbox
+- **forward:** a sheet: search, the chats as radio buttons (one chat is chosen), and that forwarded messages go as
+  new messages from you (the bridges don't carry "forwarded").
+- **chat-menu:** the chat header's "…": pin to (or unpin from) the top of the inbox, mark as unread, then
+  NOTIFICATIONS: mute for an hour, a day, a week or until turned back on, with a note that a muted chat still
+  counts as unread and when PingCraft turns notifications back on. The inbox
   shows pinned chats first with a pin before the tag, a muted chat with a struck bell and a quiet (unfilled)
   count, and a chat marked unread with a plain accent mark where the count goes.
 
@@ -180,7 +192,7 @@ divider, Symbol tile, Reaction chip, Reply quote and Menu item.
 | Composer | 74 tall, hairline on top, padding 20 24: the message field (fills) and SEND |
 | Sheet | as CraftCloud: bg, 1 px line_strong, dialog shadow; hero with accent_tint, 2 px accent rule, the 44 px mark, title Archivo 26, caption HUD; body padding 24, gap 16; actions row padding 14 24 with secondary left, primary right. Sheets hug their content and are centred in the window |
 | Symbol tile | 88 × 104, sunken, hairline, the symbol at 34 px, its name Small 12 muted |
-| Preview tag | 20 tall, 1 px accent_ink border, Badge 10 accent_ink, "Preview · M3" |
+| Preview tag | 20 tall, 1 px accent_ink border, Badge 10 accent_ink, "Preview · M3" (no frame uses it since the accounts frames were drawn as built; the draft tag is an instance with its own label) |
 
 ## Sample data
 

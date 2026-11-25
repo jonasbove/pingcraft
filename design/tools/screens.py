@@ -301,6 +301,10 @@ def chat_pane(d, f, name, ini, net, account, enc):
     cp = d.frame(pane, "Composer", 0, 0, w, 74, fill=None, layout="horizontal", gap=8, padding=[20, 24, 20, 24],
                  crossAlign="center", sizingH="fill", sizingV="fixed", clip=False)
     side_stroke(d, cp, top=1)
+    # The emoji picker's button (the app draws a colour emoji in it).
+    em = hstack(d, cp, "Emoji", gap=0, h=34, padding=[0, 10, 0, 10])
+    box_stroke(d, em, "line_strong")
+    icon(d, em, "smile", "ink")
     inp = d.inst("Input", cp, props={"Value": f"Message {name}"}, name="Message input")
     d.set(inp, sizingH="fill")
     d.set(d.sub(inp, "Value"), fill="muted")
@@ -522,40 +526,39 @@ def unlock(d, name, x, y):
     return f
 
 
-# --- M3 preview -------------------------------------------------------------------------------------------
+# --- accounts (milestone 3, as built) -------------------------------------------------------------------
 
 NETWORKS = [
-    # name, tone, risk, how you log in, what it says about accounts, available
+    # name, tone, risk, how you log in, the card's account line, the card's action
     ("Telegram", "Good", "Low", "Log in with your phone number and a code sent to Telegram, or scan a QR code.",
-     "1 account · personal", True),
+     "1 account · personal", "connected"),
     ("Signal", "Warn", "Medium", "Link PingCraft as a device: scan a QR code with Signal on your phone.",
-     "1 account · personal", True),
+     "1 account · work", "Reconnect"),
     ("WhatsApp", "Bad", "Medium-high", "Link PingCraft as a device: scan a QR code or type a pairing code.",
-     "No accounts yet", True),
+     "No accounts yet", "+ Connect"),
     ("Discord", "Muted", "Later", "Comes with its bridge's next version. A bot login is low risk; logging in as "
-     "yourself is high.", "Not available yet", False),
+     "yourself is high.", "Not available yet", None),
 ]
-
-
-def preview_tag(d, parent):
-    return d.inst("Preview tag", parent, props={"Label": "Preview · M3"}, name="Preview tag")
+# The accounts under YOUR ACCOUNTS: network, name, state, its colour.
+ACCOUNTS = [("Telegram", "personal", "Connected", "good"), ("Signal", "work", "Logged out: connect it again", "bad")]
 
 
 def connect_network(d, name, x, y, light=False):
+    """The ACCOUNTS tab: the four networks as cards, then the user's accounts with their state."""
     f = screen(d, name, x, y, light=light, nav="Accounts",
-               footer=(f"PingCraft {VERSION} · {ME}", "3 accounts"))
-    hero = vstack(d, f, "Hero", 24, 72, 760, gap=12)
-    kr = hstack(d, hero, "Kicker row", gap=12)
-    hud(d, kr, "Accounts · connect a network", name="Kicker")
-    preview_tag(d, kr)
-    headline(d, hero, "Connect a\n*network*.", light=light)
-    para(d, hero, "Each network is connected through a bridge on your server. Choose one to see what connecting "
-                  "it means for your account, before you log in.", "muted")
-    grid = d.frame(f, "Networks", 24, 296, W - 48, 10, fill=None, layout="horizontal", gap=0, sizingH="fixed",
+               footer=(f"PingCraft {VERSION} · {ME}", "2 accounts"))
+    hero = vstack(d, f, "Hero", 24, 72, W - 48, gap=8)
+    hud(d, hero, "Accounts · connect a network", name="Kicker")
+    headline(d, hero, "Connect a *network*.", light=light)
+    note(d, hero, "Each network is connected through a bridge on your server. Choose one to see what connecting "
+                  "it means for your account, before you log in.", "muted", "Small/12.5", name="Intro")
+    d.set(d.sub(hero, "Intro"), sizingH="fill")
+    grid = d.frame(f, "Networks", 24, 210, W - 48, 10, fill=None, layout="horizontal", gap=0, sizingH="fixed",
                    sizingV="hug", clip=True)
     box_stroke(d, grid, "line")
     cw = (W - 48) / 4
-    for i, (net, tone, risk, how, accounts, ok) in enumerate(NETWORKS):
+    for i, (net, tone, risk, how, line, action) in enumerate(NETWORKS):
+        ok = action is not None
         c = vstack(d, grid, f"Card {net}", gap=0)
         d.set(c, sizingH="fixed", width=cw, sizingV="fill")
         if i:
@@ -566,22 +569,39 @@ def connect_network(d, name, x, y, light=False):
         hud(d, strip, f"{i + 1:02d}", name="Number")
         spacer(d, strip)
         d.inst("Status badge", strip, props={"Tone": tone, "Label": risk}, name="Risk")
-        body = vstack(d, c, "Body", gap=10, pad=[18, 20, 20, 20])
+        body = vstack(d, c, "Body", gap=8, pad=[14, 20, 16, 20])
         d.set(body, sizingH="fill", sizingV="fill")
         d.text(body, net, "Display/Heading 22", "ink_strong" if ok else "muted", name="Network name")
-        note(d, body, how, "muted", "Small/12.5", name="How")
+        note(d, body, how, "muted", "Body/13", name="How")
         spacer(d, body, v=True)
-        hud(d, body, accounts, name="Accounts")
-        if ok:
-            ibtn(d, body, "Connect", "plus", "Primary" if net == "WhatsApp" else "Secondary", name="Connect")
+        hud(d, body, line, name="Accounts")
+        if action == "connected":
+            cell = hstack(d, body, "Connected", gap=0, h=34, padding=[0, 12, 0, 12])
+            box_stroke(d, cell, "good")
+            hud(d, cell, "Connected", color="good", name="Connected label")
+        elif action:
+            btn(d, body, action, name=action)
         else:
-            ibtn(d, body, "Not yet", "clock", "Secondary", name="Not yet", disabled=True)
-    d.set(grid, height=290)
+            b = btn(d, body, "Not yet", name="Not yet")
+            d.set(b, opacity=0.45)
+    d.set(grid, height=250)
     for k in d.find(grid, "Body"):
         d.set(k, sizingV="fill")
     d.text(f, "Risk level: how likely the network is to restrict or ban an account for being connected through a "
               "bridge. Each network's risk is explained before you connect it.", "Small/12.5", "muted",
-           x=24, y=610, w=760, name="Risk note")
+           x=24, y=470, w=W - 48, name="Risk note")
+    mine_ = vstack(d, f, "Your accounts", 24, 512, W - 48, gap=8)
+    hud(d, mine_, f"Your accounts · {len(ACCOUNTS)} accounts", name="Your accounts label")
+    for net, acc, state, color in ACCOUNTS:
+        r = hstack(d, mine_, f"Account {net} {acc}", gap=20, h=58, padding=[0, 20, 0, 20])
+        d.set(r, sizingH="fill")
+        box_stroke(d, r, "line")
+        tag = d.inst("Network tag", r, props={"Network": net}, name="Tag")
+        tint_tag(d, tag, net)
+        d.text(r, acc, "Body/14", "ink_strong", name="Account name")
+        d.text(r, state, "Small/12.5", color, name="State")
+        spacer(d, r)
+        btn(d, r, "Remove", name="Remove")
     return f
 
 
@@ -589,10 +609,9 @@ def connect_risk(d, name, x, y):
     f = connect_network(d, name, x, y)
     scrim(d, f)
     w = 700
-    s, b = sheet(d, f, w, "Before you connect WhatsApp", "Risk level · medium-high",
-                 right=lambda hd: preview_tag(d, hd))
+    s, b = sheet(d, f, w, "Before you connect WhatsApp", "Risk level · medium-high")
     sc = hstack(d, b, "Scale", gap=12)
-    hud(d, sc, "Risk level", name="Scale label")
+    hud(d, sc, "Risk level", color="ink", name="Scale label")
     cells(d, sc, ("Low", "Medium", "Medium-high", "High"), sel="Medium-high", name="Risk scale")
     for title, text in (
         ("What could happen",
@@ -602,8 +621,8 @@ def connect_risk(d, name, x, y):
          "A new account, a number from an internet phone service, and messaging people who haven't saved "
          "your number."),
         ("Keep your phone online",
-         "PingCraft joins as a linked device. If your phone stays offline for about 14 days, the link drops. "
-         "PingCraft warns you in the inbox after 12."),
+         "PingCraft joins as a linked device. If your phone stays offline for about 14 days, the link drops; "
+         "the bridge warns you after 12."),
         ("Where your messages are",
          "The WhatsApp bridge on your server can read your messages so it can pass them on. Keep your "
          "server's backups as safe as your phone."),
@@ -614,7 +633,90 @@ def connect_risk(d, name, x, y):
         note(d, blk, text, "muted", "Body/13", name="Block text")
     checkbox(d, b, "I understand that WhatsApp may restrict or ban this account, and I want to connect it anyway.")
     sheet_actions(d, s, left=lambda r: btn(d, r, "Cancel"),
-                  right=lambda r: ibtn(d, r, "Connect WhatsApp", "arrow-right", name="Connect WhatsApp"))
+                  right=lambda r: btn(d, r, "→ Connect WhatsApp", "Primary", name="Connect WhatsApp"))
+    centre(d, s, w)
+    return f
+
+
+def connect_choose(d, name, x, y):
+    """When the bridge offers more than one way to log in: its ways, in its own words (sample words here)."""
+    f = connect_network(d, name, x, y)
+    scrim(d, f)
+    w = 560
+    s, b = sheet(d, f, w, "Connect Telegram", "How do you want to log in?")
+    note(d, b, "These are the ways the bridge on your server offers, in its own words.", name="Intro")
+    for way, words in (("Phone number", "Log in with your phone number and a code."),
+                       ("QR code", "Scan a QR code with Telegram on your phone.")):
+        r = hstack(d, b, f"Way {way}", gap=12)
+        btn(d, r, way, name=way)
+        note(d, r, words, name="Way words")
+    sheet_actions(d, s, left=lambda r: btn(d, r, "Cancel"))
+    centre(d, s, w)
+    return f
+
+
+def qr(d, parent, data, size=200, n=25):
+    """A QR-like pattern for the frame (not a real code): three finder squares and modules from a hash of `data`."""
+    import hashlib
+
+    q = d.frame(parent, "QR code", 0, 0, size + 24, size + 24, fill="#ffffff", clip=False)
+    m = size / n
+    bits = hashlib.sha256(data.encode()).digest() * 3
+
+    def finder(cx, cy):
+        return cx <= 6 and cy <= 6
+
+    for yy in range(n):
+        for xx in range(n):
+            in_finder = None
+            for ox, oy in ((0, 0), (n - 7, 0), (0, n - 7)):
+                if 0 <= xx - ox <= 6 and 0 <= yy - oy <= 6 and finder(xx - ox, yy - oy):
+                    a, b2 = xx - ox, yy - oy
+                    in_finder = a in (0, 6) or b2 in (0, 6) or (2 <= a <= 4 and 2 <= b2 <= 4)
+            k = yy * n + xx
+            dark = in_finder if in_finder is not None else bool(bits[k // 8 % len(bits)] >> (k % 8) & 1)
+            if dark:
+                d.rect(q, 12 + xx * m, 12 + yy * m, m, m, "#000000", name="Module")
+    return q
+
+
+def connect_qr(d, name, x, y):
+    """A login step that shows something: here the QR code a bridge asks to scan."""
+    f = connect_network(d, name, x, y)
+    scrim(d, f)
+    w = 600
+    s, b = sheet(d, f, w, "Connect Signal", "Logging in through your server's bridge")
+    para(d, b, "Scan the QR code with Signal on your phone: Settings, Linked devices, then the + button.")
+    qr(d, b, "pingcraft design sample")
+    note(d, b, "Waiting for you… This updates by itself.", name="Waiting")
+    sheet_actions(d, s, left=lambda r: btn(d, r, "Cancel"))
+    centre(d, s, w)
+    return f
+
+
+def connect_phone(d, name, x, y):
+    """A login step that asks something: here a phone number."""
+    f = connect_network(d, name, x, y)
+    scrim(d, f)
+    w = 600
+    s, b = sheet(d, f, w, "Connect Telegram", "Logging in through your server's bridge")
+    para(d, b, "Type your phone number. Telegram sends a code to your Telegram app.")
+    field(d, b, "Phone number", "+45 12 34 56 78", placeholder=True,
+          hint="With the country code. It goes to your server's bridge only.")
+    sheet_actions(d, s, left=lambda r: btn(d, r, "Cancel"), right=lambda r: btn(d, r, "Continue", "Primary"))
+    centre(d, s, w)
+    return f
+
+
+def remove_account(d, name, x, y):
+    f = connect_network(d, name, x, y)
+    scrim(d, f)
+    w = 560
+    s, b = sheet(d, f, w, "Remove this account?", "Signal · work")
+    para(d, b, "The bridge logs work out of Signal and stops carrying its messages.")
+    note(d, b, "Depending on how your server is set up, its chats may leave your inbox. You can connect the account "
+               "again later.", name="Note")
+    sheet_actions(d, s, left=lambda r: btn(d, r, "Cancel"), right=lambda r: btn(d, r, "Remove account", "Primary"))
     centre(d, s, w)
     return f
 
@@ -626,14 +728,15 @@ M2 = [("sign-in", sign_in), ("recovery-key", recovery_key), ("inbox", inbox_fram
       ("inbox-networks", lambda d, n, x, y: inbox_frame(d, n, x, y, hidden=("WhatsApp", "Matrix"))),
       ("inbox-empty", inbox_empty),
       ("chat-states", chat_states), ("verify-device", verify_device), ("unlock", unlock)]
-M3 = [("connect-network", connect_network), ("connect-risk", connect_risk)]
+M3 = [("connect-network", connect_network), ("connect-risk", connect_risk), ("connect-choose", connect_choose),
+      ("connect-qr", connect_qr), ("connect-phone", connect_phone), ("remove-account", remove_account)]
 
 
 def build(d, only=None):
     from messages import FRAMES as MESSAGES  # it builds on this module's helpers
 
     out = []
-    for page, items in (("M2 · Client", M2), ("M3 · Preview", M3), ("Messages · Draft", MESSAGES)):
+    for page, items in (("M2 · Client", M2), ("M3 · Accounts", M3), ("Messages · Draft", MESSAGES)):
         d.page(page)
         for i, (name, fn) in enumerate(items):
             if only and name not in only:

@@ -300,7 +300,9 @@ Starts when mautrix-discord releases its bridgev2 rewrite (ADR 0008).
 
 ## Messages and chats (maintainer, 2026-11-25)
 
-Frames: page "Messages · Draft" in `design/pingcraft.figcraft` (draft for review, `design/README.md`). The message
+Frames: page "Messages · Draft" in `design/pingcraft.figcraft` (draft for review, `design/README.md`), redrawn on
+2026-11-25 to match what is built, including the differences listed next; the ACCOUNTS screens have frames as built
+on page "M3 · Accounts". The message
 menu is egui's own popup: craft-libs `menu` is the window's menu bar, not a context menu. Its keyboard shortcuts
 (through `craft-keymap`) are still to come. Differs from the draft frames, for the maintainer's review: there is no
 bar on hover (the "…" button is always there, so a keyboard and a screen reader reach it), and the quick reactions

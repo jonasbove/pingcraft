@@ -1,9 +1,12 @@
 """The "Messages and chats" frames (page "Messages · Draft"): what you can do with a message and with a chat.
 
-A draft for the maintainer's review (PLAN.md, "Messages and chats"): every frame carries the "Draft · for review"
-tag. Built in the same language and with the same helpers as screens.py. The emoji are monochrome placeholders:
-the headless build has no emoji font (as for the verification symbols), so reactions are drawn with text forms
-where one exists. Sample people, chats and messages are invented, as in screens.py.
+Drawn to match the app as built (2026-11-25; PLAN.md, "Messages and chats", lists where it differs from the first
+draft): the "…" button on every message instead of a bar on hover, the quick reactions and MORE REACTIONS… at the
+top of the message's menu, menu items without icons or keys (they come with craft-keymap and PingCraft's own
+icons), the pinned bar's "next" button, the forward sheet's radio buttons and the typing line over the composer.
+Every frame still carries the "Draft · for review" tag. The emoji are placeholders: the headless build has no
+colour emoji font (as for the verification symbols), so reactions are drawn with text forms where one exists.
+Sample people, chats and messages are invented, as in screens.py.
 """
 
 from lib import ACCENT_INK, box_stroke, hstack, hud, side_stroke, spacer, vstack
@@ -11,8 +14,8 @@ from screens import (H, LEFT_W, W, btn, centre, chat_pane, divider, ibtn, icon, 
                      scrim, set_text, sheet, sheet_actions, screen, theirs, tint_tag)
 
 DRAFT = "Draft · for review"
-# The quick reactions: a small fixed set that egui's built-in emoji font draws (PLAN.md: no emoji font yet).
-# Drawn here as text placeholders; the app shows the emoji.
+# The quick reactions (recently used first in the app), drawn here as text placeholders; the app shows the emoji
+# in colour.
 QUICK = ("+1", "♥", "ha", "oh", "sad", "thx")
 CHAT = ("Book club", "BC", "Signal", "personal · 6 people", (False, "Encrypted · via your bridge"))
 
@@ -67,8 +70,9 @@ def quote(d, col, sender, text, index):
     return insert(d, col, q, index)
 
 
-def menu(d, f, x, y, items, w=240, title=None):
-    """A context menu: items are (icon, label, shortcut, state) or None for a hairline."""
+def menu(d, f, x, y, items, w=240, title=None, quick=False):
+    """A context menu: items are (icon, label, shortcut, state) or None for a hairline; an icon of None draws the
+    item as the app does today, without an icon. `quick` puts the quick reactions and MORE REACTIONS… first."""
     m = d.frame(f, "Menu", x, y, w, 10, fill="bg", stroke="line_strong", layout="vertical", gap=0,
                 padding=[4, 0, 4, 0], sizingV="hug", clip=False)
     d.effect_style(m, "Shadow/Dialog")
@@ -76,6 +80,13 @@ def menu(d, f, x, y, items, w=240, title=None):
         h = hstack(d, m, "Menu title", gap=0, h=28, padding=[0, 12, 0, 12])
         d.set(h, sizingH="fill")
         hud(d, h, title, name="Menu title text")
+    if quick:
+        q = hstack(d, m, "Quick reactions", gap=0, h=36, padding=[0, 6, 0, 6])
+        d.set(q, sizingH="fill")
+        for e in QUICK:
+            c = hstack(d, q, f"React {e}", gap=0, h=36, padding=[0, 8, 0, 8])
+            d.text(c, e, "Body/16 Medium", "ink_strong", name="Emoji")
+        items = [(None, "More reactions…", "", "Default"), None] + list(items)
     for it in items:
         if it is None:
             r = d.rect(m, 0, 0, w, 1, "line", name="Menu rule")
@@ -84,9 +95,28 @@ def menu(d, f, x, y, items, w=240, title=None):
         ic, label, short, state = it
         mi = d.inst("Menu item", m, props={"Label": label, "Shortcut": short, "State": state}, name=f"Item {label}")
         d.set(mi, sizingH="fill")
+        if ic is None:
+            d.set(d.sub(mi, "Icon"), visible=False)
+            continue
         d.R("instance.swap", {"ids": [d.sub(mi, "Icon")], "component": d.C[f"Icon/{ic}"]})
         d.set(d.sub(d.sub(mi, "Icon"), "glyph"), stroke="bad" if state == "Danger" else "muted")
     return m
+
+
+# The message's menu as built: no icons or keys yet.
+MESSAGE_ITEMS = [(None, "Reply", "", "Default"), (None, "Copy text", "", "Default"), (None, "Forward", "", "Default"),
+                 (None, "Pin in this chat", "", "Default"), (None, "Select", "", "Default"),
+                 (None, "Details", "", "Default")]
+
+
+def more_button(d, msg, on=False):
+    """The "…" at the end of a message's head, always there (a detached message's "Text" column, or a "Mine")."""
+    head = d.sub(msg, "Head")
+    b = hstack(d, head, "Message actions", gap=0, h=18, padding=[0, 6, 0, 6])
+    if on:
+        d.set(b, fill="sunken")
+    d.text(b, "…", "Body/14", "muted", name="More")
+    return b
 
 
 def pinned_bar(d, pane, w):
@@ -96,12 +126,12 @@ def pinned_bar(d, pane, w):
     side_stroke(d, pb, bottom=1)
     rule = d.rect(pb, 0, 0, 2, 44, "accent_ink", name="Pinned rule")
     d.absolute(rule, 0, 0, 2, 44)
-    icon(d, pb, "pin", "accent_ink")
-    hud(d, pb, "Pinned 1 of 2", color="accent_ink", name="Pinned count")
+    hud(d, pb, "Pinned 1 of 2", color="ink", name="Pinned count")
     t = d.text(pb, "Lars Holm: Next meeting on Thursday at mine? I'll make soup.", "Small/12.5", "ink",
                name="Pinned text", w=500, lines=1)
     d.set(t, sizingH="fill")
-    ibtn(d, pb, "All pinned", "chevron-down", "Secondary", name="All pinned")
+    nx = hstack(d, pb, "Next pinned message", gap=0, h=30, padding=[0, 8, 0, 8])
+    d.text(nx, "›", "Body/16 Medium", "ink", name="Next")
     return insert(d, pane, pb, 1)
 
 
@@ -133,54 +163,29 @@ def composer_bar(d, pane, w, kind, title, text, index=2):
 # --- frames ---------------------------------------------------------------------------------------------
 
 def chat_actions(d, name, x, y):
-    """A message's actions: the bar on hover, the menu, reactions, a reply, edited and deleted messages, and the
-    pinned bar."""
+    """A message's actions: the "…" on every message opens its menu (also on a right-click), with the quick
+    reactions first. Also: reactions, a reply, edited and deleted messages, and the pinned bar."""
     f, pane, tl = chat_frame(d, name, x, y)
     pinned_bar(d, pane, W - LEFT_W)
     divider(d, tl, "Today · 24 Nov")
     m, col = detached_theirs(d, tl, "Ana Ortiz", "AO", "09:02",
                              "Has everyone got the book? The library on Elm Street had two copies left.")
+    more_button(d, col)
     reactions(d, col, (("+1", 3, False), ("♥", 1, True)), add=False)
     del m
     mi = mine(d, tl, "09:10", "Got mine yesterday.")
     set_text(d, mi, "Time", "09:10 · edited")
     dl = hstack(d, tl, "Deleted", gap=12)
     d.set(dl, sizingH="fill", padding=[0, 0, 0, 40])
-    icon(d, dl, "trash", "muted")
     d.text(dl, "Message deleted", "Small/12.5", "muted", name="Deleted text")
     hud(d, dl, "Lars Holm · 10:14", name="Deleted meta")
     m, col = detached_theirs(d, tl, "Lars Holm", "LH", "14:28", "Same here. Chapter 9 so far. No spoilers, please!")
     quote(d, col, "You", "Got mine yesterday.", 1)
-    reactions(d, col, (("ha", 2, False),))
-    # The hovered message: its row is sunken, with the quick reactions, REPLY and "…" on its right.
-    d.set(m, fill="sunken")
-    mx, my = where(d, m, f)
-    mw = d.get(m, "width")["width"]
-    bar = hstack(d, f, "Message actions", gap=0, h=32)
-    d.set(bar, fill="bg")
-    box_stroke(d, bar, "line_strong")
-    d.effect_style(bar, "Shadow/Dialog")
-    for e in QUICK:
-        c = hstack(d, bar, f"React {e}", gap=0, h=32, padding=[0, 8, 0, 8])
-        d.text(c, e, "Body/13", "ink_strong", name="Emoji")
-    sep = d.rect(bar, 0, 0, 1, 32, "line", name="sep")
-    del sep
-    for ic in ("smile", "reply", "more"):
-        c = hstack(d, bar, f"Action {ic}", gap=0, h=32, padding=[0, 9, 0, 9])
-        if ic == "more":
-            d.set(c, fill="sunken")
-        icon(d, c, ic, "ink")
-    bw = d.get(bar, "width")["width"]
-    d.set(bar, x=mx + mw - bw - 8, y=my - 18)
-    mn = menu(d, f, mx + mw - 248, my + 18, [
-        ("reply", "Reply", "R", "Hover"), ("smile", "React", "E", "Default"),
-        ("copy", "Copy text", "Ctrl+C", "Default"), ("forward", "Forward", "F", "Default"),
-        ("pin", "Pin in this chat", "P", "Default"), ("select", "Select", "S", "Default"),
-        ("info", "Details", "I", "Default"),
-    ])
-    # Opened from "…": to the left of the bar, its bottom on the bar's.
-    bx = d.get(bar, "x")["x"]
-    d.set(mn, x=bx - 248, y=my + 14 - d.get(mn, "height")["height"])
+    reactions(d, col, (("ha", 2, False),), add=False)
+    more = more_button(d, col, on=True)
+    mx, my = where(d, more, f)
+    mn = menu(d, f, mx, my + 22, MESSAGE_ITEMS, quick=True)
+    d.set(mn, y=my - d.get(mn, "height")["height"] - 4)
     frame_tag(d, f)
     return f
 
@@ -191,15 +196,12 @@ def own_menu(d, name, x, y):
     divider(d, tl, "Today · 24 Nov")
     theirs(d, tl, "Lars Holm", "LH", "14:28", "Halfway through chapter 9. No spoilers, please!")
     mi = mine(d, tl, "14:31", "I won't say a word. See you Thursday.")
-    d.set(mi, fill="sunken")
+    d.R("component.detach", {"ids": [mi]})
+    more = more_button(d, d.sub(mi, "Content"), on=True)
     mx, my = where(d, mi, f)
-    mn = menu(d, f, mx - 250, my - 40, [
-        ("reply", "Reply", "R", "Default"), ("smile", "React", "E", "Default"),
-        ("copy", "Copy text", "Ctrl+C", "Default"), ("forward", "Forward", "F", "Default"),
-        ("pin", "Pin in this chat", "P", "Default"), ("select", "Select", "S", "Default"),
-        ("info", "Details", "I", "Default"), None,
-        ("edit", "Edit", "Up", "Hover"), ("trash", "Delete", "Del", "Danger"),
-    ])
+    mn = menu(d, f, mx - 250, my - 40, MESSAGE_ITEMS + [(None, "Edit", "", "Hover"), (None, "Delete", "", "Danger")],
+              quick=True)
+    del more
     d.set(mn, y=my + d.get(mi, "height")["height"] - d.get(mn, "height")["height"])
     frame_tag(d, f)
     return f
@@ -237,11 +239,13 @@ def chat_reply(d, name, x, y):
     divider(d, tl, "Today · 24 Nov")
     theirs(d, tl, "Ana Ortiz", "AO", "09:02", "Has everyone got the book? The library on Elm Street had two copies left.")
     theirs(d, tl, "Lars Holm", "LH", "14:28", "Halfway through chapter 9. No spoilers, please!")
-    ty = hstack(d, tl, "Typing", gap=8)
-    d.set(ty, padding=[0, 0, 0, 40])
-    d.text(ty, "Lars Holm is typing…", "Small/12.5", "muted", name="Typing text")
     composer_bar(d, pane, W - LEFT_W, "Reply", "Replying to Ana Ortiz",
                  "Has everyone got the book? The library on Elm Street had two copies left.")
+    # Who is typing: a line over the composer, under the reply bar.
+    ty = d.frame(pane, "Typing", 0, 0, W - LEFT_W, 10, fill=None, layout="horizontal", padding=[6, 24, 0, 24],
+                 sizingH="fill", sizingV="hug", clip=False)
+    d.text(ty, "Lars Holm is typing…", "Small/12.5", "muted", name="Typing text")
+    insert(d, pane, ty, 3)
     inp = d.sub(d.sub(pane, "Composer"), "Message input")
     d.R("instance.setProperties", {"ids": [inp], "properties": {"Value": "Yes, got it on Monday", "State": "Focus"}})
     d.set(d.sub(inp, "Value"), fill="ink")
@@ -354,13 +358,23 @@ def message_details(d, name, x, y):
     return f
 
 
+def radio(d, parent, on):
+    """A radio button: a 16 px ring, filled in the middle when chosen (egui's, in the theme's colours)."""
+    r = d.frame(parent, "Radio", 0, 0, 16, 16, fill=None, clip=False)
+    ring = d.node("ellipse", r, "Ring", 0, 0, 16, 16, fill="sunken")
+    box_stroke(d, ring, "line_strong")
+    if on:
+        d.node("ellipse", r, "Dot", 4, 4, 8, 8, fill="ink_strong")
+    return r
+
+
 def forward(d, name, x, y):
     f, pane, tl = chat_frame(d, name, x, y)
     divider(d, tl, "Today · 24 Nov")
     theirs(d, tl, "Lars Holm", "LH", "14:28", "Halfway through chapter 9. No spoilers, please!")
     scrim(d, f)
     w = 600
-    s, b = sheet(d, f, w, "Forward 2 messages", "To one of your chats", right=lambda hd: draft_tag(d, hd))
+    s, b = sheet(d, f, w, "Forward a message", "To one of your chats", right=lambda hd: draft_tag(d, hd))
     sf = d.inst("Search field", b, props={"Placeholder": "Search chats"}, name="Search")
     d.set(sf, sizingH="fill")
     lst = vstack(d, b, "Chats", gap=0)
@@ -374,13 +388,10 @@ def forward(d, name, x, y):
             d.set(r, fill="sunken")
         if i:
             side_stroke(d, r, top=1)
-        d.inst("Checkbox", r, props={"State": "On" if on else "Off"}, name="Checkbox")
-        av = d.inst("Avatar/28", r, name="Avatar")
-        set_text(d, av, "Initials", "".join(w[0] for w in chat.split()[:2]).upper())
+        radio(d, r, on)
         t = d.text(r, chat, "Body/14", "ink", name="Name")
         d.set(t, sizingH="fill")
-        tag = d.inst("Network tag", r, props={"Network": net}, name="Tag")
-        tint_tag(d, tag, net)
+        del net
     note(d, b, "They are sent as new messages from you, on that chat's network. They don't say “forwarded”: the "
                "bridges don't carry that yet.")
     sheet_actions(d, s, left=lambda r: btn(d, r, "Cancel"),
@@ -427,20 +438,20 @@ def chat_menu(d, name, x, y):
     more = d.sub(pane, "More")
     d.set(more, fill="sunken")
     mx, my = where(d, more, f)
-    m = menu(d, f, mx + 34 - 260, my + 40, [
-        ("pin", "Unpin from the top", "", "Default"), ("unread", "Mark as unread", "U", "Default"), None,
-    ], w=260)
+    m = menu(d, f, mx + 34 - 280, my + 40, [
+        (None, "Unpin from the top of the inbox", "", "Default"), (None, "Mark as unread", "", "Default"), None,
+    ], w=280)
     mute = menu(d, f, 0, 0, [
-        ("bell-off", "For an hour", "", "Default"), ("bell-off", "For a day", "", "Hover"),
-        ("bell-off", "For a week", "", "Default"), ("bell-off", "Until you turn it back on", "", "Default"),
-    ], w=260, title="Mute notifications")
+        (None, "Mute for an hour", "", "Default"), (None, "Mute for a day", "", "Hover"),
+        (None, "Mute for a week", "", "Default"), (None, "Mute until you turn it back on", "", "Default"),
+    ], w=280, title="Notifications")
     d.R("node.reparent", {"ids": [mute], "parent": m})
     d.set(mute, effects=[], strokes=[], padding=[0, 0, 0, 0])
     d.set(mute, sizingH="fill")
     n = d.frame(m, "Mute note", 0, 0, 260, 10, fill=None, layout="vertical", padding=[6, 12, 8, 12],
                 sizingH="fill", sizingV="hug", clip=False)
-    note(d, n, "A muted chat still counts as unread. Muting is kept on your server, so your other Matrix apps "
-               "follow it; the time it ends is kept by PingCraft.", name="Mute note text")
+    note(d, n, "A muted chat still counts as unread. PingCraft turns notifications back on at the time you chose "
+               "while it is running.", name="Mute note text")
     frame_tag(d, f)
     return f
 
