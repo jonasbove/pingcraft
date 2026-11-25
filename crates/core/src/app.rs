@@ -103,6 +103,8 @@ impl std::fmt::Debug for Command {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SignInProblem {
     ServerNotFound,
+    /// Nothing answered: no network, or the server is down.
+    Unreachable,
     WrongPassword,
     /// The keychain (or vault) could not keep the session.
     Secrets,

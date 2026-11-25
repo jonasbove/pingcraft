@@ -32,6 +32,8 @@ pub struct SignIn {
 pub enum SessionError {
     /// The server could not be found or is not a Matrix server.
     ServerNotFound(String),
+    /// Nothing answered at the address: no network, or the server is down.
+    Unreachable(String),
     /// The server refused the user name and password.
     WrongPassword,
     /// The keychain could not keep or give back the secrets; the app should offer the unlock passphrase.
@@ -46,6 +48,7 @@ impl std::fmt::Display for SessionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ServerNotFound(why) => write!(f, "no Matrix server found there: {why}"),
+            Self::Unreachable(why) => write!(f, "the server could not be reached: {why}"),
             Self::WrongPassword => f.write_str("the server did not accept that user name and password"),
             Self::Keychain(e) => write!(f, "{e}"),
             Self::Store(why) => write!(f, "the local store could not be opened: {why}"),
@@ -107,7 +110,12 @@ async fn client_for(data_dir: &Path, secrets: &dyn SecretStore, profile: &str, s
         Homeserver::Known(url) => Client::builder().homeserver_url(url),
     };
     builder.sqlite_store_with_config_and_cache_path(config, None::<&Path>).build().await.map_err(|e| match e {
-        matrix_sdk::ClientBuildError::AutoDiscovery(_) | matrix_sdk::ClientBuildError::Url(_) => SessionError::ServerNotFound(e.to_string()),
+        matrix_sdk::ClientBuildError::AutoDiscovery(_)
+        | matrix_sdk::ClientBuildError::Url(_)
+        | matrix_sdk::ClientBuildError::InvalidServerName
+        | matrix_sdk::ClientBuildError::MissingHomeserver => SessionError::ServerNotFound(e.to_string()),
+        matrix_sdk::ClientBuildError::Http(matrix_sdk::HttpError::Reqwest(_)) => SessionError::Unreachable(e.to_string()),
+        matrix_sdk::ClientBuildError::Http(_) => SessionError::ServerNotFound(e.to_string()),
         other => SessionError::Store(other.to_string()),
     })
 }
@@ -128,7 +136,11 @@ pub async fn sign_in(data_dir: &Path, secrets: &dyn SecretStore, request: &SignI
         forget_profile(data_dir, secrets, &profile);
         return Err(match e.as_client_api_error().map(|c| c.status_code.as_u16()) {
             Some(403) => SessionError::WrongPassword,
-            _ => SessionError::Other(e.to_string()),
+            Some(_) => SessionError::Other(e.to_string()),
+            None if matches!(e, matrix_sdk::Error::Http(ref h) if matches!(**h, matrix_sdk::HttpError::Reqwest(_))) => {
+                SessionError::Unreachable(e.to_string())
+            }
+            None => SessionError::Other(e.to_string()),
         });
     }
     let Some(session) = client.matrix_auth().session() else {
@@ -248,12 +260,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_unknown_server_is_reported_as_such() {
+    async fn a_server_that_does_not_answer_is_reported_as_unreachable() {
         let data = tempfile::tempdir().unwrap();
         let secrets = MemoryStore::default();
         let request = SignIn { server: "http://127.0.0.1:9".into(), username: "ana".into(), password: Zeroizing::new("x".into()) };
         let result = sign_in(data.path(), &secrets, &request).await;
-        assert!(result.is_err(), "nothing listens on port 9");
+        assert!(matches!(result, Err(SessionError::Unreachable(_))), "nothing listens on port 9, got {:?}", result.as_ref().err());
         let left = std::fs::read_dir(data.path().join("profiles")).map(|d| d.count()).unwrap_or(0);
         assert_eq!(left, 0);
     }

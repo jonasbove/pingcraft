@@ -118,6 +118,16 @@ fn signing_in_sends_what_was_typed_and_says_why_it_failed() {
 }
 
 #[test]
+fn a_server_that_does_not_answer_is_not_blamed_on_this_computer() {
+    let fake = Fake::default();
+    let mut h = harness(&fake);
+    fake.tell([Event::SignedOut, Event::SigningIn, Event::SignInFailed(SignInProblem::Unreachable)]);
+    h.run();
+    h.get_by_label("Could not reach the server. Check your internet connection and the address, then try again.");
+    assert!(h.query_by_label_contains("local store").is_none());
+}
+
+#[test]
 fn a_second_pingcraft_says_one_is_already_open_and_offers_nothing_to_type() {
     let fake = Fake::default();
     let mut h = harness(&fake);

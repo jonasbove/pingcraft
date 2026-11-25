@@ -293,6 +293,7 @@ impl Worker {
             }
             Err(e) => self.emit.send(Event::SignInFailed(match e {
                 SessionError::ServerNotFound(_) => SignInProblem::ServerNotFound,
+                SessionError::Unreachable(_) => SignInProblem::Unreachable,
                 SessionError::WrongPassword => SignInProblem::WrongPassword,
                 SessionError::Keychain(_) => SignInProblem::Secrets,
                 other => SignInProblem::Other(other.to_string()),

@@ -164,6 +164,7 @@ pub fn sign_in(ctx: &egui::Context, state: &mut State, out: &mut Out) {
 fn sign_in_problem(p: &SignInProblem) -> String {
     match p {
         SignInProblem::ServerNotFound => tl!("No PingCraft server answered at that address. Check it, or ask your admin.").to_owned(),
+        SignInProblem::Unreachable => tl!("Could not reach the server. Check your internet connection and the address, then try again.").to_owned(),
         SignInProblem::WrongPassword => tl!("The server did not accept that username and password.").to_owned(),
         SignInProblem::Secrets => tl!("PingCraft could not keep your sign-in safely on this computer.").to_owned(),
         SignInProblem::Other(why) => fmt(tl!("Signing in did not work: {why}"), &[("why", why)]),
