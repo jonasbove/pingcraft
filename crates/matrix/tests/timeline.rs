@@ -172,8 +172,10 @@ async fn replying_reacting_editing_and_deleting() {
     let ben = sign_in_as(&server.homeserver, &server.other).await;
     let ben_id = ben.session.client.user_id().unwrap().to_owned();
     let room = create_room(&ana, &unique("Actions"), true, Some(ben_id), vec![]).await;
-    join_and_say(&ben, &room, "lunch?").await;
+    // Ana's new device syncs (and so publishes its keys) before Ben writes; otherwise Ben's app has no device of
+    // hers to encrypt for, and the message waits for a key that never comes.
     let (_connection, mut chat) = open(&ana, &room).await;
+    join_and_say(&ben, &room, "lunch?").await;
     let mut last = Vec::new();
     let theirs = chat_until("ben's message", &mut chat, &mut last, |ms| ms.iter().find(|m| text(m) == Some("lunch?")).cloned()).await;
     assert!(theirs.can.reply && theirs.can.react && !theirs.can.edit && !theirs.can.delete);
