@@ -267,7 +267,8 @@ chunks, 16 to 1024 and the @2x sizes) and `pingcraft-logo.webp`.
 The drawing came as black and white ink on a flat blue (#4da3c7). `logo.py --source` cuts it out by how much blue
 each pixel has (the ink is grey, so its coverage is one minus its blueness) and un-mixes the blue from the edges, so
 no blue fringe is left; the result is `assets/logo/pingcraft-dolphin.png`. The original drawing was supplied by the
-maintainer; its origin and licence are recorded in `ATTRIBUTION.md` (to be confirmed).
+maintainer, who generated it with an AI image tool for PingCraft; it is under the repository's licence
+(`ATTRIBUTION.md`).
 
 ```sh
 python3 -I -B design/tools/logo.py --photocraft /path/to/photocraft-cli [--source drawing.png]

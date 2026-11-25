@@ -145,8 +145,8 @@ desktop target.
     the FreeBSD layout (`--dry-run`). Open:
     - the deb and rpm depend on the system SQLite without a minimum version: requiring 3.54.0 would make them
       uninstallable on today's stable distributions (Ubuntu 24.04 has 3.45);
-    - the logo drawing's origin and licence are still to be confirmed (`ATTRIBUTION.md`), and every package
-      now carries the logo;
+    - the logo drawing: generated with an AI image tool by the maintainer for PingCraft, under the repository's
+      licence (maintainer, 2026-11-25; `ATTRIBUTION.md`);
     - `LICENSE-MIT` and `LICENSE-APACHE` were added for the packages ("the PingCraft contributors", as
       CraftCloud's), for the maintainer to confirm;
     - Windows, macOS, FreeBSD, riscv64, Flatpak and the Nix flake are untried until CI runs them; there is no
