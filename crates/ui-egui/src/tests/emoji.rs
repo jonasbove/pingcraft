@@ -77,3 +77,70 @@ fn emoji_in_a_message_keep_their_text() {
     h.run();
     h.get_by_label(said);
 }
+
+/// What the open chat sent since the last call, as text messages and reactions.
+fn sent_texts(fake: &super::Fake) -> Vec<String> {
+    use pingcraft_core::app::Command;
+    fake.take()
+        .into_iter()
+        .filter_map(|c| match c {
+            Command::SendText { text, .. } => Some(format!("text {text}")),
+            Command::React { key, .. } => Some(format!("react {key}")),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn the_picker_finds_an_emoji_and_puts_it_in_the_message() {
+    use egui_kittest::kittest::Queryable;
+    let fake = super::Fake::default();
+    let mut h = super::messages::book_club(&fake);
+    super::type_into(&mut h, "Message Book club", "Great ");
+    h.get_by_label("Emoji").click();
+    h.run();
+    super::type_into(&mut h, "Search emoji", "thumbs up");
+    h.get_by_label("thumbs up").click();
+    h.run();
+    assert!(h.query_by_label("Search emoji").is_none(), "the picker closes");
+    h.get_by_label("SEND").click();
+    h.run();
+    assert_eq!(sent_texts(&fake), ["text Great 👍"]);
+    // Recently used, at the top of the picker next time.
+    h.get_by_label("Emoji").click();
+    h.run();
+    h.get_by_label("RECENTLY USED");
+}
+
+#[test]
+fn a_shortcode_becomes_its_emoji_as_it_is_finished() {
+    use egui_kittest::kittest::Queryable;
+    let fake = super::Fake::default();
+    let mut h = super::messages::book_club(&fake);
+    super::type_into(&mut h, "Message Book club", "hi :smi");
+    // Suggestions while it is typed.
+    h.get_by_label("Insert 😄 :smile:");
+    super::type_into(&mut h, "Message Book club", "le: all");
+    h.get_by_label("SEND").click();
+    h.run();
+    assert_eq!(sent_texts(&fake), ["text hi 😄 all"]);
+}
+
+#[test]
+fn a_reaction_can_be_any_emoji_from_the_picker() {
+    use egui_kittest::kittest::Queryable;
+    let fake = super::Fake::default();
+    let mut h = super::messages::book_club(&fake);
+    h.get_by_label("Message actions: Lars Holm, Next meeting on Thursday?").click();
+    h.run();
+    h.get_by_label("More reactions…").click();
+    h.run();
+    super::type_into(&mut h, "Search emoji", "party popper");
+    h.get_by_label("party popper").click();
+    h.run();
+    assert_eq!(sent_texts(&fake), ["react 🎉"]);
+    // Now first in the quick row.
+    h.get_by_label("Message actions: Lars Holm, Next meeting on Thursday?").click();
+    h.run();
+    h.get_by_label("React with 🎉");
+}

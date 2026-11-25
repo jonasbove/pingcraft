@@ -65,6 +65,8 @@ pub enum Act {
     /// Tick or untick while selecting.
     Toggle(MessageId),
     Details(MessageId),
+    /// Choose a reaction in the emoji picker.
+    ChooseReaction(MessageId),
 }
 
 /// The most names a reaction's accessible name lists before "and N more".
@@ -219,13 +221,14 @@ fn more(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out, act: &mut Op
     });
 }
 
-/// The message's menu: quick reactions, then what the user may do with it.
+/// The message's menu: quick reactions (recently used first) and the picker, then what the user may do with it.
 fn menu(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out) -> Option<Act> {
     ui.set_min_width(220.0);
     let mut act = None;
     if message.can.react {
         ui.horizontal(|ui| {
-            for key in QUICK_REACTIONS {
+            for key in crate::picker::quick_reactions(ui.ctx()) {
+                let key = key.as_str();
                 let shown = shown_key(key);
                 let mut chip = egui::Button::new(emoji::text(&drawn_key(key), 18.0, Color32::PLACEHOLDER)).frame(false);
                 if message.my_reaction(key) {
@@ -234,11 +237,15 @@ fn menu(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out) -> Option<Ac
                 let response = ui.add(chip);
                 response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, fmt(tl!("React with {emoji}"), &[("emoji", &shown)])));
                 if response.clicked() {
+                    crate::picker::remember(ui.ctx(), key);
                     out.push(Command::React { chat: cx.chat.clone(), message: message.id.clone(), key: key.to_owned() });
                     ui.close();
                 }
             }
         });
+        if ui.button(tl!("More reactions…")).clicked() {
+            act = Some(Act::ChooseReaction(message.id.clone()));
+        }
         ui.separator();
     }
     let item = |ui: &mut Ui, label: &str, enabled: bool| enabled && ui.button(label).clicked();

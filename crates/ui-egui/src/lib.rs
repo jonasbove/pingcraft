@@ -11,6 +11,7 @@ mod emoji;
 pub mod i18n;
 mod message;
 mod notify;
+mod picker;
 mod state;
 mod theme;
 mod time;

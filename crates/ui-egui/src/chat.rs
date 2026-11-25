@@ -141,6 +141,9 @@ pub fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, out: &mu
     if open.details.is_some() {
         details_sheet(ui.ctx(), open, chat);
     }
+    if open.reacting.is_some() {
+        reaction_picker(ui.ctx(), open, out);
+    }
     false
 }
 
@@ -264,6 +267,7 @@ fn apply(open: &mut OpenChat, act: Act, out: &mut Out) {
             out.push(Command::Details { chat: open.id.clone(), message: id.clone() });
             open.details = Some((id, None));
         }
+        Act::ChooseReaction(id) => open.reacting = Some(id),
     }
 }
 
@@ -437,9 +441,16 @@ fn composer(ui: &mut Ui, open: &mut OpenChat, name: &str, chat: Option<&Chat>, o
                 ui.label(emoji::text(&line, 12.5, t.muted));
             });
         }
+        let edit_id = egui::Id::unique(("pingcraft-composer", &open.id.0));
+        shortcode_suggestions(ui, open, edit_id);
         egui::Frame::new().inner_margin(Margin::symmetric(24, 20)).show(ui, |ui| {
             ui.horizontal(|ui| {
                 let label = fmt(tl!("Message {chat}"), &[("chat", name)]);
+                if let Some(e) = emoji_button(ui, edit_id) {
+                    crate::picker::remember(ui.ctx(), &e);
+                    let at = cursor(ui.ctx(), edit_id).unwrap_or_else(|| open.draft.chars().count());
+                    put(ui.ctx(), edit_id, &mut open.draft, (at, at), &e);
+                }
                 let width = ui.available_width() - 100.0;
                 // Emoji in the draft are laid out like those in messages, in colour.
                 let mut layouter = |ui: &Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
@@ -448,14 +459,23 @@ fn composer(ui: &mut Ui, open: &mut OpenChat, name: &str, chat: Option<&Chat>, o
                     job.wrap.max_width = wrap_width;
                     ui.fonts_mut(|f| f.layout_job(job))
                 };
-                let edit = egui::TextEdit::singleline(&mut open.draft)
+                let output = egui::TextEdit::singleline(&mut open.draft)
+                    .id(edit_id)
                     .hint_text(&label)
                     .desired_width(width)
                     .margin(Margin::symmetric(10, 8))
-                    .layouter(&mut layouter);
-                let response = ui.add(edit);
+                    .layouter(&mut layouter)
+                    .show(ui);
+                let response = output.response.response;
                 response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, &label));
                 if response.changed() {
+                    // A finished `:name:` becomes its emoji.
+                    if let Some(at) = output.cursor_range.map(|r| r.primary.index.0)
+                        && let Some((text, at)) = crate::picker::complete_shortcode(&open.draft, at)
+                    {
+                        open.draft = text;
+                        set_cursor(ui.ctx(), edit_id, at);
+                    }
                     tell_typing(open, ui.input(|i| i.time), out);
                 }
                 if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
@@ -488,6 +508,96 @@ fn composer(ui: &mut Ui, open: &mut OpenChat, name: &str, chat: Option<&Chat>, o
     if let Some(c) = chat_kept.filter(|c| c.draft.is_some()) {
         out.push(Command::SaveDraft { chat: c.id.clone(), text: String::new() });
     }
+}
+
+/// The emoji picker for a reaction, over the chat. Escape or a click outside closes it.
+fn reaction_picker(ctx: &egui::Context, open: &mut OpenChat, out: &mut Out) {
+    let Some(id) = open.reacting.clone() else { return };
+    let t = Tokens::get(ctx);
+    let frame = egui::Frame::new().fill(t.bg).stroke(Stroke::new(1.0, t.line_strong)).inner_margin(Margin::same(16));
+    let modal = egui::Modal::new(egui::Id::unique("pingcraft-reaction-picker")).frame(frame).backdrop_color(t.scrim).show(ctx, |ui| {
+        hud(ui, tl!("React"), t.muted);
+        crate::picker::picker(ui, egui::Id::unique("pingcraft-reaction-picker").with("picker"))
+    });
+    if let Some(key) = modal.inner {
+        crate::picker::remember(ctx, &key);
+        out.push(Command::React { chat: open.id.clone(), message: id, key });
+        open.reacting = None;
+    } else if modal.should_close() {
+        open.reacting = None;
+    }
+}
+
+/// The composer's emoji button and its picker. Returns the emoji chosen.
+fn emoji_button(ui: &mut Ui, edit_id: egui::Id) -> Option<String> {
+    let t = Tokens::get(ui.ctx());
+    let pick = ui.add(
+        egui::Button::new(emoji::text("🙂", 16.0, Color32::PLACEHOLDER))
+            .stroke(Stroke::new(1.0, t.line_strong))
+            .corner_radius(egui::CornerRadius::ZERO)
+            .min_size(Vec2::splat(34.0)),
+    );
+    pick.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, tl!("Emoji")));
+    let mut chosen = None;
+    egui::Popup::menu(&pick).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
+        chosen = crate::picker::picker(ui, edit_id.with("picker"));
+        if chosen.is_some() {
+            ui.close();
+        }
+    });
+    chosen
+}
+
+/// Where the composer's text cursor is (a char index), if it has one.
+fn cursor(ctx: &egui::Context, edit_id: egui::Id) -> Option<usize> {
+    egui::text_edit::TextEditState::load(ctx, edit_id).and_then(|s| s.cursor.char_range()).map(|r| r.primary.index.0)
+}
+
+/// Puts the composer's text cursor at a char index and focuses it.
+fn set_cursor(ctx: &egui::Context, edit_id: egui::Id, at: usize) {
+    let mut state = egui::text_edit::TextEditState::load(ctx, edit_id).unwrap_or_default();
+    state.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(at))));
+    state.store(ctx, edit_id);
+    ctx.memory_mut(|m| m.request_focus(edit_id));
+}
+
+/// Replaces the chars `from..to` of the draft with `text`, and puts the cursor after it.
+fn put(ctx: &egui::Context, edit_id: egui::Id, draft: &mut String, (from, to): (usize, usize), text: &str) {
+    let chars: Vec<char> = draft.chars().collect();
+    let (from, to) = (from.min(chars.len()), to.min(chars.len()));
+    let mut out: String = chars[..from].iter().collect();
+    out.push_str(text);
+    let at = out.chars().count();
+    out.extend(&chars[to.max(from)..]);
+    *draft = out;
+    set_cursor(ctx, edit_id, at);
+}
+
+/// While a `:name` is being typed, the shortcodes it may become, over the composer.
+fn shortcode_suggestions(ui: &mut Ui, open: &mut OpenChat, edit_id: egui::Id) {
+    let Some(at) = cursor(ui.ctx(), edit_id) else { return };
+    let Some((colon, word)) = crate::picker::partial_shortcode(&open.draft, at) else { return };
+    let found = crate::picker::suggestions(&word);
+    if found.is_empty() {
+        return;
+    }
+    let t = Tokens::get(ui.ctx());
+    egui::Frame::new().inner_margin(Margin { left: 24, right: 24, top: 6, bottom: 0 }).show(ui, |ui| {
+        ui.horizontal_wrapped(|ui| {
+            for (code, e) in found {
+                let chip = egui::Button::new(emoji::text(&format!("{e} :{code}:"), 12.5, t.ink))
+                    .stroke(t.hairline())
+                    .corner_radius(egui::CornerRadius::ZERO);
+                let response = ui.add(chip);
+                let label = fmt(tl!("Insert {emoji} :{code}:"), &[("emoji", e), ("code", code)]);
+                response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
+                if response.clicked() {
+                    crate::picker::remember(ui.ctx(), e);
+                    put(ui.ctx(), edit_id, &mut open.draft, (colon, at), e);
+                }
+            }
+        });
+    });
 }
 
 /// How often the chat is told again that the user is still typing (servers drop it after about 30 seconds).

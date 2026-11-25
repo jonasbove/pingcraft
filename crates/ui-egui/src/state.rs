@@ -177,6 +177,8 @@ pub struct OpenChat {
     pub at_bottom: bool,
     /// JUMP TO LATEST was clicked: scroll to the newest message.
     pub to_bottom: bool,
+    /// The message a reaction is being chosen for in the emoji picker.
+    pub reacting: Option<MessageId>,
 }
 
 /// Forwarding messages from the open chat: which ones, and where to.
@@ -208,6 +210,7 @@ impl OpenChat {
             typing_told: None,
             at_bottom: true,
             to_bottom: false,
+            reacting: None,
         }
     }
 
