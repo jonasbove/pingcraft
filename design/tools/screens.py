@@ -630,8 +630,10 @@ M3 = [("connect-network", connect_network), ("connect-risk", connect_risk)]
 
 
 def build(d, only=None):
+    from messages import FRAMES as MESSAGES  # it builds on this module's helpers
+
     out = []
-    for page, items in (("M2 · Client", M2), ("M3 · Preview", M3)):
+    for page, items in (("M2 · Client", M2), ("M3 · Preview", M3), ("Messages · Draft", MESSAGES)):
         d.page(page)
         for i, (name, fn) in enumerate(items):
             if only and name not in only:

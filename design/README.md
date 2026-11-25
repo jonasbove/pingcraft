@@ -24,6 +24,7 @@ copies in `exports/2x/`.
 | Components | the library below; `exports/_components.png` |
 | **M2 · Client** (1200×760 window) | `sign-in`, `recovery-key`, `inbox`, `inbox-light`, `inbox-networks`, `inbox-empty`, `chat-states`, `verify-device`, `unlock` |
 | **M3 · Preview** (1200×760 window) | `connect-network`, `connect-risk` (both carry the "Preview · M3" tag) |
+| **Messages · Draft** (1200×760 window) | `chat-actions`, `chat-own-menu`, `delete-message`, `chat-reply`, `chat-edit`, `chat-select`, `message-details`, `forward`, `chat-menu` (all carry the "Draft · for review" tag) |
 
 `inbox.png` is the main screen.
 
@@ -86,6 +87,47 @@ copies in `exports/2x/`.
   where the messages are (the bridge on your server can read them). Then the "I understand… and I want to connect it
   anyway" checkbox, CANCEL and CONNECT WHATSAPP.
 
+## Messages and chats (draft for review)
+
+PLAN.md's "Messages and chats": what you can do with a message and with a chat. **Draft · for review**: built in
+the existing language for the maintainer to look at, not approved. `tools/messages.py` builds them.
+
+- **chat-actions:** a hovered message is sunken, with a bar on its top right: the quick reactions, REACT (more
+  emoji, later), REPLY and "…". "…" opens the message's menu: Reply, React, Copy text, Forward, Pin in this chat,
+  Select, Details, each with its key. Also shown: reactions under a message (a chip per emoji with its count, in
+  the accent when you are one of those who reacted), a reply (a one-line quote of the original under a 2 px rule,
+  above the text; clicking it goes to the original), your own message saying "edited" after its time, a deleted
+  message's line ("Message deleted", who and when), and the **pinned bar** under the chat header (the pinned
+  message in one line, "Pinned 1 of 2", ALL PINNED).
+- **chat-own-menu:** your own message's menu adds Edit and Delete (Delete in `bad`).
+- **delete-message:** the confirmation: the message quoted, that it is deleted for everyone and leaves a line, and
+  that whether it disappears on the network depends on the network.
+- **chat-reply:** replying: a bar over the composer ("Replying to …", the original in one line, a close button).
+  Also: "Lars Holm is typing…" under the last message, JUMP TO LATEST over the timeline when it is scrolled up,
+  and a draft kept in another chat ("Draft:" in accent_ink in its inbox row).
+- **chat-edit:** editing your message: it is sunken and says "Editing", the composer holds its text, SEND says
+  SAVE, and the bar says whether the edit reaches the network depends on the bridge.
+- **chat-select:** selecting messages: a checkbox on each, the selected ones sunken, and a bar instead of the
+  composer: "2 selected", COPY, FORWARD, DELETE (off, with why, when the selection holds other people's messages)
+  and CANCEL.
+- **message-details:** a sheet: the message, then when it was sent, the network and account it came through,
+  encryption in the same words as the chat header, who has read it, whether it was edited, and the edit history.
+- **forward:** a sheet: search, the chats with a checkbox and their network tag, and that forwarded messages go
+  as new messages from you (the bridges don't carry "forwarded").
+- **chat-menu:** the chat header's "…": pin to (or unpin from) the top of the inbox, mark as unread, and mute for
+  an hour, a day, a week or until turned back on, with a note that a muted chat still counts as unread. The inbox
+  shows pinned chats first with a pin before the tag, a muted chat with a struck bell and a quiet (unfilled)
+  count, and a chat marked unread with a plain accent mark where the count goes.
+
+**Emoji are placeholders.** The headless build has no emoji font (and PingCraft bundles none yet: fonts need the
+maintainer's approval), so the quick reactions are drawn as "+1", "♥", "ha", "oh", "sad", "thx". The app shows
+a small fixed set of emoji that egui's built-in emoji font draws. A picker and `:name:` shortcuts come later.
+
+New components: **Reaction chip** (Off / On), **Reply quote** (2 px line_strong rule on the left, sender in
+accent_ink Small 12, the text in one line), **Menu item** (Default / Hover / Danger: icon, Body 13 label, Mono 12
+key), and the icons reply, forward, smile, more, pin, bell-off, edit, trash, select, arrow-down, chevron-right and
+unread.
+
 ## Colours (`Theme` variables; dark / light)
 
 | token | dark | light | note |
@@ -115,12 +157,12 @@ Contrast is WCAG 2.x, computed from the hex values (alpha tokens composited on b
 
 ## Components (page "Components")
 
-Adapted from CraftCloud: Icon/* (16 simple 14 px stroke icons; nine of the paths are CraftCloud's, seven are new), Button (Primary / Secondary /
+Adapted from CraftCloud: Icon/* (28 simple 14 px stroke icons; nine of the paths are CraftCloud's, nineteen are new), Button (Primary / Secondary /
 Danger × Default / Hover / Focus / Disabled), Icon button, Button/More, Status badge (Good / Warn / Bad / Accent /
 Muted), Cell (Off / On / Hover, with count), Nav cell, Input (Default / Focus), Search field, Header/Desktop,
 Footer/Desktop. New for PingCraft: Brand/Mark, Brand/Wordmark, Brand/Lockup, Network tag, Unread count, Preview tag,
 Checkbox (Off / On), Avatar/36, Avatar/28, Chat row (Read / Unread / Selected), Message/Theirs, Message/Mine, Day
-divider and Symbol tile.
+divider, Symbol tile, Reaction chip, Reply quote and Menu item.
 
 | Component | Spec |
 |---|---|
@@ -160,6 +202,7 @@ skips the 2x copies. A full run takes a few seconds.
 - `tools/lib.py`: tokens (`THEME`), text styles, the `Doc` helpers and layout helpers.
 - `tools/components.py`: the component library.
 - `tools/screens.py`: the frames and the sample data.
+- `tools/messages.py`: the "Messages and chats" frames (draft for review).
 - `tools/build.py`: builds, saves and exports.
 
 `fc.py`, `lib.py` and parts of `components.py` and `screens.py` are adapted from CraftCloud's `design/tools/` (same

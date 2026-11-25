@@ -38,6 +38,20 @@ ICONS = {
     "search": circle_path(6, 6, 4.5, 24) + " M9.4 9.4 L12.8 12.8",
     "chevron-down": "M3.5 5.5 L7 9 L10.5 5.5",
     "logout": "M5.5 2 L2 2 L2 12 L5.5 12 M6 7 L12.5 7 M9.5 4 L12.5 7 L9.5 10",
+    # Message and chat actions ("Messages and chats", draft for review).
+    "reply": "M5.5 3 L2 6.5 L5.5 10 M2 6.5 L9 6.5 C11 6.5 12.5 8 12.5 10.5",
+    "forward": "M8.5 3 L12 6.5 L8.5 10 M12 6.5 L5 6.5 C3 6.5 1.5 8 1.5 10.5",
+    "smile": circle_path(7, 7, 5.5, 28) + " M4.8 8.4 C5.6 9.8 8.4 9.8 9.2 8.4 M5.2 5.2 L5.2 6 M8.8 5.2 L8.8 6",
+    "more": "M2.3 7 L3.7 7 M6.3 7 L7.7 7 M10.3 7 L11.7 7",
+    "pin": "M5 1.5 L9 1.5 M5.8 1.5 L5.8 6 L3.5 8.5 L10.5 8.5 L8.2 6 L8.2 1.5 M7 8.5 L7 12.5",
+    "bell-off": "M3.5 10 L3.5 6.5 C3.5 4.3 5 3 7 3 C9 3 10.5 4.3 10.5 6.5 L10.5 10 L11.5 11 L2.5 11 L3.5 10 "
+                "M6 12.5 L8 12.5 M1.5 1.5 L12.5 12.5",
+    "edit": "M9.5 2 L12 4.5 L5 11.5 L2 12 L2.5 9 Z",
+    "trash": "M2 3.5 L12 3.5 M5.5 3.5 L5.5 1.8 L8.5 1.8 L8.5 3.5 M3.5 3.5 L4 12.5 L10 12.5 L10.5 3.5",
+    "select": "M2 2 L12 2 L12 12 L2 12 Z M4.5 7 L6.5 9 L9.8 5",
+    "arrow-down": "M7 1.5 L7 12 M3 8 L7 12 L11 8",
+    "chevron-right": "M5.5 3.5 L9 7 L5.5 10.5",
+    "unread": circle_path(7, 7, 3, 16),
 }
 BUTTON_KINDS = {"Primary": ("invert_bg", None, "invert_fg"), "Secondary": ("bg", "line_strong", "ink"),
                 "Danger": ("bad", None, "on_bad")}
@@ -66,6 +80,7 @@ class Library:
         self.symbol_tile()
         self.header(W)
         self.footer(W)
+        self.message_actions()
 
     # --- icons ---------------------------------------------------------------------------------
     def icons(self):
@@ -384,6 +399,50 @@ class Library:
         rt = d.text(f, "4 accounts · synced just now", "Small/12", "muted", name="Right")
         d.prop(f, lt, "Left")
         d.prop(f, rt, "Right")
+
+
+    # --- message and chat actions (draft for review) -------------------------------------------
+    def message_actions(self):
+        """Reaction chip, reply quote, menu item: the parts of the "Messages and chats" frames."""
+        d = self.d
+        y = self.row(40)
+        # Reaction chip: the emoji and how many reacted. On = you are one of them (accent_ink outline over the
+        # accent wash); Off = a hairline.
+        ids = []
+        for i, state in enumerate(("Off", "On")):
+            c = d.comp(f"State={state}", i * 100, y, 40, 24, fill="accent_tint" if state == "On" else "bg",
+                       stroke="accent_ink" if state == "On" else "line_strong", layout="horizontal",
+                       padding=[0, 8, 0, 8], gap=6, crossAlign="center", sizingH="hug", sizingV="fixed")
+            e = d.text(c, "♥", "Body/13", "ink_strong", name="Emoji")
+            n = d.text(c, "2", "Mono/12", "accent_ink" if state == "On" else "muted", name="Count")
+            d.prop(c, e, "Emoji")
+            d.prop(c, n, "Count")
+            ids.append(c)
+        d.variants(ids, "Reaction chip", 0, y)
+        # Reply quote: the replied-to message in one line under a 2 px line_strong rule, sender first.
+        c = d.comp("Reply quote", 260, y, 420, 10, fill=None, layout="vertical", gap=1, padding=[2, 0, 2, 10],
+                   sizingV="hug", clip=False)
+        side_stroke(d, c, "line_strong", left=2)
+        s = d.text(c, "Ana Ortiz", "Small/12", "accent_ink", name="Sender")
+        t = d.text(c, "Has everyone got the book?", "Small/12.5", "muted", name="Text", w=400, lines=1)
+        d.set(t, sizingH="fill")
+        d.prop(c, s, "Sender")
+        d.prop(c, t, "Text")
+        # Menu item: icon, label, shortcut. Hover = sunken; Danger = the label and icon in bad.
+        ids = []
+        for i, state in enumerate(("Default", "Hover", "Danger")):
+            ink = "bad" if state == "Danger" else "ink"
+            c = d.comp(f"State={state}", 720 + i * 250, y, 220, 32, fill="sunken" if state == "Hover" else None,
+                       layout="horizontal", padding=[0, 12, 0, 12], gap=10, crossAlign="center", sizingV="fixed")
+            ic = d.inst("Icon/reply", c, name="Icon")
+            d.set(d.sub(ic, "glyph"), stroke="bad" if state == "Danger" else "muted")
+            lb = d.text(c, "Reply", "Body/13", ink, name="Label")
+            spacer(d, c)
+            sc = d.text(c, "R", "Mono/12", "muted", name="Shortcut")
+            d.prop(c, lb, "Label")
+            d.prop(c, sc, "Shortcut")
+            ids.append(c)
+        d.variants(ids, "Menu item", 720, y)
 
 
 __all__ = ["Library", "ICONS", "BUTTON_KINDS", "circle_path", "box_stroke"]
