@@ -5,6 +5,7 @@ use egui::{Align, Color32, Layout, Margin, RichText, ScrollArea, Sense, Stroke, 
 use pingcraft_core::app::Command;
 use pingcraft_core::{Chat, Mute, Network};
 
+use crate::emoji;
 use crate::i18n::fmt;
 use crate::message::{Act, Cx};
 use crate::state::{Forwarding, OpenChat};
@@ -29,7 +30,7 @@ pub fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, out: &mu
                 let tag_h = ui.fonts_mut(|f| f.row_height(&egui::FontId::monospace(10.0))) + 2.0;
                 let height = if chat.is_some() { name_h + ui.spacing().item_spacing.y + tag_h } else { name_h };
                 ui.add_space(((ui.available_height() - height) / 2.0).max(0.0));
-                ui.label(RichText::new(&name).size(16.0).strong().color(t.ink_strong));
+                ui.label(emoji::text(&name, 16.0, t.ink_strong));
                 if let Some(chat) = chat {
                     network_tag(ui, &chat.network);
                 }
@@ -220,9 +221,7 @@ fn pinned_bar(ui: &mut Ui, open: &mut OpenChat, out: &mut Out) {
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                     let line = format!("{sender}: {text}");
                     let shown = ui.add(
-                        egui::Label::new(RichText::new(format!("{}   {line}", count.to_uppercase())).size(12.5).color(t.ink))
-                            .truncate()
-                            .sense(Sense::click()),
+                        egui::Label::new(emoji::text(&format!("{}   {line}", count.to_uppercase()), 12.5, t.ink)).truncate().sense(Sense::click()),
                     );
                     let label = format!("{count}: {line}");
                     shown.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
@@ -400,7 +399,7 @@ fn composer(ui: &mut Ui, open: &mut OpenChat, name: &str, chat: Option<&Chat>, o
                 ui.horizontal(|ui| {
                     ui.vertical(|ui| {
                         ui.label(RichText::new(title).monospace().size(11.0).color(t.accent_ink));
-                        ui.add(egui::Label::new(RichText::new(line).size(12.5).color(t.muted)).truncate());
+                        ui.add(egui::Label::new(emoji::text(line, 12.5, t.muted)).truncate());
                     });
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         let x = ui.add(
@@ -435,14 +434,25 @@ fn composer(ui: &mut Ui, open: &mut OpenChat, name: &str, chat: Option<&Chat>, o
         }
         if let Some(line) = typing_line(&open.typing) {
             egui::Frame::new().inner_margin(Margin { left: 24, right: 24, top: 6, bottom: 0 }).show(ui, |ui| {
-                ui.label(RichText::new(line).size(12.5).color(t.muted));
+                ui.label(emoji::text(&line, 12.5, t.muted));
             });
         }
         egui::Frame::new().inner_margin(Margin::symmetric(24, 20)).show(ui, |ui| {
             ui.horizontal(|ui| {
                 let label = fmt(tl!("Message {chat}"), &[("chat", name)]);
                 let width = ui.available_width() - 100.0;
-                let edit = egui::TextEdit::singleline(&mut open.draft).hint_text(&label).desired_width(width).margin(Margin::symmetric(10, 8));
+                // Emoji in the draft are laid out like those in messages, in colour.
+                let mut layouter = |ui: &Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
+                    let format = egui::TextFormat::simple(egui::TextStyle::Body.resolve(ui.style()), ui.visuals().text_color());
+                    let mut job = emoji::job(text.as_str(), format);
+                    job.wrap.max_width = wrap_width;
+                    ui.fonts_mut(|f| f.layout_job(job))
+                };
+                let edit = egui::TextEdit::singleline(&mut open.draft)
+                    .hint_text(&label)
+                    .desired_width(width)
+                    .margin(Margin::symmetric(10, 8))
+                    .layouter(&mut layouter);
                 let response = ui.add(edit);
                 response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, &label));
                 if response.changed() {

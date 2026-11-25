@@ -5,6 +5,8 @@
 //! - `bump-images [--check]`: moves the digests pinned in `deploy/compose.yaml` to what each pinned tag points at now.
 //! - `version set <version>`: sets the workspace version (Cargo.toml and the workspace's own entries in Cargo.lock),
 //!   as craft-common-actions' release workflow asks every Craft app to.
+//! - `fonts`: fetches the pinned colour emoji font into the git-ignored fonts folder and checks its hash
+//!   (`crates/ui-egui/font_pin.rs`). Builds never download it themselves.
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable))]
 
 use std::collections::BTreeMap;
@@ -20,10 +22,11 @@ fn main() -> ExitCode {
     let result = match args.first().map(String::as_str) {
         Some("ci") => ci(),
         Some("layers") => layers(),
+        Some("fonts") => fonts().map(|_| ()),
         Some("bump-images") => bump_images(args.iter().any(|a| a == "--check")),
         Some("version") if args.get(1).map(String::as_str) == Some("set") && args.len() == 3 => set_version(&args[2]),
         _ => {
-            eprintln!("usage: cargo xtask <ci | layers | bump-images [--check] | version set <version>>");
+            eprintln!("usage: cargo xtask <ci | fonts | layers | bump-images [--check] | version set <version>>");
             return ExitCode::from(2);
         }
     };
@@ -41,8 +44,18 @@ fn root() -> PathBuf {
 }
 
 fn run(program: &str, args: &[&str]) -> Result<()> {
+    run_with(program, args, &[])
+}
+
+/// [`run`] with these environment variables set.
+fn run_with(program: &str, args: &[&str], env: &[(&str, String)]) -> Result<()> {
     println!("$ {program} {}", args.join(" "));
-    let status = Command::new(program).args(args).current_dir(root()).status().map_err(|e| format!("could not run {program}: {e}"))?;
+    let status = Command::new(program)
+        .args(args)
+        .envs(env.iter().map(|(k, v)| (*k, v.as_str())))
+        .current_dir(root())
+        .status()
+        .map_err(|e| format!("could not run {program}: {e}"))?;
     if status.success() { Ok(()) } else { Err(format!("{program} {} failed ({status})", args.join(" "))) }
 }
 
@@ -59,12 +72,17 @@ fn ci() -> Result<()> {
     }
     wasm_args.extend(["--", "-D", "warnings"]);
 
+    // The colour emoji font is fetched first, and the builds below fail without it, so the tests that need it run
+    // instead of being skipped.
+    let font_dir = fonts()?.to_string_lossy().into_owned();
+    let required = vec![("CRAFT_FONTS_REQUIRED", "1".to_owned()), ("CRAFT_FONTS_DIR", font_dir)];
+    let (for_clippy, for_test, for_wasm) = (required.clone(), required.clone(), required);
     let steps: Vec<(&str, Step)> = vec![
         ("fmt", Box::new(|| run("cargo", &["fmt", "--all", "--check"]))),
-        ("clippy", Box::new(|| run("cargo", &["clippy", "--locked", "--workspace", "--all-targets", "--", "-D", "warnings"]))),
-        ("test", Box::new(|| run("cargo", &["test", "--locked", "--workspace"]))),
+        ("clippy", Box::new(move || run_with("cargo", &["clippy", "--locked", "--workspace", "--all-targets", "--", "-D", "warnings"], &for_clippy))),
+        ("test", Box::new(move || run_with("cargo", &["test", "--locked", "--workspace"], &for_test))),
         ("layers", Box::new(layers)),
-        ("wasm", Box::new(move || run("cargo", &wasm_args))),
+        ("wasm", Box::new(move || run_with("cargo", &wasm_args, &for_wasm))),
         // Licences, advisories and sources (deny.toml). CI may also run it as its own job.
         ("deny", Box::new(|| run("cargo", &["deny", "--locked", "check"]))),
     ];
@@ -82,6 +100,80 @@ fn ci() -> Result<()> {
     }
     println!("\n{}", summary.join("\n"));
     if failed.is_empty() { Ok(()) } else { Err(format!("failed: {}", failed.join(", "))) }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// fonts
+
+#[allow(dead_code)]
+mod pin {
+    include!("../../crates/ui-egui/font_pin.rs");
+}
+
+/// The fonts folder: `CRAFT_FONTS_DIR`, or the git-ignored one in the workspace.
+fn fonts_dir() -> PathBuf {
+    std::env::var_os("CRAFT_FONTS_DIR").map(PathBuf::from).unwrap_or_else(|| root().join(pin::DEFAULT_FONTS_DIR))
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::Digest;
+    format!("{:x}", sha2::Sha256::digest(bytes))
+}
+
+/// Makes sure the pinned colour emoji font is in the fonts folder, fetching it from its pinned address when it is
+/// missing. A file there with another hash is an error, never replaced, since someone put it there. Returns the
+/// folder.
+fn fonts() -> Result<PathBuf> {
+    let dir = fonts_dir();
+    let path = dir.join(pin::EMOJI_FONT_PATH);
+    let shown = path.display();
+    if path.exists() {
+        let bytes = std::fs::read(&path).map_err(|e| format!("{shown}: {e}"))?;
+        let hash = sha256_hex(&bytes);
+        if hash != pin::EMOJI_FONT_SHA256 {
+            return Err(format!(
+                "{shown} is not the pinned font (SHA-256 {hash}, expected {}). Delete it and run cargo xtask fonts.",
+                pin::EMOJI_FONT_SHA256
+            ));
+        }
+        println!("fonts: {shown} is the pinned Noto Color Emoji");
+        return Ok(dir);
+    }
+    let parent = path.parent().ok_or_else(|| format!("{shown}: no folder"))?;
+    std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+    let part = path.with_extension("ttf.part");
+    let part_arg = part.to_string_lossy().into_owned();
+    let max = (pin::EMOJI_FONT_BYTES + 1).to_string();
+    println!("fonts: fetching {}", pin::EMOJI_FONT_URL);
+    run(
+        "curl",
+        &[
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--location",
+            "--proto",
+            "=https",
+            "--max-filesize",
+            &max,
+            "--output",
+            &part_arg,
+            pin::EMOJI_FONT_URL,
+        ],
+    )?;
+    let bytes = std::fs::read(&part).map_err(|e| format!("{}: {e}", part.display()))?;
+    let hash = sha256_hex(&bytes);
+    if hash != pin::EMOJI_FONT_SHA256 {
+        let _ = std::fs::remove_file(&part);
+        return Err(format!(
+            "the font fetched from {} has SHA-256 {hash}, not the pinned {}; nothing was kept",
+            pin::EMOJI_FONT_URL,
+            pin::EMOJI_FONT_SHA256
+        ));
+    }
+    std::fs::rename(&part, &path).map_err(|e| format!("{shown}: {e}"))?;
+    println!("fonts: {shown} fetched and checked");
+    Ok(dir)
 }
 
 // ---------------------------------------------------------------------------------------------------------------

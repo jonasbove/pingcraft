@@ -133,7 +133,7 @@ fn deleting_asks_first() {
     assert!(matches!(&sent[..], [Command::Delete { message, .. }] if message.0 == "2"), "{sent:?}");
 }
 
-/// Every quick reaction has a glyph in the fonts the app ships (egui's own, until an emoji font is approved).
+/// Every quick reaction has a glyph in the fonts the app ships (the colour emoji font, or egui's own without it).
 #[test]
 fn the_quick_reactions_are_drawn_by_the_shipped_fonts() {
     let ctx = egui::Context::default();

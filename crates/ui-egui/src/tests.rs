@@ -321,10 +321,13 @@ fn a_device_without_the_key_can_type_it_or_be_verified() {
 #[test]
 fn verifying_compares_seven_named_symbols() {
     let fake = Fake::default();
-    // egui's bundled emoji face lacks some of the spec's symbols; the app needs a fuller one (see PLAN.md).
+    // Every symbol has a glyph in the colour emoji font. Built without it, egui's monochrome emoji face lacks some
+    // of the spec's symbols, so missing glyphs are allowed only then.
     let app = PingCraftApp::new(Box::new(fake.clone()));
-    let mut h =
-        Harness::builder().with_size(egui::vec2(1200.0, 760.0)).allow_missing_glyphs().build_ui_state(|ui, app: &mut PingCraftApp| app.ui(ui), app);
+    let builder = Harness::builder().with_size(egui::vec2(1200.0, 760.0));
+    #[cfg(not(color_emoji))]
+    let builder = builder.allow_missing_glyphs();
+    let mut h = builder.build_ui_state(|ui, app: &mut PingCraftApp| app.ui(ui), app);
     fake.tell([Event::SignedIn { user: "@ana:example.org".into() }, Event::Inbox(InboxChange::Reset(vec![]))]);
     h.run();
     let names = ["Dog", "Cat", "Lion", "Horse", "Unicorn", "Pig", "Elephant"];
@@ -421,6 +424,7 @@ fn the_chat_header_centres_the_name_and_network_on_the_avatar() {
 
 mod accounts;
 mod chats;
+mod emoji;
 mod messages;
 
 #[test]

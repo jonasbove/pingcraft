@@ -574,11 +574,7 @@ fn chat_row(ui: &mut Ui, chat: &Chat, selected: bool) -> egui::Response {
                     ui.label(RichText::new(PINNED_MARK).size(12.0).color(t.muted));
                 }
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                    let mut name = RichText::new(&chat.name).size(14.0).color(if strong { t.ink_strong } else { t.ink });
-                    if strong {
-                        name = name.strong();
-                    }
-                    ui.add(egui::Label::new(name).truncate());
+                    ui.add(egui::Label::new(crate::emoji::text(&chat.name, 14.0, if strong { t.ink_strong } else { t.ink })).truncate());
                 });
             });
         });
@@ -594,7 +590,7 @@ fn chat_row(ui: &mut Ui, chat: &Chat, selected: bool) -> egui::Response {
                 }
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                     let text = preview.clone().unwrap_or_default();
-                    ui.add(egui::Label::new(RichText::new(text).size(12.5).color(if strong { t.ink } else { t.muted })).truncate());
+                    ui.add(egui::Label::new(crate::emoji::text(&text, 12.5, if strong { t.ink } else { t.muted })).truncate());
                 });
             });
         });
@@ -800,7 +796,7 @@ fn symbol_tiles(ui: &mut Ui, symbols: &[SasSymbol]) {
             egui::Frame::new().fill(t.sunken).stroke(t.hairline()).inner_margin(Margin::symmetric(4, 10)).show(ui, |ui| {
                 ui.set_width(80.0);
                 ui.vertical_centered(|ui| {
-                    ui.label(RichText::new(&s.symbol).size(34.0));
+                    ui.label(crate::emoji::text(&s.symbol, 34.0, egui::Color32::PLACEHOLDER));
                     // The spec's English name; translated through the catalog like any other text.
                     ui.label(RichText::new(tl!(&s.name)).size(12.0).color(t.muted));
                 });

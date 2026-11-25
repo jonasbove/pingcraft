@@ -10,6 +10,8 @@
 #   PINGCRAFT_BUILD_DATE     UTC build date, YYYY-MM-DD (the AppStream release date)
 #   PINGCRAFT_MAINTAINER     the deb/rpm Maintainer field (override for your own builds)
 #   CARGO_TARGET_DIR         cargo's target dir (default: $ROOT/target)
+#   CRAFT_FONTS_REQUIRED     1: the build fails without the colour emoji font, which `cargo xtask fonts` fetches
+#                            here (PINGCRAFT_SKIP_FONTS=1 skips the fetch, for a fonts folder filled another way)
 #
 # And the helpers warn, copy_docs, sha256 and check_sqlite.
 
@@ -43,6 +45,13 @@ export PINGCRAFT_BUILD_SHA
 export PINGCRAFT_BUILD_DATE="${PINGCRAFT_BUILD_DATE:-$(date -u +%Y-%m-%d)}"
 export PINGCRAFT_MAINTAINER="${PINGCRAFT_MAINTAINER:-jonasbove <31095576+jonasbove@users.noreply.github.com>}"
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/target}"
+
+# Packages carry colour emoji: fetch the pinned font (checked against its hash; crates/ui-egui/font_pin.rs) and
+# make the build fail without it, instead of falling back to monochrome emoji.
+export CRAFT_FONTS_REQUIRED=1
+if [[ -z "${PINGCRAFT_SKIP_FONTS:-}" ]]; then
+  (cd "$ROOT" && cargo xtask fonts) || exit 1
+fi
 
 # Emit a GitHub Actions warning (plain stderr outside Actions).
 warn() {

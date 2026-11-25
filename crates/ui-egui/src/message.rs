@@ -5,24 +5,41 @@ use egui::{Align, Color32, Layout, Margin, Rect, RichText, Sense, Stroke, Ui};
 use pingcraft_core::app::Command;
 use pingcraft_core::{ChatId, Message, MessageBody, MessageId, Quote, Reaction, SendState};
 
+use crate::emoji;
 use crate::i18n::fmt;
 use crate::theme::Tokens;
 use crate::tl;
 use crate::view::{Out, preview_text, unsupported};
 use crate::widgets::{Kind, avatar, button, note};
 
-/// The quick reactions in a message's menu: a small fixed set that egui's built-in emoji font draws (no colour emoji
-/// font is bundled yet; PLAN.md). Sent as written, with the variation selector the networks expect.
+/// The quick reactions in a message's menu. Sent as written, with the variation selector the networks expect.
 pub const QUICK_REACTIONS: [&str; 6] = ["👍", "❤\u{fe0f}", "😂", "😮", "😢", "🙏"];
 
-/// A reaction key as drawn: variation selectors dropped (the monochrome font has no glyph for them), and at most a
-/// few characters, since a key can be any text another app sent.
+/// A reaction key in words for accessible names: variation selectors dropped, and at most a few characters, since a
+/// key can be any text another app sent.
 pub fn shown_key(key: &str) -> String {
     let mut shown: String = key.chars().filter(|c| !matches!(c, '\u{fe00}'..='\u{fe0f}')).take(8).collect();
     if key.chars().filter(|c| !matches!(c, '\u{fe00}'..='\u{fe0f}')).count() > 8 {
         shown.push('…');
     }
     shown
+}
+
+/// A reaction key as drawn: as sent (so `❤️` and keycaps stay emoji), cut after a few grapheme clusters and a
+/// bounded number of characters, since a key can be any text another app sent.
+pub fn drawn_key(key: &str) -> String {
+    use unicode_segmentation::UnicodeSegmentation;
+    let mut drawn = String::new();
+    let mut chars = 0;
+    for (i, cluster) in key.graphemes(true).enumerate() {
+        chars += cluster.chars().count();
+        if i == 4 || chars > 32 {
+            drawn.push('…');
+            break;
+        }
+        drawn.push_str(cluster);
+    }
+    drawn
 }
 
 /// What a message needs to know about its chat.
@@ -169,7 +186,7 @@ fn contents(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out, act: &mu
 fn head(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out, act: &mut Option<Act>) {
     let t = Tokens::get(ui.ctx());
     ui.horizontal(|ui| {
-        ui.label(RichText::new(who(message)).size(13.0).strong().color(t.ink_strong));
+        ui.label(emoji::text(&who(message), 13.0, t.ink_strong));
         ui.label(RichText::new(crate::time::clock(message.at)).monospace().size(12.0).color(t.muted));
         if message.edited {
             ui.label(RichText::new(tl!("edited")).monospace().size(12.0).color(t.muted));
@@ -210,7 +227,7 @@ fn menu(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out) -> Option<Ac
         ui.horizontal(|ui| {
             for key in QUICK_REACTIONS {
                 let shown = shown_key(key);
-                let mut chip = egui::Button::new(RichText::new(&shown).size(18.0)).frame(false);
+                let mut chip = egui::Button::new(emoji::text(&drawn_key(key), 18.0, Color32::PLACEHOLDER)).frame(false);
                 if message.my_reaction(key) {
                     chip = chip.selected(true);
                 }
@@ -274,8 +291,8 @@ fn quote_view(ui: &mut Ui, quote: &Quote, reply: &MessageId) -> Option<Act> {
     let sender = if quote.sender.is_empty() { tl!("a message") } else { quote.sender.as_str() };
     let inner = egui::Frame::new().inner_margin(Margin { left: 10, right: 0, top: 2, bottom: 2 }).show(ui, |ui| {
         ui.set_max_width(420.0);
-        ui.label(RichText::new(sender).size(12.0).color(t.accent_ink));
-        ui.add(egui::Label::new(RichText::new(&text).size(12.5).color(t.muted)).truncate());
+        ui.label(emoji::text(sender, 12.0, t.accent_ink));
+        ui.add(egui::Label::new(emoji::text(&text, 12.5, t.muted)).truncate());
     });
     let rect = inner.response.rect;
     ui.painter().vline(rect.left() + 1.0, rect.y_range(), Stroke::new(2.0, t.line_strong));
@@ -306,7 +323,7 @@ fn chip(ui: &mut Ui, reaction: &Reaction, enabled: bool) -> egui::Response {
     let t = Tokens::get(ui.ctx());
     let shown = shown_key(&reaction.key);
     let count = reaction.by.len().max(1);
-    let text = RichText::new(format!("{shown} {count}")).size(13.0).color(if reaction.mine { t.accent_ink } else { t.ink });
+    let text = emoji::text(&format!("{} {count}", drawn_key(&reaction.key)), 13.0, if reaction.mine { t.accent_ink } else { t.ink });
     let stroke = Stroke::new(1.0, if reaction.mine { t.accent_ink } else { t.line_strong });
     let fill = if reaction.mine { t.accent_tint } else { Color32::TRANSPARENT };
     let response = ui.add_enabled(enabled, egui::Button::new(text).fill(fill).stroke(stroke).corner_radius(egui::CornerRadius::ZERO));
@@ -326,7 +343,7 @@ fn chip(ui: &mut Ui, reaction: &Reaction, enabled: bool) -> egui::Response {
 fn body(ui: &mut Ui, body: &MessageBody) -> egui::Response {
     let t = Tokens::get(ui.ctx());
     match body {
-        MessageBody::Text(text) => ui.add(egui::Label::new(RichText::new(text).size(14.0)).wrap()),
+        MessageBody::Text(text) => ui.add(egui::Label::new(emoji::text(text, 14.0, Color32::PLACEHOLDER)).wrap()),
         MessageBody::WaitingForKey => {
             egui::Frame::new()
                 .fill(t.sunken)
@@ -359,7 +376,7 @@ pub fn delete_sheet(ctx: &egui::Context, messages: &[Message], cx: &Cx<'_>, chat
         (&title, &chat_name.to_uppercase()),
         |ui| {
             for message in messages.iter().take(5) {
-                ui.label(RichText::new(snippet(&message.body)).size(13.0));
+                ui.label(emoji::text(&snippet(&message.body), 13.0, Color32::PLACEHOLDER));
             }
             ui.label(RichText::new(tl!("They are deleted for everyone in this chat, and a “Message deleted” line stays in their place.")).size(14.0));
             note(ui, tl!("PingCraft asks the network's bridge to delete them there too. Whether they disappear there depends on the network."));

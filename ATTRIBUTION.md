@@ -22,5 +22,14 @@ drawing's licence must be confirmed before any of them is published.
 
 ## Fonts
 
-No font files are in this repository. The design is built with Inter, Archivo and Geist Mono (SIL OFL 1.1) from
+No font files are in this repository (house rule 3).
+
+| Font | Source | Licence |
+|---|---|---|
+| Noto Color Emoji, COLRv1 build, v2.057 (`Noto-COLRv1.ttf`, unmodified). Copyright 2022 Google Inc. | [googlefonts/noto-emoji at `99701e07`](https://github.com/googlefonts/noto-emoji/tree/99701e07d3d1fe1bdbcdb14964547f0fd592966f/2D/fonts), SHA-256 `b8e25ea68db82f9e4d0aee921f4420be2be39887bd5c893a2ad98710531f9d0c`. Fetched by `cargo xtask fonts` into the git-ignored `.cache/craft-fonts/` and embedded in the desktop app (`crates/ui-egui/font_pin.rs`, `build.rs`); the web build does not carry it. | OFL-1.1; the licence text is in `NOTICE`, which every package carries |
+
+egui's own fonts (Ubuntu Light, Hack, Noto Emoji, the emoji icon font; OFL-1.1, Ubuntu-font-1.0) come with the
+`epaint_default_fonts` crate.
+
+The design is built with Inter, Archivo and Geist Mono (SIL OFL 1.1) from
 `storytold/craft-fonts`, passed to `design/tools/build.py` with `--fonts`.

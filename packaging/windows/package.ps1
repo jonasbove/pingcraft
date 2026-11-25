@@ -97,6 +97,9 @@ function Build-Sqlite {
 if (-not $SkipBuild) {
   $env:SQLITE3_LIB_DIR = Build-Sqlite
   $env:SQLITE3_STATIC = '1'
+  # Packages carry colour emoji: fetch the pinned font (checked against its hash) and fail the build without it.
+  $env:CRAFT_FONTS_REQUIRED = '1'
+  Invoke-Native 'cargo xtask fonts' { cargo xtask fonts }
   Invoke-Native "cargo build ($Target)" { cargo build --release --locked -p $Pkg --target $Target }
 }
 

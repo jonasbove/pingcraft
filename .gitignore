@@ -11,3 +11,5 @@ deploy/backups/
 .claude/worktrees/
 # Release builds (packaging/)
 dist/
+# Fonts fetched by `cargo xtask fonts` (crates/ui-egui/font_pin.rs); never committed (house rule 3)
+.cache/

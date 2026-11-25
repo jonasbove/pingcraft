@@ -1,0 +1,79 @@
+//! Colour emoji: what the fonts draw, the picker and `:name:` shortcodes.
+
+use egui::epaint::text::Glyph;
+
+/// The glyphs `text` is drawn with in the app's fonts, laid out as the app lays it out (`colour_family`) or as plain
+/// text, and the font atlas they were drawn into.
+fn glyphs(text: &str, colour_family: bool) -> (Vec<Glyph>, egui::ColorImage) {
+    let ctx = egui::Context::default();
+    crate::theme::install(&ctx);
+    let mut out = ctx.run_ui(egui::RawInput::default(), |_| {});
+    out.textures_delta.clear();
+    let job = if colour_family {
+        crate::emoji::text(text, 28.0, egui::Color32::WHITE)
+    } else {
+        egui::text::LayoutJob::simple_singleline(text.to_owned(), egui::FontId::proportional(28.0), egui::Color32::WHITE)
+    };
+    let galley = ctx.fonts_mut(|f| f.layout_job(job));
+    let glyphs = galley.rows.iter().flat_map(|r| r.glyphs.iter().cloned()).collect();
+    (glyphs, ctx.fonts(|f| f.image()))
+}
+
+/// How many pixels of a glyph in the atlas have a colour of their own (not a shade of grey).
+fn coloured_pixels(glyph: &Glyph, atlas: &egui::ColorImage) -> usize {
+    let [x0, y0] = glyph.uv_rect.min.map(usize::from);
+    let [x1, y1] = glyph.uv_rect.max.map(usize::from);
+    (y0..y1)
+        .flat_map(|y| (x0..x1).map(move |x| (x, y)))
+        .filter(|&(x, y)| {
+            let p = atlas.pixels[y * atlas.width() + x];
+            let (lo, hi) = (p.r().min(p.g()).min(p.b()), p.r().max(p.g()).max(p.b()));
+            p.a() > 0 && hi - lo > 40
+        })
+        .count()
+}
+
+/// Each sequence is one glyph, drawn from the colour face: a joined family, a skin tone, a flag, a keycap and a red
+/// heart. The last four are checked for colour in the atlas too (Noto's family is grey silhouettes).
+#[test]
+#[cfg_attr(not(color_emoji), ignore = "built without the colour emoji font: cargo xtask fonts")]
+fn emoji_sequences_are_single_colour_glyphs() {
+    for emoji in ["👨\u{200d}👩\u{200d}👧", "👍🏽", "🇩🇰", "1\u{fe0f}\u{20e3}", "❤\u{fe0f}"] {
+        let (glyphs, atlas) = glyphs(emoji, true);
+        let drawn: Vec<&Glyph> = glyphs.iter().filter(|g| g.uv_rect.max != g.uv_rect.min).collect();
+        assert_eq!(drawn.len(), 1, "{emoji:?} is one glyph: {glyphs:?}");
+        assert!(drawn[0].is_color, "{emoji:?} is drawn from the colour face");
+        if !emoji.starts_with('👨') {
+            assert!(coloured_pixels(drawn[0], &atlas) > 100, "{emoji:?} is painted in colour");
+        }
+    }
+}
+
+/// Laid out as plain text, a keycap starts in the text face (egui picks the face by the first character, and the
+/// text face has the digits), which is why messages lay emoji out in their own family. (`❤️` would too with a text
+/// face that has U+2764; egui's Ubuntu Light has not.)
+#[test]
+#[cfg_attr(not(color_emoji), ignore = "built without the colour emoji font: cargo xtask fonts")]
+fn plain_layout_would_draw_keycaps_as_text() {
+    for emoji in ["1\u{fe0f}\u{20e3}", "#\u{fe0f}\u{20e3}"] {
+        let (glyphs, _) = glyphs(emoji, false);
+        assert!(glyphs.iter().all(|g| !g.is_color), "{emoji:?} in the text family: {glyphs:?}");
+    }
+}
+
+/// A message with emoji reads the same to a screen reader as it was written: laying emoji out in their own family
+/// changes how they are drawn, not the text.
+#[test]
+fn emoji_in_a_message_keep_their_text() {
+    use egui_kittest::kittest::Queryable;
+    use pingcraft_core::app::Event;
+    use pingcraft_core::{ChatId, MessageBody, SendState};
+
+    let fake = super::Fake::default();
+    let mut h = super::messages::book_club(&fake);
+    let said = "Ready 1\u{fe0f}\u{20e3} ❤\u{fe0f} 👨\u{200d}👩\u{200d}👧 🇩🇰 👍🏽";
+    let m = super::message("9", "Mei Tanaka", false, MessageBody::Text(said.into()), SendState::Sent);
+    fake.tell([Event::Messages { chat: ChatId("!book".into()), messages: vec![m] }]);
+    h.run();
+    h.get_by_label(said);
+}

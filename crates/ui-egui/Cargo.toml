@@ -21,6 +21,18 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 zeroize = "1.9"
 # QR codes a bridge shows when linking a network's app (MIT OR Apache-2.0). Drawn with egui, so no image features.
 qrcode = { version = "0.15", default-features = false, features = ["std"] }
+# Grapheme clusters, to tell emoji from text (MIT OR Apache-2.0).
+unicode-segmentation = "1.13"
+# Emoji names, shortcodes and groups for the picker and `:name:` ((MIT OR Apache-2.0) AND Unicode-3.0).
+emojis = "0.9"
+
+# Colour emoji glyphs (COLR, CBDT, sbix) through vello_cpu, on the desktop. The web build has no colour font yet.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+epaint = { version = "0.37", features = ["color_fonts"] }
+
+[build-dependencies]
+# Checks the colour emoji font against its pinned hash (build.rs).
+sha2 = "0.10"
 
 # The browser's clock and time zone on the web.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
