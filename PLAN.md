@@ -192,7 +192,7 @@ Goal: a user connects Telegram, Signal and WhatsApp accounts from PingCraft, aft
    CONNECT stays off until the box is ticked. Then the bridge's login steps: choosing a way to log in when there are
    several, a QR code (drawn with the `qrcode` crate, MIT OR Apache-2.0), a code, questions, and "not supported
    yet". Differs from the design: WhatsApp's "keep your phone online" says the bridge warns at 12 days, since
-   PingCraft's own inbox warning is ticket 9.
+   PingCraft's own inbox warning is ticket 9 (wording confirmed by the maintainer, 2026-11-25).
 7. **Connect Telegram** from inside PingCraft. **(maintainer: an account)**
 8. **Bridge in compose: done (setup, NOTICE, docs/deploy.md section 9). Open: connecting from PingCraft.** **Signal:** bridge in compose, and connected from PingCraft. **(maintainer: an account)**
 9. **Bridge in compose: done with ticket 3 (docs/deploy.md section 10). Open: connecting from PingCraft, and the
