@@ -381,9 +381,16 @@ impl Worker {
             };
             for chat in chats {
                 match chat.muted {
-                    Some(Mute::Until(at)) => s.mute_ends.insert(chat.id.clone(), at),
-                    _ => s.mute_ends.remove(&chat.id),
-                };
+                    Some(Mute::Until(at)) => {
+                        s.mute_ends.insert(chat.id.clone(), at);
+                    }
+                    None => {
+                        s.mute_ends.remove(&chat.id);
+                    }
+                    // Muted with no end known: the room account data may not have synced yet, so an end already
+                    // noted stays.
+                    Some(Mute::UntilUnmuted) => {}
+                }
             }
         }
         self.emit.send(Event::Inbox(change));

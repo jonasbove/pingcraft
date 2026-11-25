@@ -129,7 +129,7 @@ desktop target.
      signing out from the unlock sheet clears this computer. White on the orchid (unread counts) is 4.47:1, a
      hair under the 4.5:1 the design states.
    - **Not built yet:** the SETTINGS tab (ACCOUNTS came with milestone 3), the network filter (a later decision), the chat header's
-     account line and "…" menu, SAVE TO FILE for the recovery key, deleting a failed message, and the window's own
+     account line (its "…" menu came with "Messages and chats"), SAVE TO FILE for the recovery key, deleting a failed message, and the window's own
      title bar (the system's is used).
 10. **Scripts done; most targets build only in CI, not run yet.** **Packaging for every target in ADR 0009.** Releases are not published without the maintainer
     (house rule 9).
@@ -270,6 +270,11 @@ Starts when mautrix-discord releases its bridgev2 rewrite (ADR 0008).
    `pingcraft-ui-egui` and tested on its own and through the AccessKit tests with a fake notifier. craft-libs has no
    notification API yet (its `platform` crate uses zbus for appearance only); this crate is a candidate for one.
    Open:
+   - **A hidden window may notify late.** The decision runs in the interface's frame, which the engine's wake asks
+     for; a window that is minimised or on another workspace may get no frames (Wayland compositors hold back frame
+     callbacks), so its notifications would wait until it is shown again. Not checked; moving the decision next to
+     the engine would fix it.
+   - Starting PingCraft after messages arrived while it was closed shows one notification per chat with new ones.
    - **Not tried against a real notification service,** on any system: only built, and on Linux tested without a
      bus (it says so once and shows nothing).
    - **macOS was not compiled** (no macOS target here); **Windows** was only checked (`cargo clippy` for
@@ -288,7 +293,11 @@ Starts when mautrix-discord releases its bridgev2 rewrite (ADR 0008).
 
 Frames: page "Messages · Draft" in `design/pingcraft.figcraft` (draft for review, `design/README.md`). The message
 menu is egui's own popup: craft-libs `menu` is the window's menu bar, not a context menu. Its keyboard shortcuts
-(through `craft-keymap`) are still to come.
+(through `craft-keymap`) are still to come. Differs from the draft frames, for the maintainer's review: there is no
+bar on hover (the "…" button is always there, so a keyboard and a screen reader reach it), and the quick reactions
+are in the menu; menu items have no icons or keys yet; the pinned bar steps through the pins with a "next" button
+instead of ALL PINNED; the forward sheet picks one chat with radio buttons; the typing line sits over the composer
+instead of under the last message.
 
 What people expect from a chat app beyond sending text. It does not wait on Discord; where it goes among the
 milestones is the maintainer's call. Every screen here needs a frame in the design first (house rule), and each

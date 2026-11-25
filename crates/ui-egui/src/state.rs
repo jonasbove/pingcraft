@@ -350,7 +350,9 @@ impl State {
             }
             Event::Messages { chat, messages } => {
                 if let Some(open) = self.open.as_mut().filter(|o| o.id == chat) {
-                    if let Some(n) = crate::notify::for_open_chat(&open.messages, &messages, self.inbox.get(&chat), self.focused) {
+                    // The chat is in sight only on the INBOX tab of a window with focus.
+                    let seen = self.focused && self.tab == Tab::Inbox;
+                    if let Some(n) = crate::notify::for_open_chat(&open.messages, &messages, self.inbox.get(&chat), seen) {
                         self.notifications.push(n);
                     }
                     open.set_messages(messages);
@@ -540,6 +542,22 @@ mod tests {
         let open = s.open.as_ref().unwrap();
         assert!(open.editing.is_none());
         assert_eq!(open.draft, "half a thought");
+    }
+
+    #[test]
+    fn the_open_chat_behind_another_tab_still_notifies() {
+        use pingcraft_core::{Message, MessageBody, MessageId, SendState, Timestamp};
+        let m = |id: &str| Message::new(MessageId(id.into()), "Lars", false, Timestamp(1), MessageBody::Text("hi".into()), SendState::Sent);
+        let mut s = State::default();
+        s.apply(Event::Inbox(InboxChange::Reset(vec![chat("a")])));
+        s.open_chat(ChatId("a".into()));
+        s.focused = true;
+        s.apply(Event::Messages { chat: ChatId("a".into()), messages: vec![m("1")] });
+        s.apply(Event::Messages { chat: ChatId("a".into()), messages: vec![m("1"), m("2")] });
+        assert!(s.notifications.is_empty(), "in sight");
+        s.tab = crate::Tab::Accounts;
+        s.apply(Event::Messages { chat: ChatId("a".into()), messages: vec![m("1"), m("2"), m("3")] });
+        assert_eq!(s.notifications.len(), 1, "on the ACCOUNTS tab the chat is out of sight");
     }
 
     #[test]
