@@ -267,7 +267,7 @@ Starts when mautrix-discord releases its bridgev2 rewrite (ADR 0008).
    macOS (its `preview-macos-un` backend, which asks for permission at the first notification) and Windows
    (tauri-winrt-notification, under the AppUserModelID the MSI's Start menu shortcut already carries). Both the macOS and
    the Windows backends stay (confirmed by the maintainer, 2026-11-25). The Flatpak
-   may now talk to `org.freedesktop.Notifications`. The decision (which changes notify, and the text) is in
+   may now talk to `org.freedesktop.Notifications` (permission kept, confirmed by the maintainer, 2026-11-25). The decision (which changes notify, and the text) is in
    `pingcraft-ui-egui` and tested on its own and through the AccessKit tests with a fake notifier. craft-libs has no
    notification API yet (its `platform` crate uses zbus for appearance only); this crate is a candidate for one.
    Open:
