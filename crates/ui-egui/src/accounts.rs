@@ -144,6 +144,11 @@ pub fn accounts(ui: &mut Ui, state: &mut State) {
 fn cards(ui: &mut Ui, state: &mut State) {
     let t = Tokens::get(ui.ctx());
     ui.spacing_mut().item_spacing.x = 0.0;
+    // The tallest card's name and description, from the frame before: every card pads its own to it, so the
+    // account line and the button line up across the cards whatever the descriptions' lengths.
+    let tallest_id = egui::Id::unique("pingcraft-card-text-height");
+    let tallest = ui.ctx().data(|d| d.get_temp::<f32>(tallest_id)).unwrap_or(0.0);
+    let mut tallest_now = 0.0_f32;
     ui.columns(NETWORKS.len(), |columns| {
         for (i, (id, ui)) in NETWORKS.iter().zip(columns.iter_mut()).enumerate() {
             let network = Network::from_id(id);
@@ -172,16 +177,29 @@ fn cards(ui: &mut Ui, state: &mut State) {
                 egui::Frame::new().inner_margin(Margin::symmetric(20, 14)).show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     let name_color = if offered(&network) { t.ink_strong } else { t.muted };
+                    let top = ui.cursor().top();
                     ui.label(RichText::new(network_name(&network)).size(22.0).strong().color(name_color));
                     ui.add(egui::Label::new(RichText::new(how_you_log_in(&network)).size(13.0).color(t.muted)).wrap());
-                    ui.add_space(12.0);
+                    let text_height = ui.cursor().top() - top;
+                    tallest_now = tallest_now.max(text_height);
+                    ui.add_space(12.0 + (tallest - text_height).max(0.0));
                     let (line, can_connect) = card_line(&network, entry.as_ref());
                     hud(ui, &line, t.muted);
-                    let label = if offered(&network) { tl!("+ Connect") } else { tl!("Not yet") };
+                    if is_connected(entry.as_ref()) {
+                        connected_cell(ui, &network);
+                        return;
+                    }
+                    let label = match entry.as_ref() {
+                        _ if !offered(&network) => tl!("Not yet"),
+                        Some(NetworkEntry::Ready(n)) if !n.accounts.is_empty() => tl!("Reconnect"),
+                        _ => tl!("+ Connect"),
+                    };
                     let enabled = can_connect && state.accounts.connect.is_none();
                     let response = button(ui, label, Kind::Secondary, enabled);
                     // Four cards, four buttons: each says which network it connects.
-                    let spoken = if offered(&network) {
+                    let spoken = if label == tl!("Reconnect") {
+                        fmt(tl!("Reconnect {network}"), &[("network", &network_name(&network))])
+                    } else if offered(&network) {
                         fmt(tl!("Connect {network}"), &[("network", &network_name(&network))])
                     } else {
                         fmt(tl!("{network}: not yet"), &[("network", &network_name(&network))])
@@ -194,6 +212,29 @@ fn cards(ui: &mut Ui, state: &mut State) {
             });
         }
     });
+    if (tallest_now - tallest).abs() > 0.5 {
+        ui.ctx().data_mut(|d| d.insert_temp(tallest_id, tallest_now));
+        ui.ctx().request_repaint();
+    }
+}
+
+/// Whether the user has a working account on this network, so its card says so instead of offering to connect.
+fn is_connected(entry: Option<&NetworkEntry>) -> bool {
+    matches!(entry, Some(NetworkEntry::Ready(n)) if n.accounts.iter().any(|a| a.state == AccountState::Connected))
+}
+
+/// In place of a connected network's button: the same size, so the cards stay aligned, in the colour for "working".
+fn connected_cell(ui: &mut Ui, network: &Network) {
+    let t = Tokens::get(ui.ctx());
+    let spoken = fmt(tl!("{network}: connected"), &[("network", &network_name(network))]);
+    let text = RichText::new(tl!("Connected").to_uppercase()).monospace().strong().size(11.0).color(t.good);
+    let width =
+        egui::WidgetText::from(text.clone()).into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, egui::TextStyle::Button).size().x;
+    let frame = egui::Frame::new().stroke(Stroke::new(1.0, t.good)).inner_margin(Margin::symmetric(10, 0)).show(ui, |ui| {
+        // As tall as a button, as wide as its word: a layout here would stretch to the scroll area's height.
+        ui.add_sized([width, 34.0], egui::Label::new(text));
+    });
+    frame.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &spoken));
 }
 
 /// The line above a card's button, and whether it can connect now.
@@ -243,9 +284,11 @@ fn your_accounts(ui: &mut Ui, state: &mut State) {
         return;
     }
     for account in accounts {
-        egui::Frame::new().stroke(t.hairline()).inner_margin(Margin::symmetric(16, 10)).show(ui, |ui| {
+        egui::Frame::new().stroke(t.hairline()).inner_margin(Margin::symmetric(20, 14)).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
+                // Room between the tag, the account's name (often a phone number) and its state.
+                ui.spacing_mut().item_spacing.x = 20.0;
                 network_tag(ui, &account.network);
                 ui.label(RichText::new(&account.name).size(14.0).color(t.ink_strong));
                 let (word, color) = match &account.state {
@@ -258,10 +301,9 @@ fn your_accounts(ui: &mut Ui, state: &mut State) {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let label = fmt(tl!("Remove {account}"), &[("account", &account.name)]);
                     let remove = egui::Button::new(RichText::new(tl!("Remove").to_uppercase()).monospace().strong().size(11.0).color(t.ink))
-                        .fill(Color32::TRANSPARENT)
                         .stroke(Stroke::new(1.0, t.line_strong))
                         .min_size(Vec2::new(0.0, 30.0));
-                    let response = ui.add_enabled(state.accounts.removing.is_none(), remove);
+                    let response = crate::widgets::animated(ui, remove, state.accounts.removing.is_none(), Color32::TRANSPARENT, t.line);
                     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, state.accounts.removing.is_none(), &label));
                     if response.clicked() {
                         state.accounts.removing = Some(account.clone());

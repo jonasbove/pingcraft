@@ -383,3 +383,37 @@ fn the_chat_header_centres_the_name_and_network_on_the_avatar() {
 }
 
 mod accounts;
+
+#[test]
+fn an_unencrypted_chat_offers_to_turn_encryption_on() {
+    let fake = Fake::default();
+    let mut h = signed_in(&fake);
+    let mut plain = chat("!plain", "Plain room", "matrix", 0, None);
+    plain.encrypted = false;
+    fake.tell([Event::Inbox(InboxChange::Upsert(plain))]);
+    h.run();
+    h.get_by_label("Plain room, on Matrix").click();
+    h.run();
+    fake.take();
+    h.get_by_label("Not encrypted: turn on encryption").click();
+    h.run();
+    h.get_by_label("Turn on encryption");
+    h.get_by_label("CANCEL").click();
+    h.run();
+    assert!(fake.take().is_empty(), "cancelling changes nothing");
+    h.get_by_label("Not encrypted: turn on encryption").click();
+    h.run();
+    h.get_by_label("TURN ON ENCRYPTION").click();
+    h.run();
+    assert!(matches!(&fake.take()[..], [Command::EnableEncryption(id)] if id.0 == "!plain"));
+}
+
+#[test]
+fn an_encrypted_chat_has_no_encryption_button() {
+    let fake = Fake::default();
+    let mut h = signed_in(&fake);
+    h.get_by_label_contains("Book club, on Telegram").click();
+    h.run();
+    h.get_by_label("Encrypted · via your bridge");
+    assert!(h.query_by_label("Not encrypted: turn on encryption").is_none());
+}

@@ -279,3 +279,70 @@ fn a_password_is_sent_as_typed_and_never_shown_by_debug() {
     assert_eq!(answers.get("code"), Some("12345"), "spaces around a code are dropped");
     assert_eq!(answers.get("password"), Some(" spaces count "), "a password is sent exactly as typed");
 }
+
+#[test]
+fn a_connected_network_says_so_instead_of_offering_to_connect() {
+    let fake = Fake::default();
+    let account =
+        Account { id: AccountId("u1".into()), network: Network::from_id("signal"), name: "+45 12 34 56 78".into(), state: AccountState::Connected };
+    let h = on_accounts(&fake, vec![account]);
+    h.get_by_label("Signal: connected");
+    assert!(h.query_by_label("Connect Signal").is_none(), "no CONNECT button for a network that is connected");
+    h.get_by_label("Connect Telegram");
+}
+
+#[test]
+fn a_logged_out_account_offers_to_reconnect() {
+    let fake = Fake::default();
+    let account =
+        Account { id: AccountId("u1".into()), network: Network::from_id("signal"), name: "+45 12 34 56 78".into(), state: AccountState::LoggedOut };
+    let h = on_accounts(&fake, vec![account]);
+    assert!(h.query_by_label("Signal: connected").is_none());
+    h.get_by_label("Reconnect Signal");
+}
+
+#[test]
+fn every_card_has_its_account_line_and_button_at_the_same_height() {
+    let fake = Fake::default();
+    let account =
+        Account { id: AccountId("u1".into()), network: Network::from_id("signal"), name: "+45 12 34 56 78".into(), state: AccountState::Connected };
+    let mut h = on_accounts(&fake, vec![account]);
+    // The cards line up from the tallest description measured on the frame before.
+    h.run();
+    let top = |label: &str| h.get_by_label(label).accesskit_node().raw_bounds().unwrap().y0;
+    let telegram = top("Connect Telegram");
+    for other in ["Signal: connected", "Connect WhatsApp", "Discord: not yet"] {
+        assert!((top(other) - telegram).abs() < 1.0, "{other} is at {}, Telegram's button at {telegram}", top(other));
+    }
+}
+
+#[test]
+fn an_account_row_leaves_room_between_the_tag_the_name_and_the_state() {
+    let fake = Fake::default();
+    let account =
+        Account { id: AccountId("u1".into()), network: Network::from_id("signal"), name: "+45 12 34 56 78".into(), state: AccountState::Connected };
+    let h = on_accounts(&fake, vec![account]);
+    let name = h.get_by_label("+45 12 34 56 78").accesskit_node().raw_bounds().unwrap();
+    let tag = h
+        .get_all_by_label("SIGNAL")
+        .map(|n| n.accesskit_node().raw_bounds().unwrap())
+        .find(|r| (r.y0 + r.y1) / 2.0 > name.y0 && (r.y0 + r.y1) / 2.0 < name.y1)
+        .unwrap();
+    let state = h.get_all_by_label("Connected").map(|n| n.accesskit_node().raw_bounds().unwrap()).find(|r| r.x0 > name.x1).unwrap();
+    assert!(name.x0 - tag.x1 >= 16.0, "tag to name: {}", name.x0 - tag.x1);
+    assert!(state.x0 - name.x1 >= 16.0, "name to state: {}", state.x0 - name.x1);
+}
+
+#[test]
+fn refresh_is_on_every_tab() {
+    let fake = Fake::default();
+    let mut h = on_accounts(&fake, vec![]);
+    h.get_by_label("REFRESH").click();
+    h.run();
+    assert!(matches!(&fake.take()[..], [Command::Refresh]));
+    h.get_by_label("INBOX").click();
+    h.run();
+    h.get_by_label("REFRESH").click();
+    h.run();
+    assert!(matches!(&fake.take()[..], [Command::Refresh]));
+}

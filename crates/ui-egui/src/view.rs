@@ -44,6 +44,13 @@ pub fn header(ui: &mut Ui, state: &mut State, out: &mut Out) {
             ui.label(RichText::new(word).size(13.0).color(t.ink));
             let (rect, _) = ui.allocate_exact_size(Vec2::splat(8.0), Sense::hover());
             ui.painter().circle_filled(rect.center(), 4.0, dot);
+            // On every tab: reconnect now, and ask the bridges again.
+            if state.screen == Screen::Inbox {
+                ui.add_space(12.0);
+                if button(ui, tl!("Refresh"), Kind::Secondary, true).clicked() {
+                    out.push(Command::Refresh);
+                }
+            }
         });
     });
 }
@@ -54,11 +61,11 @@ fn nav_cell(ui: &mut Ui, label: &str, on: bool, enabled: bool) -> egui::Response
     let t = Tokens::get(ui.ctx());
     let ink = if on { t.invert_fg } else { t.muted };
     let cell = egui::Button::new(RichText::new(label.to_uppercase()).monospace().size(11.0).color(ink))
-        .fill(if on { t.invert_bg } else { Color32::TRANSPARENT })
         .stroke(Stroke::NONE)
         .corner_radius(egui::CornerRadius::ZERO)
         .selected(on);
-    ui.add_enabled(enabled, cell)
+    let (fill, hover) = if on { (t.invert_bg, t.invert_bg) } else { (Color32::TRANSPARENT, t.line) };
+    crate::widgets::animated(ui, cell, enabled, fill, hover)
 }
 
 /// Shows the ACCOUNTS tab, and asks the bridges what they offer and which accounts the user has.
@@ -325,11 +332,9 @@ fn inbox_list(ui: &mut Ui, state: &mut State, out: &mut Out) {
             for (label, filter) in [(all, Filter::All), (unread, Filter::Unread)] {
                 let on = state.filter == filter;
                 let text = RichText::new(label).monospace().size(11.0).color(if on { t.invert_fg } else { t.muted });
-                let cell = egui::Button::new(text)
-                    .fill(if on { t.invert_bg } else { Color32::TRANSPARENT })
-                    .stroke(Stroke::new(1.0, t.line_strong))
-                    .selected(on);
-                if ui.add(cell).clicked() {
+                let cell = egui::Button::new(text).stroke(Stroke::new(1.0, t.line_strong)).selected(on);
+                let (fill, hover) = if on { (t.invert_bg, t.invert_bg) } else { (Color32::TRANSPARENT, t.line) };
+                if crate::widgets::animated(ui, cell, true, fill, hover).clicked() {
                     state.filter = filter;
                 }
             }
@@ -494,6 +499,44 @@ fn chat_row(ui: &mut Ui, chat: &Chat, selected: bool) -> egui::Response {
     response
 }
 
+/// Offers to turn on end-to-end encryption in a chat that has none.
+fn encrypt_sheet(ctx: &egui::Context, open: &mut OpenChat, name: &str, out: &mut Out) {
+    let mut close = false;
+    let mut turn_on = false;
+    crate::widgets::sheet(
+        ctx,
+        "encrypt-chat",
+        520.0,
+        (tl!("Turn on encryption"), &name.to_uppercase()),
+        |ui| {
+            ui.spacing_mut().item_spacing.y = 10.0;
+            ui.label(
+                RichText::new(tl!("New messages in this chat will be end-to-end encrypted: only the people in it can read them, not the server."))
+                    .size(14.0),
+            );
+            note(
+                ui,
+                tl!(
+                    "Encryption can't be turned off again. Messages sent before stay unencrypted. Everyone in the chat needs an app that supports encryption to read new messages."
+                ),
+            );
+            note(ui, tl!("Turning it on needs permission to change the chat's settings. If you don't have it, ask someone who does."));
+        },
+        |ui| {
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                turn_on = button(ui, tl!("Turn on encryption"), Kind::Primary, true).clicked();
+                close = button(ui, tl!("Cancel"), Kind::Secondary, true).clicked();
+            });
+        },
+    );
+    if turn_on {
+        out.push(Command::EnableEncryption(open.id.clone()));
+    }
+    if turn_on || close {
+        open.encrypt_sheet = false;
+    }
+}
+
 fn empty_chat(ui: &mut Ui, state: &mut State, out: &mut Out) {
     let t = Tokens::get(ui.ctx());
     ui.add_space(ui.available_height() / 3.0);
@@ -540,13 +583,28 @@ fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, out: &mut Ou
                         (true, false) => (tl!("Encrypted · via your bridge"), t.muted),
                         (false, _) => (tl!("Not encrypted"), t.warn),
                     };
-                    egui::Frame::new().stroke(t.hairline()).inner_margin(Margin::symmetric(10, 5)).show(ui, |ui| {
-                        ui.label(RichText::new(text).size(12.5).color(color));
-                    });
+                    if chat.encrypted {
+                        egui::Frame::new().stroke(t.hairline()).inner_margin(Margin::symmetric(10, 5)).show(ui, |ui| {
+                            ui.label(RichText::new(text).size(12.5).color(color));
+                        });
+                    } else {
+                        // Not encrypted: a button that offers to turn it on.
+                        let badge = egui::Button::new(RichText::new(text).size(12.5).color(color))
+                            .stroke(t.hairline())
+                            .corner_radius(egui::CornerRadius::ZERO);
+                        let response = crate::widgets::animated(ui, badge, true, Color32::TRANSPARENT, t.line);
+                        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, tl!("Not encrypted: turn on encryption")));
+                        if response.clicked() {
+                            open.encrypt_sheet = true;
+                        }
+                    }
                 });
             }
         });
     });
+    if open.encrypt_sheet {
+        encrypt_sheet(ui.ctx(), open, &name, out);
+    }
     // The composer.
     let mut send = false;
     egui::Panel::bottom("composer").exact_size(74.0).frame(egui::Frame::new().inner_margin(Margin::symmetric(24, 20))).show(ui, |ui| {

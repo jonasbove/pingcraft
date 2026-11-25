@@ -60,6 +60,10 @@ pub enum Command {
         network: Network,
         account: AccountId,
     },
+    /// Turn on end-to-end encryption in a chat. It cannot be turned off again.
+    EnableEncryption(ChatId),
+    /// Reconnect to the server now and ask the bridges again, as the header's REFRESH button does.
+    Refresh,
     SignOut,
 }
 
@@ -88,6 +92,8 @@ impl std::fmt::Debug for Command {
             Self::AnswerLogin { step, answers } => f.debug_struct("AnswerLogin").field("step", step).field("answers", answers).finish(),
             Self::CancelLogin(step) => f.debug_tuple("CancelLogin").field(step).finish(),
             Self::RemoveAccount { network, account } => f.debug_struct("RemoveAccount").field("network", network).field("account", account).finish(),
+            Self::EnableEncryption(c) => f.debug_tuple("EnableEncryption").field(c).finish(),
+            Self::Refresh => f.write_str("Refresh"),
             Self::SignOut => f.write_str("SignOut"),
         }
     }

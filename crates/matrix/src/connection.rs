@@ -69,6 +69,27 @@ impl Connection {
         self.bridges.start();
     }
 
+    /// Turns on end-to-end encryption in a chat: sends its `m.room.encryption` state, which the server keeps for
+    /// good. Fails when the user may not change the chat's settings.
+    pub async fn enable_encryption(&self, chat: &pingcraft_core::ChatId) -> Result<(), String> {
+        let room_id = matrix_sdk::ruma::OwnedRoomId::try_from(chat.0.as_str()).map_err(|_| "no such chat".to_owned())?;
+        let room = self.client.get_room(&room_id).ok_or_else(|| "no such chat".to_owned())?;
+        if room.latest_encryption_state().await.map(|s| s.is_encrypted()).unwrap_or(false) {
+            return Ok(());
+        }
+        room.enable_encryption().await.map_err(|e| match e.as_client_api_error().map(|e| e.status_code.as_u16()) {
+            Some(403) => "you don't have permission to change this chat's settings, so encryption can't be turned on".to_owned(),
+            _ => format!("encryption could not be turned on: {e}"),
+        })
+    }
+
+    /// Ends the current sync connection and starts a new one, so the server is asked again now rather than when the
+    /// long poll returns. The bridges' room-state watch keeps running.
+    pub async fn refresh(&self) {
+        self.sync.stop().await;
+        self.sync.start().await;
+    }
+
     /// Stops syncing, for example before signing out.
     pub async fn stop(&self) {
         self.bridges.stop();

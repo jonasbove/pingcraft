@@ -148,6 +148,8 @@ pub struct OpenChat {
     pub messages: Vec<Message>,
     pub at_start: bool,
     pub draft: String,
+    /// The "turn on encryption" sheet is open.
+    pub encrypt_sheet: bool,
 }
 
 #[derive(Default)]
@@ -297,7 +299,7 @@ impl State {
         if self.open.as_ref().is_some_and(|o| o.id == id) {
             return;
         }
-        self.open = Some(OpenChat { id, messages: Vec::new(), at_start: false, draft: String::new() });
+        self.open = Some(OpenChat { id, messages: Vec::new(), at_start: false, draft: String::new(), encrypt_sheet: false });
     }
 }
 

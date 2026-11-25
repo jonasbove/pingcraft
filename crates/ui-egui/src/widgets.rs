@@ -28,12 +28,25 @@ pub fn button(ui: &mut Ui, text: &str, kind: Kind, enabled: bool) -> Response {
         Kind::Primary => (t.invert_bg, t.invert_fg, Stroke::new(1.0, t.invert_bg)),
         Kind::Secondary => (Color32::TRANSPARENT, t.ink, Stroke::new(1.0, t.line_strong)),
     };
+    let hover = match kind {
+        Kind::Primary => t.invert_bg.lerp_to_gamma(t.accent, 0.35),
+        Kind::Secondary => t.line,
+    };
     let button = egui::Button::new(RichText::new(label).monospace().strong().size(11.0).color(ink))
-        .fill(fill)
         .stroke(stroke)
         .corner_radius(CornerRadius::ZERO)
         .min_size(Vec2::new(0.0, 34.0));
-    ui.add_enabled(enabled, button)
+    animated(ui, button, enabled, fill, hover)
+}
+
+/// Adds a button whose fill eases from `fill` to `hover` while the pointer is over it (120 ms each way). The fill is
+/// painted underneath the button, so the button's own fill is cleared.
+pub fn animated(ui: &mut Ui, button: egui::Button<'_>, enabled: bool, fill: Color32, hover: Color32) -> Response {
+    let slot = ui.painter().add(egui::Shape::Noop);
+    let response = ui.add_enabled(enabled, button.fill(Color32::TRANSPARENT));
+    let k = ui.ctx().animate_bool_with_time(response.id.with("hover"), enabled && response.hovered(), 0.12);
+    ui.painter().set(slot, egui::Shape::rect_filled(response.rect, CornerRadius::ZERO, fill.lerp_to_gamma(hover, k)));
+    response
 }
 
 /// A labelled text field. The label names the field for screen readers.

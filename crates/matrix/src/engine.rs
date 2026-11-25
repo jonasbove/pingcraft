@@ -402,17 +402,7 @@ impl Worker {
     async fn handle_signed_in(&mut self, command: Command) {
         let Some(s) = self.signed_in.as_mut() else { return };
         let result: Result<(), String> = match command {
-            Command::OpenChat(chat) => {
-                s.chat = None;
-                match s.connection.open_chat(&chat).await {
-                    Ok(timeline) => {
-                        let _ = timeline.mark_read().await;
-                        s.chat = Some((chat, timeline));
-                        Ok(())
-                    }
-                    Err(e) => Err(e.to_string()),
-                }
-            }
+            Command::OpenChat(chat) => open_chat(s, chat).await,
             Command::CloseChat => {
                 s.chat = None;
                 Ok(())
@@ -478,6 +468,8 @@ impl Worker {
                 self.emit.send(Event::Verification(None));
                 Ok(())
             }
+            Command::EnableEncryption(chat) => s.connection.enable_encryption(&chat).await,
+            Command::Refresh => refresh(s).await,
             command @ (Command::LoadNetworks
             | Command::StartLogin { .. }
             | Command::AnswerLogin { .. }
@@ -496,6 +488,24 @@ impl Worker {
         }
         self.tick();
     }
+}
+
+/// Opens a chat from the inbox, closing the one before, and marks it read.
+async fn open_chat(s: &mut SignedIn, chat: ChatId) -> Result<(), String> {
+    s.chat = None;
+    let timeline = s.connection.open_chat(&chat).await.map_err(|e| e.to_string())?;
+    let _ = timeline.mark_read().await;
+    s.chat = Some((chat, timeline));
+    Ok(())
+}
+
+/// The header's REFRESH: a new sync connection, and the bridges asked again.
+async fn refresh(s: &mut SignedIn) -> Result<(), String> {
+    s.connection.refresh().await;
+    if let Some(c) = s.connector.as_mut() {
+        c.load();
+    }
+    Ok(())
 }
 
 /// The commands for connecting networks, handed to the connector.
