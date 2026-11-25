@@ -148,7 +148,7 @@ desktop target.
     - the logo drawing: generated with an AI image tool by the maintainer for PingCraft, under the repository's
       licence (maintainer, 2026-11-25; `ATTRIBUTION.md`);
     - `LICENSE-MIT` and `LICENSE-APACHE` were added for the packages ("the PingCraft contributors", as
-      CraftCloud's), for the maintainer to confirm;
+      CraftCloud's); confirmed by the maintainer, 2026-11-25;
     - Windows, macOS, FreeBSD, riscv64, Flatpak and the Nix flake are untried until CI runs them; there is no
       `flake.lock` yet.
     - craft-common-actions' release workflow installs no SQLite to link against (no `libsqlite3-dev` on Linux and
