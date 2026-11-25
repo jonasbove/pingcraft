@@ -119,9 +119,12 @@ the existing language for the maintainer to look at, not approved. `tools/messag
   shows pinned chats first with a pin before the tag, a muted chat with a struck bell and a quiet (unfilled)
   count, and a chat marked unread with a plain accent mark where the count goes.
 
-**Emoji are placeholders.** The headless build has no emoji font (and PingCraft bundles none yet: fonts need the
-maintainer's approval), so the quick reactions are drawn as "+1", "♥", "ha", "oh", "sad", "thx". The app shows
-a small fixed set of emoji that egui's built-in emoji font draws. A picker and `:name:` shortcuts come later.
+**Emoji are placeholders.** The headless build has no emoji font, so the quick reactions are drawn as "+1", "♥",
+"ha", "oh", "sad", "thx". The desktop app draws colour emoji (Noto Color Emoji, `ATTRIBUTION.md`), and has an
+emoji picker (search, recently used, then every emoji), `:name:` shortcodes with suggestions over the composer,
+and MORE REACTIONS… in the message's menu. These have no frames yet: the picker and the suggestions row follow
+the menu's look (hairline box, square corners, mono capitals for RECENTLY USED and ALL EMOJI), for the
+maintainer's review.
 
 New components: **Reaction chip** (Off / On), **Reply quote** (2 px line_strong rule on the left, sender in
 accent_ink Small 12, the text in one line), **Menu item** (Default / Hover / Danger: icon, Body 13 label, Mono 12
@@ -215,7 +218,7 @@ owner, MIT OR Apache-2.0), with CraftCloud's app list, logo and server facts rem
   bridge" with a muted lock, and only Matrix-to-Matrix chats say "End-to-end encrypted" with the lock in `good`.
   The exact words need the maintainer's eye.
 - **Verification symbols are monochrome placeholders.** The headless build has only FigCraft's built-in fonts and no
-  colour emoji font, so the seven symbols are the monochrome text forms of the same code points (U+2602, U+2693,
+  colour emoji font (the desktop app draws them in colour), so the seven symbols are the monochrome text forms of the same code points (U+2602, U+2693,
   U+260E, U+2708, U+2665, U+2702, U+270F). The app draws the emoji from the SAS list with their names.
 - **Your own messages** are a square box on the right with a wash and an edge rule, in the launcher's language, not a
   rounded bubble.

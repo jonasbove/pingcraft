@@ -305,17 +305,41 @@ ticket checks what the three bridges carry to and from each network: where a net
 example, editing on a network without edits), PingCraft says so instead of pretending, and what stays in
 PingCraft only (local pins, mute, sounds) is labelled as such.
 
-1. **Emoji, properly.** Colour emoji in messages, previews and names (egui shows most emoji as monochrome or
+1. **Done on the desktop (2026-11-25), with gaps.** **Emoji, properly.** Colour emoji in messages, previews and names (egui shows most emoji as monochrome or
    missing glyphs today): a colour emoji font under an allowlisted licence (`OFL-1.1` or `CC-BY-4.0`, with the
    attribution), sequences such as skin tones, flags and joined emoji, and an emoji picker with search and recent
    emoji. Typing `:name:` to insert one.
+   Built (maintainer's decisions 2026-11-25, `docs/proposals/emoji-font.md`): Noto Color Emoji COLRv1 v2.057
+   (OFL-1.1; `ATTRIBUTION.md`, the licence in `NOTICE`), unmodified, through epaint's `color_fonts`. No font file
+   is committed and the build downloads nothing: `cargo xtask fonts` fetches it from its pinned noto-emoji commit
+   into the git-ignored `.cache/craft-fonts` (or `CRAFT_FONTS_DIR`) and checks its SHA-256, and
+   `crates/ui-egui/build.rs` checks it again before embedding it. Without the file the build falls back to egui's
+   monochrome emoji (the colour tests are then ignored, with the reason); `CRAFT_FONTS_REQUIRED=1` makes that an
+   error, and `cargo xtask ci` (which fetches the font first) and the packaging scripts set it, so CI runs the
+   colour tests. egui picks a face by a cluster's first character, so keycaps would start in the text face: emoji
+   clusters (told apart with `unicode-segmentation` and the `emojis` data) are laid out in a family whose first face
+   is the colour one, in messages, names, previews, quotes, reactions, the bars, the composer and the verification
+   symbols; the text and accessible names are unchanged. Tests check that a joined family, a skin tone, a flag, a
+   keycap and a red heart are each one colour glyph (COLRv1 gradients are painted). The picker (search by name and
+   shortcode, recently used, every emoji) is behind an emoji button by the composer and MORE REACTIONS… in a
+   message's menu; the quick reactions put recently used emoji first; `:name:` turns into the emoji, with
+   suggestions while it is typed. Size, release build on Linux x86_64: 73.3 MB stripped before, 80.0 MB after
+   (+6.7 MB; the font is 5.0 MB). Open:
+   - **The web build has no colour font** (the target-gated feature keeps `color_fonts` and the font out of wasm;
+     whether `color_fonts` builds for wasm was not tried). It still draws egui's monochrome emoji. Next: fetch the
+     font lazily from the same origin (the proposal's plan). Its size could not be measured: `pingcraft-web`
+     exports nothing yet, so its wasm (513 kB, the same before and after) leaves the interface out.
+   - Recently used emoji last for one run of PingCraft; they are not saved. Emoji names and search are English.
+   - Picking a skin tone in the picker; the picker and suggestions row have no frames in the design yet.
+   - Not tried by hand in the running app; checked through the tests only. A Nix build (no network in its
+     sandbox) falls back to monochrome emoji.
 2. **Done (2026-11-25), with gaps.** **Reactions.** Show reactions under a message with counts and who reacted; add and remove one from the picker or a
    quick row of recent ones.
    Built: a chip per reaction under the message (the count, who reacted on hover and in its accessible name, in the
    accent when you are one of them; clicking it adds or takes back yours), and six quick reactions in the message's
-   menu (👍 ❤️ 😂 😮 😢 🙏, sent with the variation selector, drawn by egui's own emoji font; a test checks each has
-   a glyph). Open: the picker, recent emoji and `:name:` (with ticket 1's font); what each bridge carries
-   (pending: needs the maintainer's accounts).
+   menu (👍 ❤️ 😂 😮 😢 🙏, sent with the variation selector; a test checks each has a glyph). With ticket 1:
+   recently used emoji come first in the quick row, and MORE REACTIONS… opens the emoji picker. Open: what each
+   bridge carries (pending: needs the maintainer's accounts).
 3. **Done (2026-11-25), with gaps.** **Replies.** Reply to a message: the reply shows a quoted line of the original, and clicking it scrolls to it
    (loading older messages if needed).
    Built: REPLY in the message's menu, a "Replying to …" bar over the composer, the quote above a reply (an
