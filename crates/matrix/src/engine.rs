@@ -125,6 +125,10 @@ struct SignedIn {
     connector: Option<Connector>,
     /// When each muted chat's mute ends; PingCraft turns its notifications back on then.
     mute_ends: HashMap<ChatId, Timestamp>,
+    /// Emoji used on this device and not yet sent to the account's recently used emoji.
+    emoji_uses: crate::recent_emoji::Pending,
+    /// The recently used emoji as last told to the interface (raw, to tell when another device changed them).
+    shown_emoji: Option<String>,
 }
 
 struct Worker {
@@ -213,9 +217,13 @@ impl Worker {
                 Woke::Tick => {
                     self.tick();
                     self.end_mutes().await;
+                    self.save_recent_emoji(false).await;
+                    self.recent_emoji().await;
                 }
             }
         }
+        // Closing: the emoji used in the last few seconds are sent now, or they would be lost.
+        self.save_recent_emoji(true).await;
         if let Some(s) = self.signed_in.take() {
             s.connection.stop().await;
         }
@@ -345,8 +353,11 @@ impl Worker {
             shown_recovery: None,
             connector,
             mute_ends: HashMap::new(),
+            emoji_uses: crate::recent_emoji::Pending::default(),
+            shown_emoji: None,
         });
         self.tick();
+        self.recent_emoji().await;
     }
 
     /// Tells the interface when the connection or the recovery state changed.
@@ -413,6 +424,28 @@ impl Worker {
         }
     }
 
+    /// Tells the interface the recently used emoji when they changed (on this device, or synced from another).
+    async fn recent_emoji(&mut self) {
+        let Some(s) = self.signed_in.as_mut() else { return };
+        let (emoji, seen) = s.connection.recent_emoji(&s.emoji_uses).await;
+        if s.shown_emoji.as_ref() != Some(&seen) {
+            s.shown_emoji = Some(seen);
+            self.emit.send(Event::RecentEmoji(emoji));
+        }
+    }
+
+    /// Sends the emoji used on this device to the account's recently used emoji, once a few seconds have passed
+    /// since the last (or at once, `now`, when closing or signing out).
+    async fn save_recent_emoji(&mut self, now: bool) {
+        let Some(s) = self.signed_in.as_mut() else { return };
+        if !s.emoji_uses.due((!now).then(std::time::Instant::now)) {
+            return;
+        }
+        // On failure (offline, say) the uses are kept and tried again later, without a word: the header already
+        // says when the server cannot be reached. While closing there is no later.
+        let _ = s.connection.save_recent_emoji(&mut s.emoji_uses).await;
+    }
+
     fn pinned(&mut self, pinned: Vec<pingcraft_core::Quote>) {
         let Some((chat, _)) = self.signed_in.as_ref().and_then(|s| s.chat.as_ref()) else { return };
         self.emit.send(Event::Pinned { chat: chat.clone(), pinned });
@@ -447,6 +480,7 @@ impl Worker {
         if self.secrets.is_none() {
             return self.forget_this_computer();
         }
+        self.save_recent_emoji(true).await;
         let Some(s) = self.signed_in.take() else { return self.emit.send(Event::SignedOut) };
         s.connection.stop().await;
         drop(s.chat);
@@ -556,6 +590,14 @@ impl Worker {
                 Ok(())
             }
             Command::Refresh => refresh(s).await,
+            Command::EmojiUsed(emoji) => {
+                s.emoji_uses.used(emoji, std::time::Instant::now());
+                // Shown on top at once; the server hears of it a few seconds later.
+                let (emoji, seen) = s.connection.recent_emoji(&s.emoji_uses).await;
+                s.shown_emoji = Some(seen);
+                self.emit.send(Event::RecentEmoji(emoji));
+                Ok(())
+            }
             command @ (Command::LoadNetworks
             | Command::StartLogin { .. }
             | Command::AnswerLogin { .. }

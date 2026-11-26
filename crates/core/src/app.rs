@@ -92,6 +92,9 @@ pub enum Command {
         typing: bool,
     },
     LoadOlder(ChatId),
+    /// The user used this emoji (sent it, reacted with it, or picked it). It joins the account's recently used emoji
+    /// on the server, which the user's other devices share; uses are sent together a few seconds after the last.
+    EmojiUsed(String),
     /// The user saved the recovery key they were shown.
     RecoveryKeySaved,
     /// The user typed the account's recovery key on this device.
@@ -158,6 +161,8 @@ impl std::fmt::Debug for Command {
             Self::SaveDraft { chat, .. } => f.debug_struct("SaveDraft").field("chat", chat).finish_non_exhaustive(),
             Self::Typing { chat, typing } => f.debug_struct("Typing").field("chat", chat).field("typing", typing).finish(),
             Self::LoadOlder(c) => f.debug_tuple("LoadOlder").field(c).finish(),
+            // Which emoji someone uses is as private as what they write.
+            Self::EmojiUsed(_) => f.write_str("EmojiUsed(..)"),
             Self::RecoveryKeySaved => f.write_str("RecoveryKeySaved"),
             Self::Recover(key) => f.debug_tuple("Recover").field(key).finish(),
             Self::VerifyThisDevice => f.write_str("VerifyThisDevice"),
@@ -235,6 +240,9 @@ pub enum Event {
     },
     /// The open chat has no older messages.
     ReachedStart(ChatId),
+    /// The account's recently used emoji, most recent first: what the server has (shared with the user's other
+    /// devices), with this device's uses not sent yet on top. Sent when signed in and whenever it changes.
+    RecentEmoji(Vec<String>),
     /// The first sign-in made a recovery key: show it until the user has saved it.
     NewRecoveryKey(RecoveryKey),
     Recovery(RecoveryStatus),
@@ -293,6 +301,7 @@ mod tests {
             Command::Edit { chat: crate::ChatId("!a".into()), message: crate::MessageId("m".into()), text: "private edit".into() },
             Command::React { chat: crate::ChatId("!a".into()), message: crate::MessageId("m".into()), key: "🫣".into() },
             Command::SaveDraft { chat: crate::ChatId("!a".into()), text: "unsent draft".into() },
+            Command::EmojiUsed("🫥".into()),
             Command::AnswerLogin {
                 step: crate::bridge::StepRef {
                     network: crate::Network::from_id("telegram"),
@@ -320,6 +329,7 @@ mod tests {
             "private edit",
             "🫣",
             "unsent draft",
+            "🫥",
         ] {
             assert!(!shown.contains(secret), "{shown}");
         }

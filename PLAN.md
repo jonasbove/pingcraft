@@ -348,7 +348,24 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
      Milestone 4's Trunk build has to copy the pinned file from the fonts folder to that path (for example a
      `data-trunk rel="copy-file"` of `$CRAFT_FONTS_DIR/noto-color-emoji/Noto-COLRv1.ttf` into
      `noto-color-emoji/`) and ship its `OFL.txt`, as the desktop packages do.
-   - Recently used emoji last for one run of PingCraft; they are not saved. Emoji names and search are English.
+   - **Recently used emoji are kept with the account** (maintainer, 2026-11-26), so they follow the user between
+     devices and survive a restart. Format: the specification's `m.recent_emoji` global account data (added in
+     Matrix v1.18, "Recently used emoji": `{"recent_emoji": [{"emoji", "total"}]}`, most recent first, at most 100),
+     not `io.element.recent_emoji`: the brief expected no `m.` standard, but there is one, and Element Web now
+     writes it too and reads its older `io.element.recent_emoji` (`[emoji, count]` pairs) only to merge in. PingCraft
+     does the same: an account with only the older event starts from it, and only `m.recent_emoji` is written
+     (`crates/matrix/src/recent_emoji.rs`). Each use (picked in the picker, a quick reaction, a suggested
+     shortcode) moves the emoji to the front and adds one; uses are sent together 3 seconds after the last (and at
+     once when PingCraft closes or signs out), on top of what the server has at that moment, fetched fresh, so
+     another device's change is merged, not overwritten. Entries and keys PingCraft does not know are kept;
+     malformed ones are dropped. A failed send (offline) is tried again every 30 seconds, quietly. The interface
+     shows the 24 newest it knows and forgets them on sign-out. Tests: the merging, the order, the cap, the older
+     format and the timing (unit tests), the interface's side through the AccessKit tree, and a live test with one
+     user on two devices (`tests/recent_emoji.rs`), which **was not run against a server**: the test server's
+     variables were not set in this session, so it skipped. Not tried by hand with Element. Uses not yet sent when
+     PingCraft closes offline are lost. Typing a whole `:name:` (not picking the suggestion) does not count as a
+     use, as before.
+   - Emoji names and search are English.
    - Picking a skin tone in the picker; the picker and suggestions row have no frames in the design yet.
    - Without the colour font (the fallback build, and the web until the font arrives) the picker shows tofu for emoji egui's monochrome
      face lacks; its two tests are ignored in that build.

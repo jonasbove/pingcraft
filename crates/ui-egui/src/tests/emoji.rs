@@ -178,3 +178,43 @@ fn a_font_that_is_not_the_pinned_one_is_refused() {
     assert_eq!(crate::emoji::install_color_font(&ctx, vec![0; 6_000_000]), Err(FontRefused::TooBig));
     assert!(glyphs_in(&ctx, "👍").iter().all(|g| !g.is_color), "still monochrome");
 }
+
+/// Whether the backend was told the user used `emoji`, so it joins the account's recently used emoji.
+fn told_used(commands: &[pingcraft_core::app::Command], emoji: &str) -> bool {
+    commands.iter().any(|c| matches!(c, pingcraft_core::app::Command::EmojiUsed(e) if e == emoji))
+}
+
+#[test]
+fn an_emoji_used_is_kept_with_the_account() {
+    use egui_kittest::kittest::Queryable;
+    let fake = super::Fake::default();
+    let mut h = super::messages::book_club(&fake);
+    h.get_by_label("Message actions: Lars Holm, Next meeting on Thursday?").click();
+    h.run();
+    h.get_by_label("React with 👍").click();
+    h.run();
+    assert!(told_used(&fake.take(), "👍"), "a quick reaction");
+    super::type_into(&mut h, "Message Book club", "hi :smi");
+    h.get_by_label("Insert 😄 :smile:").click();
+    h.run();
+    assert!(told_used(&fake.take(), "😄"), "a suggested shortcode");
+}
+
+/// The recently used emoji come from the account (another device's uses included), and are forgotten on sign-out.
+#[test]
+fn recently_used_emoji_come_from_the_account() {
+    use egui_kittest::kittest::Queryable;
+    use pingcraft_core::app::Event;
+    let fake = super::Fake::default();
+    let mut h = super::messages::book_club(&fake);
+    fake.tell([Event::RecentEmoji(vec!["🎻".into(), "🎉".into(), "not an emoji".into()])]);
+    h.run();
+    assert_eq!(crate::picker::recent(&h.ctx), ["🎻", "🎉"], "what PingCraft cannot show is left out");
+    h.get_by_label("Message actions: Lars Holm, Next meeting on Thursday?").click();
+    h.run();
+    h.get_by_label("React with 🎻");
+    h.get_by_label("React with 🎉");
+    fake.tell([Event::SignedOut]);
+    h.run();
+    assert!(crate::picker::recent(&h.ctx).is_empty(), "the next account does not see them");
+}

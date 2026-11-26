@@ -82,7 +82,10 @@ fn a_quick_reaction_is_sent_from_the_menu() {
     h.get_by_label("React with 😂").click();
     h.run();
     let sent = fake.take();
-    assert!(matches!(&sent[..], [Command::React { message, key, .. }] if message.0 == "1" && key == "😂"), "{sent:?}");
+    assert!(
+        matches!(&sent[..], [Command::React { message, key, .. }, Command::EmojiUsed(used)] if message.0 == "1" && key == "😂" && used == "😂"),
+        "{sent:?}"
+    );
 }
 
 #[test]

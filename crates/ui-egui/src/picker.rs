@@ -1,4 +1,5 @@
-//! The emoji picker (search, recently used, then every emoji in Unicode's order), recently used emoji, and `:name:`
+//! The emoji picker (search, recently used, then every emoji in Unicode's order), recently used emoji (the account's,
+//! kept on the server: `pingcraft_matrix::recent_emoji`), and `:name:`
 //! shortcodes in the composer. Emoji names and shortcodes come from the `emojis` crate (Unicode's CLDR names and
 //! GitHub's gemoji shortcodes), in English for now.
 
@@ -9,19 +10,28 @@ use crate::theme::Tokens;
 use crate::tl;
 use crate::widgets::hud;
 
-/// How many recently used emoji are kept (for this run of PingCraft; they are not saved).
+/// How many recently used emoji the picker shows (the account keeps up to 100).
 const RECENT_MAX: usize = 24;
 /// Emoji per row in the picker's grid.
 const PER_ROW: usize = 8;
 /// How many shortcode suggestions show over the composer.
 const SUGGESTIONS: usize = 6;
 
-/// The recently used emoji, newest first, shared by the composer's picker and reactions.
+/// The recently used emoji, newest first, shared by the composer's picker and reactions: the account's (from the
+/// server, through `Event::RecentEmoji`), with this device's newest uses on top at once.
 #[derive(Clone, Default)]
 struct Recent(Vec<String>);
 
+/// Uses not yet passed on to the backend (`Command::EmojiUsed`, sent at the end of the frame).
+#[derive(Clone, Default)]
+struct Used(Vec<String>);
+
 fn recent_id() -> Id {
     Id::unique("pingcraft-recent-emoji")
+}
+
+fn used_id() -> Id {
+    Id::unique("pingcraft-used-emoji")
 }
 
 /// The recently used emoji, newest first.
@@ -29,14 +39,27 @@ pub fn recent(ctx: &egui::Context) -> Vec<String> {
     ctx.data(|d| d.get_temp::<Recent>(recent_id())).unwrap_or_default().0
 }
 
-/// Notes that the user used this emoji.
+/// The account's recently used emoji, as the backend reported them. Those PingCraft does not know (newer than its
+/// emoji data, or not an emoji) are left out; the account keeps them.
+pub fn set_recent(ctx: &egui::Context, recent: &[String]) {
+    let shown: Vec<String> = recent.iter().filter(|e| emojis::get(e).is_some()).take(RECENT_MAX).cloned().collect();
+    ctx.data_mut(|d| d.insert_temp(recent_id(), Recent(shown)));
+}
+
+/// Notes that the user used this emoji: first among the recently used at once, and passed on to the backend.
 pub fn remember(ctx: &egui::Context, emoji: &str) {
     ctx.data_mut(|d| {
         let recent = &mut d.get_temp_mut_or_default::<Recent>(recent_id()).0;
         recent.retain(|e| e != emoji);
         recent.insert(0, emoji.to_owned());
         recent.truncate(RECENT_MAX);
+        d.get_temp_mut_or_default::<Used>(used_id()).0.push(emoji.to_owned());
     });
+}
+
+/// The uses since the last call, oldest first.
+pub fn take_used(ctx: &egui::Context) -> Vec<String> {
+    ctx.data_mut(|d| std::mem::take(&mut d.get_temp_mut_or_default::<Used>(used_id()).0))
 }
 
 /// The quick reactions: the recently used emoji first, then the fixed ones, six in all.

@@ -22,7 +22,7 @@ mod widgets;
 mod tests;
 
 use egui::{Frame, Margin};
-use pingcraft_core::app::Backend;
+use pingcraft_core::app::{Backend, Command, Event};
 use pingcraft_core::notify::Notifier;
 
 pub use state::{Screen, State, Tab};
@@ -78,6 +78,12 @@ impl PingCraftApp {
         let ctx = ui.ctx().clone();
         self.state.focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
         for event in self.backend.poll() {
+            match &event {
+                Event::RecentEmoji(recent) => picker::set_recent(&ctx, recent),
+                // The next one to sign in does not see this account's.
+                Event::SignedOut | Event::Locked { .. } | Event::AlreadyRunning => picker::set_recent(&ctx, &[]),
+                _ => {}
+            }
             self.state.apply(event);
         }
         let t = Tokens::get(&ctx);
@@ -105,6 +111,7 @@ impl PingCraftApp {
                 }
             }
         });
+        out.extend(picker::take_used(&ctx).into_iter().map(Command::EmojiUsed));
         for command in out {
             self.backend.send(command);
         }

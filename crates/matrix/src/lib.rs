@@ -29,6 +29,7 @@ pub mod engine;
 pub mod inbox;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod mautrix;
+pub mod recent_emoji;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod session;
 pub mod timeline;

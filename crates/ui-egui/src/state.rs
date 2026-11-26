@@ -382,6 +382,8 @@ impl State {
                     *shown = Some(details);
                 }
             }
+            // Kept with the picker (`PingCraftApp::ui`), which draws them.
+            Event::RecentEmoji(_) => {}
             Event::ReachedStart(chat) => {
                 if let Some(open) = self.open.as_mut().filter(|o| o.id == chat) {
                     open.at_start = true;
