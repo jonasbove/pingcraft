@@ -469,7 +469,14 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
     Muting is a push rule on the server, so the user's other Matrix apps follow it; the end time is kept in the
     chat's room account data (`io.github.jonasbove.pingcraft.mute_until`) and PingCraft turns notifications back on at that time
     while it runs (a push rule has no end time; if PingCraft is not running, it happens at its next start). Muted
-    chats show a struck bell and a quiet count, and still count as unread. Open: muting a whole network, "until a
+    chats show a struck bell and a quiet count, and still count as unread. A mute or unmute made on another device
+    (2026-11-26) shows as soon as the sync brings its push rule: the room list does not watch `m.push_rules`, so the
+    inbox wakes on it and sends the chats whose rule now says otherwise than what it last sent. The end time is saved
+    before the rule both ways, so it can arrive first: on its own it sends a chat only while the rule says muted with
+    an end, so a mute never shows as off before its rule arrives, nor an unmute as "until turned back on" (unit
+    tests; a live test with one user on two devices, `tests/inbox.rs`, a_mute_made_on_another_device_shows_in_the_inbox,
+    not yet run against a server). Open: a chat whose mute's end time changes on another device while it stays muted
+    for good (from an end to none) is not sent again until its next change; PingCraft's menu cannot do that. Open: muting a whole network, "until a
     time" (needs a date and time picker), mentions-only. PingCraft's own desktop notifications (milestone 6,
     ticket 1) leave muted chats out.
 11. **Notification sounds and colours.** Choose a sound for each network or chat (a few built-in sounds under an

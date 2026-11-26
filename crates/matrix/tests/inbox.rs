@@ -83,3 +83,41 @@ async fn a_bridge_added_later_changes_the_network_and_an_empty_state_key_does_no
     within("the sync to stop", connection.stop()).await;
     ana.sign_out().await;
 }
+
+/// Muting a chat on another device reaches this device's inbox: a mute is a push rule, which the room list does not
+/// watch, and its end is room account data saved before it. Then turning it back on there shows here too.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_mute_made_on_another_device_shows_in_the_inbox() {
+    use pingcraft_core::{Mute, Timestamp};
+    let server = server_or_skip!();
+    let here = within("this device signs in", sign_in_as(&server.homeserver, &server.user)).await;
+    let there = within("the other device signs in", sign_in_as(&server.homeserver, &server.user)).await;
+    let room = create_room(&here, &unique("Muted elsewhere"), false, None, vec![]).await;
+    let id = ChatId(room.to_string());
+
+    let connection = within("the sync to start here", Connection::start(here.session.client.clone())).await.unwrap();
+    let mut feed = connection.inbox().await.unwrap();
+    let mut inbox = Inbox::default();
+    inbox_until("the chat, not muted", &mut feed, &mut inbox, |inbox| inbox.get(&id).filter(|c| c.muted.is_none()).map(|_| ())).await;
+
+    let elsewhere = within("the sync to start there", Connection::start(there.session.client.clone())).await.unwrap();
+    let mut their_feed = elsewhere.inbox().await.unwrap();
+    let mut theirs = Inbox::default();
+    inbox_until("the chat there", &mut their_feed, &mut theirs, |inbox| inbox.get(&id).map(|_| ())).await;
+    let until = Timestamp(4_000_000_000_000);
+    assert_eq!(elsewhere.mute(&id, Some(Mute::Until(until))).await.unwrap().muted, Some(Mute::Until(until)));
+    // Never "until turned back on": the end is saved first, so it is there when the rule arrives.
+    let no_wrong_state = |inbox: &Inbox| {
+        let muted = inbox.get(&id).and_then(|c| c.muted);
+        assert_ne!(muted, Some(Mute::UntilUnmuted), "a mute with an end shows without it");
+        muted
+    };
+    inbox_until("the mute, with its end, here", &mut feed, &mut inbox, |inbox| (no_wrong_state(inbox) == Some(Mute::Until(until))).then_some(()))
+        .await;
+
+    assert_eq!(elsewhere.mute(&id, None).await.unwrap().muted, None);
+    inbox_until("notifications back on here", &mut feed, &mut inbox, |inbox| no_wrong_state(inbox).is_none().then_some(())).await;
+    drop((feed, their_feed, connection, elsewhere));
+    there.sign_out().await;
+    here.sign_out().await;
+}

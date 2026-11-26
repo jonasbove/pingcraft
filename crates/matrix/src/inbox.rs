@@ -6,9 +6,10 @@
 //! (`content.bridgebot`) and that bot is on the user's own server, where the admin runs the bridges. A room without
 //! one is a Matrix chat. [`crate::bridge_info`] gets that state into the local store and says which rooms changed.
 //!
-//! A chat's archive, and its sound and colour, are PingCraft's own room account data ([`crate::chat_settings`]).
-//! The room list does not notice a change to those, so the inbox also watches the sync's room updates for them and
-//! sends such a chat again, whether the change was made here or on another device.
+//! A chat's archive, its sound and colour, and its mute's end are PingCraft's own room account data
+//! ([`crate::chat_settings`]); whether it is muted is a push rule (`m.push_rules` global account data). The room list
+//! notices a change to neither, so the inbox also watches the sync's room updates and the push rules, and sends such a
+//! chat again, whether the change was made here or on another device ([`mute_wakes`] says when for a mute).
 
 use std::collections::{HashMap, HashSet};
 use std::pin::pin;
@@ -16,8 +17,10 @@ use std::sync::Arc;
 
 use futures_util::{Stream, StreamExt, stream};
 use matrix_sdk::deserialized_responses::{RawAnySyncOrStrippedState, TimelineEventKind};
+use matrix_sdk::event_handler::EventHandlerDropGuard;
 use matrix_sdk::executor::{AbortOnDrop, spawn};
 use matrix_sdk::latest_events::LatestEventValue;
+use matrix_sdk::ruma::events::push_rules::PushRulesEvent;
 use matrix_sdk::ruma::events::{AnyRoomAccountDataEvent, StateEventType};
 use matrix_sdk::ruma::serde::Raw;
 use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId, UserId};
@@ -50,9 +53,10 @@ impl InboxFeed {
     pub(crate) async fn start(client: Client, rooms: Arc<RoomListService>, bridges: broadcast::Receiver<OwnedRoomId>) -> Result<Self, SyncError> {
         // Before the room list, so no change falls between the chats first sent and the watch.
         let settings = client.subscribe_to_all_room_updates();
+        let push_rules = watch_push_rules(&client);
         let list = rooms.all_rooms().await.map_err(|e| SyncError(e.to_string()))?;
         let (tx, changes) = unbounded_channel();
-        let task = spawn(run(client, list, bridges, settings, tx));
+        let task = spawn(run(client, list, bridges, settings, push_rules, tx));
         Ok(Self { changes, _task: AbortOnDrop::new(task) })
     }
 
@@ -75,20 +79,63 @@ enum Wake {
     Bridge(Option<OwnedRoomId>),
     /// The sync brought PingCraft's own room account data for these rooms; `None` means some sync updates were
     /// missed, so send every room again.
-    Settings(Option<Vec<OwnedRoomId>>),
+    Settings(Option<Vec<(OwnedRoomId, Brought)>>),
+    /// The push rules changed, so a chat may have been muted or unmuted.
+    PushRules,
 }
 
-/// PingCraft's room account data that sends a chat again when the sync brings it. Not a mute's end
-/// ([`crate::chat_settings::MUTE_UNTIL`]): it is saved before the mute's push rule, and whether a chat is muted is
-/// read from that rule, which may not have synced yet; a chat sent again then would show as not muted.
+/// Which of PingCraft's own room account data the sync brought for a room.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Brought {
+    /// Its mute's end only: the chat is sent again only when [`mute_wakes`] says so.
+    MuteEnd,
+    /// Its archive, or its sound and colour ([`WAKING_SETTINGS`]): the chat is always sent again.
+    Settings,
+}
+
+/// PingCraft's room account data that always sends a chat again when the sync brings it.
 const WAKING_SETTINGS: &[&str] = &[crate::chat_settings::ARCHIVED, crate::chat_settings::ALERTS];
 
-/// The joined rooms in a sync's room updates that bring some of [`WAKING_SETTINGS`].
-fn rooms_with_own_settings(updates: &RoomUpdates) -> Vec<OwnedRoomId> {
-    let own = |raw: &Raw<AnyRoomAccountDataEvent>| {
-        raw.get_field::<String>("type").ok().flatten().is_some_and(|kind| WAKING_SETTINGS.contains(&kind.as_str()))
+/// The joined rooms in a sync's room updates that bring some of PingCraft's own room account data, and what.
+fn rooms_with_own_settings(updates: &RoomUpdates) -> Vec<(OwnedRoomId, Brought)> {
+    let kind = |raw: &Raw<AnyRoomAccountDataEvent>| match raw.get_field::<String>("type").ok().flatten() {
+        Some(kind) if WAKING_SETTINGS.contains(&kind.as_str()) => Some(Brought::Settings),
+        Some(kind) if kind == crate::chat_settings::MUTE_UNTIL => Some(Brought::MuteEnd),
+        _ => None,
     };
-    updates.joined.iter().filter(|(_, update)| update.account_data.iter().any(own)).map(|(id, _)| id.clone()).collect()
+    updates.joined.iter().filter_map(|(id, update)| update.account_data.iter().filter_map(kind).max().map(|b| (id.clone(), b))).collect()
+}
+
+/// Whether a chat is sent again for a change to its mute, given whether it was last sent as muted (`None`: never sent),
+/// its mute now, and whether its mute's end just arrived (`false`: the push rules changed).
+///
+/// Whether a chat is muted is read from its push rule, which the SDK reads again for every chat before the push
+/// rules' change wakes the inbox; a chat is sent again when that differs from what was last sent. A mute's end is
+/// saved before the rule when muting and before the rule is taken away when unmuting
+/// ([`crate::Connection::mute`]), so it can arrive while the rule still says the opposite. It sends the chat only while
+/// the rule says muted with an end, so neither a mute nor an unmute in progress shows the wrong state: a mute does
+/// not show as off before its rule arrives (the reason a mute's end did not wake the inbox at all before), and an
+/// unmute does not show as "until turned back on" (its end is cleared to 0 first). It still sends a chat whose rule
+/// arrived first (a sync that brings global account data before a room's), so the end time shows when it comes.
+fn mute_wakes(last_sent: Option<bool>, now: Option<Mute>, end_arrived: bool) -> bool {
+    last_sent != Some(now.is_some()) && !end_arrived || end_arrived && matches!(now, Some(Mute::Until(_)))
+}
+
+/// Wakes once for each change of the push rules the sync brings. The SDK has already read every chat's mute from the
+/// new rules when its event handlers run. The guard keeps the handler; dropping it stops the wakes.
+fn watch_push_rules(client: &Client) -> (UnboundedReceiver<()>, EventHandlerDropGuard) {
+    let (tx, rx) = unbounded_channel();
+    let handle = client.add_event_handler(move |_: PushRulesEvent| {
+        let tx = tx.clone();
+        async move {
+            let _ = tx.send(());
+        }
+    });
+    (rx, client.event_handler_drop_guard(handle))
+}
+
+fn push_rule_updates(rx: UnboundedReceiver<()>) -> impl Stream<Item = Wake> {
+    stream::unfold(rx, |mut rx| async move { rx.recv().await.map(|()| (Wake::PushRules, rx)) })
 }
 
 /// Wakes for the rooms whose PingCraft settings the sync brought. Updates without any are skipped.
@@ -123,6 +170,8 @@ fn bridge_updates(rx: broadcast::Receiver<OwnedRoomId>) -> impl Stream<Item = Wa
 struct State {
     rooms: Vector<RoomListItem>,
     sent_network: HashMap<OwnedRoomId, Network>,
+    /// Whether each chat was last sent as muted.
+    sent_muted: HashMap<OwnedRoomId, bool>,
     listening: HashSet<OwnedRoomId>,
     own: Option<OwnedUserId>,
 }
@@ -131,6 +180,7 @@ impl State {
     async fn chat(&mut self, room: &Room) -> Chat {
         let chat = chat_from_room(room, self.own.as_deref()).await;
         self.sent_network.insert(room.room_id().to_owned(), chat.network.clone());
+        self.sent_muted.insert(room.room_id().to_owned(), chat.muted.is_some());
         chat
     }
 }
@@ -140,15 +190,24 @@ async fn run(
     list: RoomList,
     bridges: broadcast::Receiver<OwnedRoomId>,
     settings: broadcast::Receiver<RoomUpdates>,
+    (push_rules, _push_rules_guard): (UnboundedReceiver<()>, EventHandlerDropGuard),
     tx: UnboundedSender<InboxChange>,
 ) {
     let (entries, controller) = list.entries_with_dynamic_adapters(MAX_CHATS);
     // Joined rooms that are not spaces. Invites come with the screen that accepts them.
     controller.set_filter(Box::new(new_filter_all(vec![Box::new(new_filter_joined()), Box::new(new_filter_not(Box::new(new_filter_space())))])));
-    let mut wakes = pin!(stream::select(stream::select(entries.map(Wake::Rooms), bridge_updates(bridges)), settings_updates(settings)));
+    let mut wakes = pin!(stream::select(
+        stream::select(entries.map(Wake::Rooms), bridge_updates(bridges)),
+        stream::select(settings_updates(settings), push_rule_updates(push_rules))
+    ));
     let latest = client.latest_events().await;
-    let mut state =
-        State { rooms: Vector::new(), sent_network: HashMap::new(), listening: HashSet::new(), own: client.user_id().map(ToOwned::to_owned) };
+    let mut state = State {
+        rooms: Vector::new(),
+        sent_network: HashMap::new(),
+        sent_muted: HashMap::new(),
+        listening: HashSet::new(),
+        own: client.user_id().map(ToOwned::to_owned),
+    };
 
     while let Some(wake) = wakes.next().await {
         let changes = match wake {
@@ -165,6 +224,7 @@ async fn run(
             }
             Wake::Bridge(room) => bridge_changed(&mut state, room).await,
             Wake::Settings(rooms) => settings_changed(&mut state, rooms.as_deref()).await,
+            Wake::PushRules => push_rules_changed(&mut state).await,
         };
         for change in changes {
             if tx.send(change).is_err() {
@@ -193,6 +253,7 @@ async fn room_list_changed(state: &mut State, diffs: Vec<VectorDiff<RoomListItem
     let after: HashSet<OwnedRoomId> = state.rooms.iter().map(|r| r.room_id().to_owned()).collect();
     for gone in before.difference(&after) {
         state.sent_network.remove(gone);
+        state.sent_muted.remove(gone);
         state.listening.remove(gone);
     }
 
@@ -229,13 +290,43 @@ async fn bridge_changed(state: &mut State, room: Option<OwnedRoomId>) -> Vec<Inb
     changes
 }
 
-/// Sends the chats again whose PingCraft settings the sync brought (`None`: every chat). Only rooms in the list
-/// are sent: a space, or a room the user left, must not turn up in the inbox.
-async fn settings_changed(state: &mut State, rooms: Option<&[OwnedRoomId]>) -> Vec<InboxChange> {
-    let candidates: Vec<Room> =
-        state.rooms.iter().filter(|r| rooms.is_none_or(|ids| ids.iter().any(|id| r.room_id() == id))).map(|r| Room::clone(r)).collect();
+/// Sends the chats again whose PingCraft settings the sync brought (`None`: every chat); one whose mute's end alone
+/// arrived only as [`mute_wakes`] says. Only rooms in the list are sent: a space, or a room the user left, must not
+/// turn up in the inbox.
+async fn settings_changed(state: &mut State, rooms: Option<&[(OwnedRoomId, Brought)]>) -> Vec<InboxChange> {
+    let candidates: Vec<(Room, Brought)> = state
+        .rooms
+        .iter()
+        .filter_map(|r| match rooms {
+            None => Some((Room::clone(r), Brought::Settings)),
+            Some(ids) => ids.iter().find(|(id, _)| r.room_id() == id).map(|(_, brought)| (Room::clone(r), *brought)),
+        })
+        .collect();
     let mut changes = Vec::with_capacity(candidates.len());
-    for room in candidates {
+    for (room, brought) in candidates {
+        let chat = chat_from_room(&room, state.own.as_deref()).await;
+        if brought == Brought::MuteEnd && !mute_wakes(state.sent_muted.get(room.room_id()).copied(), chat.muted, true) {
+            continue;
+        }
+        changes.push(InboxChange::Upsert(Box::new(state.chat(&room).await)));
+    }
+    changes
+}
+
+/// Sends the chats again whose push rule now says otherwise than what was last sent: muted or unmuted, here or on
+/// another device.
+async fn push_rules_changed(state: &mut State) -> Vec<InboxChange> {
+    let changed: Vec<Room> = state
+        .rooms
+        .iter()
+        .filter(|r| {
+            let now = crate::chat_settings::is_muted(r).then_some(Mute::UntilUnmuted);
+            mute_wakes(state.sent_muted.get(r.room_id()).copied(), now, false)
+        })
+        .map(|r| Room::clone(r))
+        .collect();
+    let mut changes = Vec::with_capacity(changed.len());
+    for room in changed {
         changes.push(InboxChange::Upsert(Box::new(state.chat(&room).await)));
     }
     changes
@@ -451,30 +542,55 @@ mod tests {
         JoinedRoomUpdate { account_data: account_data(types), ..Default::default() }
     }
 
-    /// Archiving and a chat's sound and colour are PingCraft's own room account data, which changes nothing the room
-    /// list watches: the inbox must hear of them from the sync itself. A mute's end does not wake it (see
-    /// [`super::WAKING_SETTINGS`]); nor do other apps' account data, or rooms the user left.
+    /// Archiving, a chat's sound and colour and a mute's end are PingCraft's own room account data, which changes
+    /// nothing the room list watches: the inbox must hear of them from the sync itself. A mute's end is told apart
+    /// ([`super::mute_wakes`] decides); other apps' account data and rooms the user left wake nothing.
     #[test]
-    fn only_pingcraft_settings_in_joined_rooms_wake_the_inbox() {
-        let (archived, alerts, muted, tagged, left): (OwnedRoomId, OwnedRoomId, OwnedRoomId, OwnedRoomId, OwnedRoomId) = (
+    fn pingcraft_settings_in_joined_rooms_wake_the_inbox() {
+        use super::Brought;
+        let (archived, alerts, muted, both, tagged, left): (OwnedRoomId, OwnedRoomId, OwnedRoomId, OwnedRoomId, OwnedRoomId, OwnedRoomId) = (
             owned_room_id!("!archived:example.org"),
             owned_room_id!("!alerts:example.org"),
             owned_room_id!("!muted:example.org"),
+            owned_room_id!("!both:example.org"),
             owned_room_id!("!tagged:example.org"),
             owned_room_id!("!left:example.org"),
         );
         let mut updates = RoomUpdates::default();
         updates.joined.insert(archived.clone(), joined(&[crate::chat_settings::ARCHIVED]));
         updates.joined.insert(alerts.clone(), joined(&["m.tag", crate::chat_settings::ALERTS]));
-        updates.joined.insert(muted, joined(&[crate::chat_settings::MUTE_UNTIL]));
+        updates.joined.insert(muted.clone(), joined(&[crate::chat_settings::MUTE_UNTIL]));
+        updates.joined.insert(both.clone(), joined(&[crate::chat_settings::MUTE_UNTIL, crate::chat_settings::ARCHIVED]));
         updates.joined.insert(tagged, joined(&["m.tag", "m.fully_read", "io.github.jonasbove.pingcraftish.archived", "com.example.archived"]));
         updates.left.insert(left, LeftRoomUpdate { account_data: account_data(&[crate::chat_settings::ARCHIVED]), ..Default::default() });
         let mut woken = rooms_with_own_settings(&updates);
         woken.sort();
-        let mut expected = vec![archived, alerts];
+        let mut expected = vec![(archived, Brought::Settings), (alerts, Brought::Settings), (muted, Brought::MuteEnd), (both, Brought::Settings)];
         expected.sort();
         assert_eq!(woken, expected);
         assert!(rooms_with_own_settings(&RoomUpdates::default()).is_empty());
+    }
+
+    /// A mute made or ended here or on another device shows in the inbox once its push rule has synced, and the end
+    /// and the rule never race into the wrong state (the end is saved before the rule both ways).
+    #[test]
+    fn a_mute_wakes_the_inbox_only_into_a_right_state() {
+        use super::mute_wakes;
+        use pingcraft_core::{Mute, Timestamp};
+        let until = Some(Mute::Until(Timestamp(5)));
+        let for_good = Some(Mute::UntilUnmuted);
+        // The push rules changed: sent again only when muted or not differs from what was last sent.
+        assert!(mute_wakes(Some(false), until, false), "muted on another device");
+        assert!(mute_wakes(Some(false), for_good, false), "muted for good on another device");
+        assert!(mute_wakes(Some(true), None, false), "turned back on on another device");
+        assert!(!mute_wakes(Some(true), until, false), "still muted: another chat's rule changed");
+        assert!(!mute_wakes(Some(false), None, false), "still not muted");
+        assert!(mute_wakes(None, None, false), "never sent");
+        // A mute's end arrived.
+        assert!(!mute_wakes(Some(false), None, true), "muting: the end came before the rule, which would show it as not muted");
+        assert!(!mute_wakes(Some(true), for_good, true), "unmuting: the end was cleared before the rule went, which would show it muted for good");
+        assert!(mute_wakes(Some(true), until, true), "the rule came first (or with it): the end shows when it arrives");
+        assert!(mute_wakes(Some(false), until, true), "the end and the rule arrived together");
     }
 
     #[test]
