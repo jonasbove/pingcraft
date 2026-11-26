@@ -11,6 +11,9 @@
 
 use std::time::{Duration, Instant};
 
+use matrix_sdk::config::RequestConfig;
+use matrix_sdk::ruma::api::client::config::{get_global_account_data, set_global_account_data};
+use matrix_sdk::ruma::api::error::ErrorKind;
 use matrix_sdk::ruma::events::GlobalAccountDataEventType;
 use matrix_sdk::ruma::serde::Raw;
 use serde_json::{Map, Value, json};
@@ -27,6 +30,11 @@ pub const MAX: usize = 100;
 pub const QUIET: Duration = Duration::from_secs(3);
 /// How long to wait before trying again when sending them failed (offline, say).
 const RETRY: Duration = Duration::from_secs(30);
+/// How long one request may take, without retrying: sending happens on the engine's loop, which must not stall
+/// (nor the window's closing wait) on a network that does not answer.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+/// How long sending may take in all (two reads and a write).
+pub const SAVE_TIMEOUT: Duration = Duration::from_secs(12);
 
 /// A well-formed entry: an object with a text `emoji` and a `total` of zero or more.
 fn well_formed(entry: &Value) -> bool {
@@ -99,6 +107,9 @@ pub struct Pending {
     uses: Vec<String>,
     /// When the next attempt may be made: [`QUIET`] after the last use, or [`RETRY`] after a failure.
     not_before: Option<Instant>,
+    /// What was last saved, and the synced copy as it was then: shown instead of that copy until the sync brings
+    /// the saved one, so emoji just sent do not drop out of the list for a moment.
+    saved: Option<(Value, String)>,
 }
 
 impl Pending {
@@ -118,13 +129,14 @@ impl Pending {
         &self.uses
     }
 
-    /// The uses were sent: forget them.
-    fn sent(&mut self) {
+    /// The uses were sent (`content` is what the server now has, `seen` the synced copy then): forget them.
+    fn sent(&mut self, content: Value, seen: String) {
         self.uses.clear();
         self.not_before = None;
+        self.saved = Some((content, seen));
     }
 
-    /// Sending them failed: try again later.
+    /// Sending them failed (or took too long): try again later.
     fn failed(&mut self, now: Instant) {
         self.not_before = Some(now + RETRY);
     }
@@ -134,48 +146,90 @@ fn problem(e: impl std::fmt::Display) -> String {
     format!("the recently used emoji could not be saved: {e}")
 }
 
+/// The synced copies of both events, and a text that changes when either does (compared, never shown or logged).
+async fn stored(account: &matrix_sdk::Account) -> (Option<Value>, Option<Value>, String) {
+    let read = |kind: &'static str| {
+        let account = account.clone();
+        async move {
+            account
+                .account_data_raw(GlobalAccountDataEventType::from(kind))
+                .await
+                .ok()
+                .flatten()
+                .and_then(|raw| raw.deserialize_as_unchecked::<Value>().ok())
+        }
+    };
+    let (current, legacy) = (read(RECENT_EMOJI).await, read(LEGACY_RECENT_EMOJI).await);
+    let text = |v: &Option<Value>| v.as_ref().map(Value::to_string).unwrap_or_default();
+    let seen = format!("{}\n{}", text(&current), text(&legacy));
+    (current, legacy, seen)
+}
+
+/// The list to show: the synced copy (or, until the sync brings it, what this device last saved) with the uses not
+/// sent yet on top.
+fn shown(current: Option<Value>, legacy: Option<Value>, seen: &str, pending: &Pending) -> Vec<String> {
+    let synced = match &pending.saved {
+        Some((saved, then)) if then == seen => saved.clone(),
+        _ => base(current, legacy),
+    };
+    emoji(&with_uses(synced, pending.uses()))
+}
+
+/// One request's settings: a short timeout and no retries (the next attempt is [`RETRY`] later).
+fn once() -> RequestConfig {
+    RequestConfig::new().timeout(REQUEST_TIMEOUT).disable_retry()
+}
+
 impl Connection {
     /// The account's recently used emoji as this device last synced them (no request to the server), with the uses
-    /// not sent yet on top, most recent first. With the raw content, to tell when it changes.
+    /// not sent yet on top, most recent first. With a text that changes when the synced copy does.
     pub async fn recent_emoji(&self, pending: &Pending) -> (Vec<String>, String) {
-        let account = self.client().account();
-        let read = |kind: &str| {
-            let account = account.clone();
-            let kind = GlobalAccountDataEventType::from(kind);
-            async move { account.account_data_raw(kind).await.ok().flatten().and_then(|raw| raw.deserialize_as_unchecked::<Value>().ok()) }
-        };
-        let (current, legacy) = (read(RECENT_EMOJI).await, read(LEGACY_RECENT_EMOJI).await);
-        // Only compared, never shown or logged.
-        let seen =
-            format!("{}\n{}", current.as_ref().map(Value::to_string).unwrap_or_default(), legacy.as_ref().map(Value::to_string).unwrap_or_default());
-        (emoji(&with_uses(base(current, legacy), pending.uses())), seen)
+        let (current, legacy, seen) = stored(&self.client().account()).await;
+        (shown(current, legacy, &seen, pending), seen)
     }
 
-    /// Sends the pending uses, on top of what the server has now, and returns the list as it then is. On failure
-    /// the uses stay pending, to try again later.
-    pub async fn save_recent_emoji(&self, pending: &mut Pending) -> Result<Vec<String>, String> {
-        let account = self.client().account();
-        let fetch = |kind: &str| {
-            let account = account.clone();
-            let kind = GlobalAccountDataEventType::from(kind);
-            async move { account.fetch_account_data(kind).await.map(|raw| raw.and_then(|raw| raw.deserialize_as_unchecked::<Value>().ok())) }
-        };
-        let fetched = async { Ok::<_, matrix_sdk::Error>((fetch(RECENT_EMOJI).await?, fetch(LEGACY_RECENT_EMOJI).await?)) }.await;
-        let (current, legacy) = match fetched {
-            Ok(both) => both,
-            Err(e) => {
-                pending.failed(Instant::now());
-                return Err(problem(e));
-            }
-        };
-        let content = with_uses(base(current, legacy), pending.uses());
-        let raw = Raw::new(&content).map_err(problem)?.cast_unchecked();
-        if let Err(e) = account.set_account_data_raw(GlobalAccountDataEventType::from(RECENT_EMOJI), raw).await {
-            pending.failed(Instant::now());
-            return Err(problem(e));
+    /// The server's copy of one event, asked for now (not the synced one). `None` when the account has none.
+    async fn fetch(&self, kind: &str) -> Result<Option<Value>, matrix_sdk::HttpError> {
+        let Some(user) = self.client().user_id() else { return Ok(None) };
+        let request = get_global_account_data::v3::Request::new(user.to_owned(), GlobalAccountDataEventType::from(kind));
+        match self.client().send(request).with_request_config(once()).await {
+            Ok(response) => Ok(response.account_data.deserialize_as_unchecked::<Value>().ok()),
+            Err(e) if e.client_api_error_kind() == Some(&ErrorKind::NotFound) => Ok(None),
+            Err(e) => Err(e),
         }
-        pending.sent();
-        Ok(emoji(&content))
+    }
+
+    /// Sends the pending uses, on top of what the server has now, and returns the list as it then is. On failure,
+    /// or after [`SAVE_TIMEOUT`], the uses stay pending, to try again later.
+    pub async fn save_recent_emoji(&self, pending: &mut Pending) -> Result<Vec<String>, String> {
+        let done = tokio::time::timeout(SAVE_TIMEOUT, self.try_save(pending.uses())).await;
+        match done {
+            Ok(Ok((content, seen))) => {
+                let list = emoji(&content);
+                pending.sent(content, seen);
+                Ok(list)
+            }
+            Ok(Err(e)) => {
+                pending.failed(Instant::now());
+                Err(e)
+            }
+            Err(_) => {
+                pending.failed(Instant::now());
+                Err(problem("the server took too long"))
+            }
+        }
+    }
+
+    async fn try_save(&self, uses: &[String]) -> Result<(Value, String), String> {
+        let current = self.fetch(RECENT_EMOJI).await.map_err(problem)?;
+        let legacy = if current.is_some() { None } else { self.fetch(LEGACY_RECENT_EMOJI).await.map_err(problem)? };
+        let content = with_uses(base(current, legacy), uses);
+        let Some(user) = self.client().user_id() else { return Err(problem("not signed in")) };
+        let raw = Raw::new(&content).map_err(problem)?.cast_unchecked();
+        let (_, _, seen) = stored(&self.client().account()).await;
+        let request = set_global_account_data::v3::Request::new_raw(user.to_owned(), GlobalAccountDataEventType::from(RECENT_EMOJI), raw);
+        self.client().send(request).with_request_config(once()).await.map_err(problem)?;
+        Ok((content, seen))
     }
 }
 
@@ -185,7 +239,7 @@ mod tests {
 
     use serde_json::json;
 
-    use super::{LEGACY_RECENT_EMOJI, MAX, Pending, QUIET, RECENT_EMOJI, base, emoji, with_uses};
+    use super::{LEGACY_RECENT_EMOJI, MAX, Pending, QUIET, RECENT_EMOJI, SAVE_TIMEOUT, base, emoji, shown, with_uses};
 
     fn uses(list: &[&str]) -> Vec<String> {
         list.iter().map(|s| (*s).to_owned()).collect()
@@ -271,7 +325,27 @@ mod tests {
         assert!(!pending.due(Some(start + Duration::from_secs(7))));
         assert!(pending.due(Some(start + Duration::from_secs(40))));
         assert_eq!(pending.uses(), ["👍", "🎉"]);
-        pending.sent();
+        pending.sent(json!({ "recent_emoji": [] }), String::new());
         assert!(!pending.due(None));
+    }
+
+    /// Emoji just sent stay in the list until the sync brings the server's copy, also when another is used
+    /// meanwhile; once the synced copy changes, it is shown.
+    #[test]
+    fn what_was_just_saved_is_shown_until_the_sync_brings_it() {
+        let old = Some(json!({ "recent_emoji": [{ "emoji": "🚀", "total": 1 }] }));
+        let mut pending = Pending::default();
+        pending.sent(json!({ "recent_emoji": [{ "emoji": "👍", "total": 1 }, { "emoji": "🚀", "total": 1 }] }), "before".into());
+        pending.used("🎉".to_owned(), Instant::now());
+        assert_eq!(shown(old.clone(), None, "before", &pending), ["🎉", "👍", "🚀"], "the sync has not brought it yet");
+        let new = Some(json!({ "recent_emoji": [{ "emoji": "👍", "total": 1 }, { "emoji": "🚀", "total": 1 }] }));
+        assert_eq!(shown(new, None, "after", &pending), ["🎉", "👍", "🚀"]);
+        assert_eq!(shown(old, None, "changed elsewhere", &pending), ["🎉", "🚀"], "the synced copy wins once it changes");
+    }
+
+    /// Sending happens on the engine's loop and while the window closes: it gives up rather than hang.
+    #[test]
+    fn saving_gives_up_rather_than_hang() {
+        assert!(SAVE_TIMEOUT <= Duration::from_secs(15));
     }
 }

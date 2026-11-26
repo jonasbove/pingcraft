@@ -438,7 +438,8 @@ impl Worker {
     /// since the last (or at once, `now`, when closing or signing out).
     async fn save_recent_emoji(&mut self, now: bool) {
         let Some(s) = self.signed_in.as_mut() else { return };
-        if !s.emoji_uses.due((!now).then(std::time::Instant::now)) {
+        // Not while the server cannot be reached: the uses wait (and are lost if PingCraft closes meanwhile).
+        if !s.emoji_uses.due((!now).then(std::time::Instant::now)) || s.connection.state() != ConnectionState::Online {
             return;
         }
         // On failure (offline, say) the uses are kept and tried again later, without a word: the header already

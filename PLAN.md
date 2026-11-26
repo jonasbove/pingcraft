@@ -358,12 +358,18 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
      shortcode) moves the emoji to the front and adds one; uses are sent together 3 seconds after the last (and at
      once when PingCraft closes or signs out), on top of what the server has at that moment, fetched fresh, so
      another device's change is merged, not overwritten. Entries and keys PingCraft does not know are kept;
-     malformed ones are dropped. A failed send (offline) is tried again every 30 seconds, quietly. The interface
+     malformed ones are dropped. Nothing is sent while the server cannot be reached; a failed send is tried again 30
+     seconds later, quietly, and each request gives up after 5 seconds without retrying (12 for the whole send), so
+     the engine's loop and closing the window never wait longer. Emoji just sent stay in the list until the sync
+     brings the server's copy. The interface
      shows the 24 newest it knows and forgets them on sign-out. Tests: the merging, the order, the cap, the older
      format and the timing (unit tests), the interface's side through the AccessKit tree, and a live test with one
      user on two devices (`tests/recent_emoji.rs`), which **was not run against a server**: the test server's
-     variables were not set in this session, so it skipped. Not tried by hand with Element. Uses not yet sent when
-     PingCraft closes offline are lost. Typing a whole `:name:` (not picking the suggestion) does not count as a
+     variables were not set in this session, so it skipped. That leaves the main link unproven: that the sync
+     (simplified sliding sync's account data extension) brings `m.recent_emoji` into the store, which is what the
+     interface shows on another device or after a restart. Not tried by hand with Element. Uses not yet sent when
+     PingCraft closes offline are lost. The web build does not have it yet (the module is native only, like the
+     engine). Typing a whole `:name:` (not picking the suggestion) does not count as a
      use, as before.
    - Emoji names and search are English.
    - **Skin tone: one saved default** (maintainer, 2026-11-26). A SKIN TONE row in the picker (a raised hand in

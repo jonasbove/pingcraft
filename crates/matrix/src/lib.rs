@@ -29,6 +29,8 @@ pub mod engine;
 pub mod inbox;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod mautrix;
+// Native only for now, like the engine that uses it (its timing uses `std::time::Instant`).
+#[cfg(not(target_arch = "wasm32"))]
 pub mod recent_emoji;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod session;
