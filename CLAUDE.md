@@ -14,8 +14,9 @@ maintainer approves.
 
 - **Matrix underneath.** PingCraft is a Matrix client. Other networks are reached through Matrix bridges, the
   same design Beeper uses, so each network is a bridge you can add or leave out.
-- **The server side** is a Rust Matrix homeserver (Apache-2.0; continuwuity is the starting candidate) plus the
-  mautrix bridges, each in its own container.
+- **The server side** is a Rust Matrix homeserver (Apache-2.0; tuwunel, see [ADR 0001](docs/adr/0001-homeserver-tuwunel.md)) plus the
+  mautrix bridges, each in its own container, behind one reverse proxy (Caddy; ADR 0003's addendum, approved
+  2026-11-25).
 - **The client** is Rust and egui on `matrix-rust-sdk` (Apache-2.0), desktop first, with a web build (Trunk)
   so CraftCloud can serve it like its other apps.
 - **First networks:** WhatsApp, Signal, Telegram and Discord.
@@ -33,7 +34,7 @@ maintainer approves.
 - **Licences.** The client's dependencies follow the allowlist in `AGENTS.md`. The mautrix bridges are
   AGPL-3.0, which is not on the allowlist. They run as separate, unmodified programs in their own containers and
   are never linked into PingCraft, but whether that is acceptable is a maintainer decision: Phase 0 writes it up
-  as an ADR and stops for approval (house rule 9).
+  as an ADR and stops for approval (ADR 0002 records the approval).
 - **Networks' terms.** Bridging some networks breaks their terms of service or can get an account banned.
   Each network's ADR says what the risk is, so people can choose.
 - **Shared libraries first.** Check `storytold/craft-libs` (for example `settings`, `i18n`, `keymap`, `menu`,

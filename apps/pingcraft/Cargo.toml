@@ -1,0 +1,26 @@
+[package]
+name = "pingcraft"
+description = "PingCraft desktop app: all your chats in one inbox"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+pingcraft-ui-egui = { workspace = true }
+pingcraft-matrix = { path = "../../crates/matrix" }
+pingcraft-keychain = { path = "../../crates/keychain" }
+pingcraft-notify = { path = "../../crates/notify" }
+craft-settings = { workspace = true }
+# PingCraft's settings on this computer (craft-settings' config.toml).
+serde = { version = "1", features = ["derive"] }
+egui = { workspace = true }
+eframe = { workspace = true, features = ["default_fonts", "clipboard", "wgpu", "accesskit", "wayland", "x11"] }
+
+[dev-dependencies]
+tempfile = "3"

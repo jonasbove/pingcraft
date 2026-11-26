@@ -1,0 +1,26 @@
+[package]
+name = "pingcraft-keychain"
+description = "Keeps PingCraft's store key in the OS keychain (ADR 0004). Desktop only. A candidate for a craft-libs secrets crate."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+getrandom = "0.4"
+zeroize = "1.9"
+# The unlock-passphrase vault (ADR 0004): Argon2id derives the key, XChaCha20-Poly1305 encrypts the file. Both
+# RustCrypto, MIT OR Apache-2.0.
+argon2 = { version = "0.6", default-features = false, features = ["alloc", "zeroize"] }
+chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+keyring = { version = "=4.2.0" }

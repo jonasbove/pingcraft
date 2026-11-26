@@ -1,0 +1,18 @@
+[package]
+name = "pingcraft-web"
+description = "PingCraft web build (wasm, Trunk; milestone 4)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pingcraft-ui-egui = { workspace = true }
