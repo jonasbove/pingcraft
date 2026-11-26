@@ -60,7 +60,7 @@ impl Network {
     pub fn emoji_presentation(&self) -> EmojiPresentation {
         match self.0.as_str() {
             "telegram" => EmojiPresentation::EmojiFirst { arrows: true },
-            "signal" | "whatsapp" | "discord" => EmojiPresentation::EmojiFirst { arrows: false },
+            "signal" | "whatsapp" => EmojiPresentation::EmojiFirst { arrows: false },
             _ => EmojiPresentation::Unicode,
         }
     }
@@ -422,7 +422,7 @@ mod tests {
         assert_eq!(Network::from_id("Telegram").emoji_presentation(), EmojiFirst { arrows: true });
         assert_eq!(Network::from_id("signal").emoji_presentation(), EmojiFirst { arrows: false });
         assert_eq!(Network::from_id("whatsapp").emoji_presentation(), EmojiFirst { arrows: false });
-        assert_eq!(Network::from_id("discord").emoji_presentation(), EmojiFirst { arrows: false });
+        assert_eq!(Network::from_id("discord").emoji_presentation(), Unicode, "not looked at yet");
         assert_eq!(Network::matrix().emoji_presentation(), Unicode);
         assert_eq!(Network::from_id("somewhere-new").emoji_presentation(), Unicode);
     }

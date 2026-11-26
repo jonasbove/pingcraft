@@ -420,20 +420,23 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
      are now drawn at 1.3 times the text (`emoji::INLINE_SCALE`), as Signal does, in messages, names, previews,
      quotes, reactions, the bars and the composer; every line of text that has an emoji is 1.5 times the text size
      tall (`EMOJI_LINE`) with text and emoji centred in it, since egui otherwise makes only the rows with an emoji
-     taller and lines jump. A message of one to three emoji and nothing but white space (`emoji::is_large`) is
+     taller and lines jump. One line of text (names, previews, the header, quotes, the bars, reactions, the
+     composer) keeps exactly the text's own height: the emoji is centred on it and reaches 1–3 px above and below,
+     into the padding, so the inbox rows, the header and the composer do not move when an emoji appears. A message of one to three emoji and nothing but white space (`emoji::is_large`) is
      drawn at 2.5 times the body (`LARGE_SCALE`); four, or any text, is an ordinary message (Signal's limit is 5,
      Telegram Desktop's 3). Previews and names never go large. The picker, the quick reactions, the emoji button and
      the verification symbols keep the size they ask for (`emoji::symbol`). Tests: the sections' sizes and line
      heights, which messages are large, the glyphs fitting their lines in the real fonts (at 12.5 px an emoji is now
-     about 18 px tall in a 19 px line, against a 14.4 px text line), and a large message through the AccessKit tree
-     with its text unchanged. Open: a message with an emoji has its lines a third further apart than one without
+     about 18 px tall in a 19 px line, against a 14.4 px text line), a line with an emoji as tall as one without, the
+     composer's height while an emoji is typed, and a large message through the AccessKit tree with its text
+     unchanged. Open: a message with an emoji has its lines a third further apart than one without
      (the maintainer may prefer the emoji to overlap the line spacing a little instead).
    - **Symbols that are text by default follow the chat's network's app** (maintainer, 2026-11-26; it started with a
      ☺ that Signal shows as a colour emoji and PingCraft showed as text). `Network::emoji_presentation` in
      `pingcraft-core`: `Unicode` (text unless U+FE0F follows) or `EmojiFirst { arrows }` (an emoji whenever it has an
      emoji form, except ©, ® and ™; arrows such as ↔ only with `arrows`). Everywhere: U+FE0F makes an emoji, U+FE0E
-     keeps text, digits, `#` and `*` are text unless a keycap. Telegram: `EmojiFirst { arrows: true }`; Signal,
-     WhatsApp and Discord: `EmojiFirst { arrows: false }`; Matrix and networks not looked at: `Unicode`. Used for
+     keeps text, digits, `#` and `*` are text unless a keycap. Telegram: `EmojiFirst { arrows: true }`; Signal and
+     WhatsApp: `EmojiFirst { arrows: false }`; Matrix, Discord and networks not looked at: `Unicode`. Used for
      message bodies (and which are large), names, previews, quotes, reactions, the bars and the composer; the picker
      and suggestions show emoji PingCraft chose, with U+FE0F. Unit tests per network for ☺ ❤ ✔ © 1 ↔ and ☺︎, and a
      lone ☺ in the (Telegram) test chat is large through the AccessKit tree. What each app does, read from their
@@ -442,7 +445,8 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
        treats a trailing U+FE0F as optional; `lib/emoji/.../parsing/EmojiTree.java`) and ignores U+FE0E; whether
        its downloaded emoji data has © ® ™ was not checked. Desktop is strict: only fully qualified sequences are
        keys of its emoji data (`ts/axo/emoji.std.ts`, `scripts/generate-emoji-data.mjs`), so a bare ☺ stays text
-       there. iOS leaves it to Apple's renderer (not checked). PingCraft follows the phones, as the report did.
+       there. iOS leaves it to Apple's renderer (not checked). PingCraft follows the phones, as the report did, so
+       it differs from Signal Desktop: **for the maintainer to confirm.**
        Signal's large messages are up to 5 emoji (`JumboEmoji.kt`, `kMaxJumbomojiCount`).
      - **Telegram:** Desktop treats U+FE0F as optional except for exactly ™ © ® (`desktop-app/codegen`
        `codegen/emoji/data.cpp`, `generator.cpp`; `lib_ui` `ui/text/text_block_parser.cpp`), so bare ☺ ❤ ✔ ↔ are
@@ -452,7 +456,8 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
      - **WhatsApp:** closed source; no public description was found. From memory of its Web and Android apps a bare
        ❤ is a red heart. **Unsure**: chosen like Signal's phones for the maintainer to confirm.
      - **Discord:** not researched beyond user reports of ™ being turned into an emoji (Discord's support forum,
-       "Don't correct trademark symbol to emoji"), which suggests it is lenient. **Unsure**: like Signal for now.
+       "Don't correct trademark symbol to emoji"), which suggests it is lenient. **Unsure**, so `Unicode` until its
+       ticket (corrected on 2026-11-26: the first commit had it like Signal).
      - **Element (Matrix):** Element Web marks up only `\p{RGI_Emoji}` (fully qualified) and explicitly not before
        U+FE0E (`apps/web/src/HtmlUtils.tsx`); what a bare ☺ looks like then depends on the font stack (Inter, then
        the system's colour emoji font). Element X iOS's "only emoji" check (matrix-rust-sdk
@@ -598,8 +603,9 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
       it as archived. Tests: the rule (core unit tests: counts, muted, no messages, coming back), the archive time,
       and the menu, the filter and coming back through the AccessKit tree. A live check (in `tests/timeline.rs`, the
       chat settings test) archives a chat and waits for the inbox to show it archived; it **was not run** (no test
-      server in this session). Whether another device's archiving reaches the inbox at once, or only at the next
-      change to the chat, is unchecked; not tried by hand. **Needs a frame** on page "Messages · Draft" (the filter and the
+      server in this session). Another device's archiving reaches the inbox as soon as the sync brings it (the inbox
+      watches the sync's room account data, 2026-11-26), but no live test has two devices for it yet; not tried by
+      hand. **Needs a frame** on page "Messages · Draft" (the filter and the
       menu items), not drawn in this change.
     - **Context menu: done, without shortcuts.** A message's menu opens from its "…" button or a right-click;
       the keyboard shortcuts in the design (through `craft-keymap`) are still to come. **They come with the

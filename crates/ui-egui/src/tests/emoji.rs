@@ -355,7 +355,7 @@ fn the_account_tone_decides_over_the_local_one() {
     assert_eq!(account_tone(None, Medium, true), (Default, false));
 }
 
-/// Emoji among text, a size up, fit their lines in the app's fonts: no emoji reaches past its line into the next, and
+/// Emoji among a message's text, a size up, fit their lines in the app's fonts: no emoji reaches past its line into the next, and
 /// a line with an emoji is as tall as one without, so lines do not jump. Prints the sizes, for tuning.
 #[test]
 #[cfg_attr(not(color_emoji), ignore = "built without the colour emoji font: cargo xtask fonts")]
@@ -365,7 +365,7 @@ fn emoji_a_size_up_fit_even_lines() {
     ctx.run_ui(egui::RawInput::default(), |_| {}).textures_delta.clear();
     for size in [12.5, 14.0, 16.0] {
         let galley = ctx.fonts_mut(|f| {
-            f.layout_job(crate::emoji::text(
+            f.layout_job(crate::emoji::body(
                 "Hg 😀 ❤\u{fe0f}\nHg only text\n👍🏽 Hg",
                 size,
                 egui::Color32::WHITE,
@@ -418,4 +418,46 @@ fn an_emoji_only_message_is_large_and_keeps_its_text() {
     assert!(large > text * 2.0, "two emoji are large: {large} against {text}");
     assert!(four < text * 2.0, "four emoji are not: {four} against {text}");
     assert!(height("☺") > text * 2.0, "a lone ☺ is large on Telegram");
+}
+
+/// In one line of text (a name, a preview, the composer) an emoji a size up leaves the line exactly as tall as without
+/// it, so the inbox rows, the header and the composer do not move, and it reaches only a little past the line.
+#[test]
+#[cfg_attr(not(color_emoji), ignore = "built without the colour emoji font: cargo xtask fonts")]
+fn emoji_a_size_up_keep_one_line_as_tall() {
+    let ctx = egui::Context::default();
+    crate::theme::install(&ctx);
+    ctx.run_ui(egui::RawInput::default(), |_| {}).textures_delta.clear();
+    let unicode = pingcraft_core::EmojiPresentation::Unicode;
+    for size in [12.5, 13.0, 14.0, 16.0] {
+        let with = ctx.fonts_mut(|f| f.layout_job(crate::emoji::text("Hg 😀 👍🏽", size, egui::Color32::WHITE, unicode)));
+        let without = ctx.fonts_mut(|f| f.layout_job(crate::emoji::text("Hg é", size, egui::Color32::WHITE, unicode)));
+        assert_eq!(with.size().y, without.size().y, "a line with an emoji is as tall as one without at {size}");
+        for g in with.rows.iter().flat_map(|r| r.glyphs.iter()).filter(|g| g.is_color) {
+            let (top, bottom) = (g.pos.y + g.uv_rect.offset.y, g.pos.y + g.uv_rect.offset.y + g.uv_rect.size.y);
+            eprintln!("one line at {size}: {} tall, emoji drawn {top}..{bottom}", with.size().y);
+            let reach = size * 0.2;
+            assert!(
+                top >= -reach && bottom <= with.size().y + reach,
+                "the emoji stays near its line at {size}: {top}..{bottom} in {}",
+                with.size().y
+            );
+            assert!(g.uv_rect.size.y >= size * 1.15, "the emoji is a size up at {size}");
+        }
+    }
+}
+
+/// Typing an emoji does not make the composer taller.
+#[test]
+fn the_composer_keeps_its_height_with_an_emoji() {
+    use egui_kittest::kittest::{NodeT, Queryable};
+    let fake = super::Fake::default();
+    let mut h = super::messages::book_club(&fake);
+    let height = |h: &egui_kittest::Harness<'static, crate::PingCraftApp>| {
+        let b = h.get_by_role_and_label(egui::accesskit::Role::TextInput, "Message Book club").accesskit_node().raw_bounds().unwrap();
+        b.y1 - b.y0
+    };
+    let before = height(&h);
+    super::type_into(&mut h, "Message Book club", "Great 👍🏽");
+    assert_eq!(height(&h), before);
 }

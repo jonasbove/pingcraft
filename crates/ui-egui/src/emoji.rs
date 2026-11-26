@@ -181,16 +181,24 @@ pub const LARGE_SCALE: f32 = 2.5;
 /// At most this many emoji, and nothing else but white space, make a message large ([`body`]).
 pub const LARGE_MAX: usize = 3;
 
-/// How tall each line of text with emoji is, in the text's size: tall enough for an emoji at [`INLINE_SCALE`], so a
-/// line with one is as tall as the lines without, and no emoji reaches into the line above or below. Text and emoji
-/// are both centred in it. (A test checks the emoji's glyphs fit.)
+/// How tall each line of a message's text with emoji is, in the text's size: tall enough for an emoji at
+/// [`INLINE_SCALE`], so a line with one is as tall as the lines without, and no emoji reaches into the line above or
+/// below. Text and emoji are both centred in it. (A test checks the emoji's glyphs fit.)
 pub const EMOJI_LINE: f32 = 1.5;
+
+/// The line an emoji takes in one line of text (a name, a preview, the composer), in the text's size: a little less
+/// than the text's own line (1.15 in egui's proportional face), so the line is exactly as tall as without the emoji
+/// and the layout around it (the inbox rows, the header, the composer) does not move. The emoji is centred on the line
+/// and reaches about a seventh of the text's size above and below it, into the padding.
+const SINGLE_LINE: f32 = 1.1;
 
 /// How big a job's emoji are.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Scale {
-    /// At [`INLINE_SCALE`], in lines [`EMOJI_LINE`] tall.
+    /// At [`INLINE_SCALE`], in lines [`EMOJI_LINE`] tall: a message's text, which may wrap.
     Inline,
+    /// At [`INLINE_SCALE`], in the text's own line ([`SINGLE_LINE`]): one line of text.
+    Line,
     /// Everything at [`LARGE_SCALE`]: a message of emoji only.
     Large,
     /// At the size given: emoji on their own, sized by the caller (the picker, the verification symbols).
@@ -198,9 +206,10 @@ enum Scale {
 }
 
 /// `text` as a layout job in `format`, with its emoji (as [`is_emoji`] tells them for `presentation`) in [`family`]
-/// at [`INLINE_SCALE`]. Text without emoji is one section at `format`; lines with emoji are [`EMOJI_LINE`] tall.
+/// at [`INLINE_SCALE`], for one line of text: the line is as tall as without them. Text without emoji is one section
+/// at `format`.
 pub fn job(text: &str, format: TextFormat, presentation: EmojiPresentation) -> LayoutJob {
-    job_at(text, format, Scale::Inline, presentation)
+    job_at(text, format, Scale::Line, presentation)
 }
 
 fn job_at(text: &str, format: TextFormat, scale: Scale, presentation: EmojiPresentation) -> LayoutJob {
@@ -212,10 +221,14 @@ fn job_at(text: &str, format: TextFormat, scale: Scale, presentation: EmojiPrese
     let size = format.font_id.size;
     let (format, emoji_size) = match scale {
         Scale::Inline => (TextFormat { line_height: Some(size * EMOJI_LINE), ..format }, size * INLINE_SCALE),
+        Scale::Line => (format, size * INLINE_SCALE),
         Scale::Large => (TextFormat { font_id: FontId::new(size * LARGE_SCALE, format.font_id.family.clone()), ..format }, size * LARGE_SCALE),
         Scale::AsGiven => (format, size),
     };
-    let emoji_format = TextFormat { font_id: FontId::new(emoji_size, family()), ..format.clone() };
+    let mut emoji_format = TextFormat { font_id: FontId::new(emoji_size, family()), ..format.clone() };
+    if scale == Scale::Line {
+        emoji_format.line_height = Some(size * SINGLE_LINE);
+    }
     let mut start = 0;
     let mut current = None;
     for (at, cluster) in text.grapheme_indices(true) {
@@ -238,14 +251,14 @@ fn job_at(text: &str, format: TextFormat, scale: Scale, presentation: EmojiPrese
     job
 }
 
-/// Proportional text at `size` in `color`, with its emoji in colour at [`INLINE_SCALE`]: names, previews, quotes,
-/// reactions. `presentation` is the chat's network's ([`pingcraft_core::Network::emoji_presentation`]).
+/// One line of proportional text at `size` in `color`, with its emoji in colour at [`INLINE_SCALE`] ([`job`]): names,
+/// previews, quotes, reactions. `presentation` is the chat's network's ([`pingcraft_core::Network::emoji_presentation`]).
 pub fn text(text: &str, size: f32, color: Color32, presentation: EmojiPresentation) -> LayoutJob {
     job(text, TextFormat::simple(FontId::proportional(size), color), presentation)
 }
 
 /// A message's text at `size` in `color`: large ([`LARGE_SCALE`]) when it is only a few emoji ([`is_large`]),
-/// otherwise as [`text`].
+/// otherwise with its emoji at [`INLINE_SCALE`] in even lines [`EMOJI_LINE`] tall.
 pub fn body(text: &str, size: f32, color: Color32, presentation: EmojiPresentation) -> LayoutJob {
     let scale = if is_large(text, presentation) { Scale::Large } else { Scale::Inline };
     job_at(text, TextFormat::simple(FontId::proportional(size), color), scale, presentation)
@@ -322,15 +335,21 @@ mod tests {
         assert_eq!(job("", TextFormat::default(), Unicode).sections.len(), 1);
     }
 
-    /// Emoji among text are a size up from it; every line of such text is the same height, so a line with an emoji
-    /// does not jump. Text without emoji is untouched.
+    /// Emoji among text are a size up from it. In a message every line of such text is the same height, so a line
+    /// with an emoji does not jump; in one line of text (a name, a preview) the line keeps the text's own height. Text
+    /// without emoji is untouched.
     #[test]
     fn emoji_among_text_are_a_size_up_in_even_lines() {
-        let j = text("Hi 👍🏽 there", 14.0, Color32::WHITE, Unicode);
+        let j = body("Hi 👍🏽 there", 14.0, Color32::WHITE, Unicode);
         let line = Some(14.0 * EMOJI_LINE);
         assert_eq!(sections(&j), [("Hi ", 14.0, false, line), ("👍🏽", 14.0 * INLINE_SCALE, true, line), (" there", 14.0, false, line)]);
         assert_eq!(j.text, "Hi 👍🏽 there", "what a screen reader reads is unchanged");
-        assert_eq!(sections(&text("Hi é there", 14.0, Color32::WHITE, Unicode)), [("Hi é there", 14.0, false, None)]);
+        let one_line = text("Hi 👍🏽 there", 14.0, Color32::WHITE, Unicode);
+        assert_eq!(
+            sections(&one_line),
+            [("Hi ", 14.0, false, None), ("👍🏽", 14.0 * INLINE_SCALE, true, Some(14.0 * super::SINGLE_LINE)), (" there", 14.0, false, None)]
+        );
+        assert_eq!(sections(&body("Hi é there", 14.0, Color32::WHITE, Unicode)), [("Hi é there", 14.0, false, None)]);
         assert_eq!(sections(&text("plain", 14.0, Color32::WHITE, Unicode)), [("plain", 14.0, false, None)]);
         // Places that size emoji themselves get exactly that size.
         assert_eq!(sections(&symbol("👍", 18.0, Color32::WHITE)), [("👍", 18.0, true, None)]);
@@ -359,18 +378,19 @@ mod tests {
     }
 
     /// A symbol that is text by default is drawn as the chat's network's app draws it (PLAN.md, "Messages and chats"
-    /// 1): Signal, WhatsApp and Discord draw ☺ ❤ ✔ as emoji, Telegram arrows too; ©, digits and (but on Telegram)
+    /// 1): Signal and WhatsApp draw ☺ ❤ ✔ as emoji, Telegram arrows too; ©, digits and (but on Telegram)
     /// arrows stay text; U+FE0E keeps any of them text; Matrix follows Unicode.
     #[test]
     fn text_default_symbols_follow_the_networks_app() {
         let cases = ["☺", "❤", "✔", "©", "1", "↔", "☺\u{fe0e}"];
         let drawn = |network: &str| -> Vec<bool> { cases.iter().map(|c| is_emoji(c, Network::from_id(network).emoji_presentation())).collect() };
         assert_eq!(drawn("matrix"), [false, false, false, false, false, false, false]);
-        for network in ["signal", "whatsapp", "discord"] {
+        for network in ["signal", "whatsapp"] {
             assert_eq!(drawn(network), [true, true, true, false, false, false, false], "{network}");
         }
         assert_eq!(drawn("telegram"), [true, true, true, false, false, true, false]);
         assert_eq!(drawn("somewhere-new"), drawn("matrix"));
+        assert_eq!(drawn("discord"), drawn("matrix"), "not looked at yet");
         // With U+FE0F, an emoji everywhere.
         for presentation in [Unicode, EmojiFirst { arrows: false }, EmojiFirst { arrows: true }] {
             for emoji in ["☺\u{fe0f}", "©\u{fe0f}", "↔\u{fe0f}", "1\u{fe0f}\u{20e3}", "😀"] {
