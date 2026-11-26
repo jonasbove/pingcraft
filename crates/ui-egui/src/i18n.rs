@@ -2,10 +2,10 @@
 //! [`trn`] and `{name}` placeholders through [`fmt`], in the call shape of craft-libs' `craft-i18n`, so it can
 //! take over here without touching the screens.
 //!
-//! For now this is a stand-in with no catalogs: the English is shown as is. `craft-i18n` cannot be linked into the
-//! same program as `matrix-sdk` 0.19.1 yet: its ICU crates turn on `zerovec`'s `serde` feature, and with it
-//! `ruma-common` 0.20.2 fails to compile (E0275, type inference overflows on `Box::deserialize`). PLAN.md tracks
-//! it. What is missing until then: catalogs, the system language, and bidi isolation of inserted names.
+//! For now this is a stand-in with no catalogs: the English is shown as is. `craft-i18n` now links next to
+//! `matrix-sdk` 0.19.1 (with the patched ruma in `vendor/`), but taking it over is its own change, since it does
+//! not render the same: `trn` groups numbers by region and `fmt` isolates right-to-left names. PLAN.md tracks it.
+//! What is missing until then: catalogs, the system language, and bidi isolation of inserted names.
 
 /// Looks English interface text up in the current language (English only, for now).
 pub fn t(source: &str) -> &str {
