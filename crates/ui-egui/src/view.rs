@@ -813,7 +813,7 @@ fn symbol_tiles(ui: &mut Ui, symbols: &[SasSymbol]) {
             egui::Frame::new().fill(t.sunken).stroke(t.hairline()).inner_margin(Margin::symmetric(4, 10)).show(ui, |ui| {
                 ui.set_width(80.0);
                 ui.vertical_centered(|ui| {
-                    ui.label(crate::emoji::text(&s.symbol, 34.0, egui::Color32::PLACEHOLDER));
+                    ui.label(crate::emoji::symbol(&s.symbol, 34.0, egui::Color32::PLACEHOLDER));
                     // The spec's English name; translated through the catalog like any other text.
                     ui.label(RichText::new(tl!(&s.name)).size(12.0).color(t.muted));
                 });

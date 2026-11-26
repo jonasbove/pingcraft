@@ -188,7 +188,7 @@ pub fn name(emoji: &str) -> String {
 /// One emoji as a button; its accessible name is the emoji's name.
 fn emoji_button(ui: &mut Ui, emoji: &str, size: f32) -> bool {
     let response =
-        ui.add(egui::Button::new(emoji::text(emoji, size, Color32::PLACEHOLDER)).frame(false).min_size(egui::vec2(size + 10.0, size + 8.0)));
+        ui.add(egui::Button::new(emoji::symbol(emoji, size, Color32::PLACEHOLDER)).frame(false).min_size(egui::vec2(size + 10.0, size + 8.0)));
     let label = name(emoji);
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
     response.clicked()
@@ -205,7 +205,7 @@ fn tone_row(ui: &mut Ui) {
             let on = each == tone;
             let hand = each.apply("✋");
             let response = ui.add(
-                egui::Button::new(emoji::text(&hand, 16.0, Color32::PLACEHOLDER))
+                egui::Button::new(emoji::symbol(&hand, 16.0, Color32::PLACEHOLDER))
                     .frame(on)
                     .selected(on)
                     .corner_radius(egui::CornerRadius::ZERO)

@@ -147,14 +147,52 @@ pub fn is_emoji(cluster: &str) -> bool {
     }
 }
 
-/// `text` as a layout job in `format`, with its emoji in [`family`]. Text without emoji is one section.
+/// Emoji among text are drawn this many times the text's size. At the text's own size a colour emoji is barely
+/// taller than a capital letter and looks soft beside it; one size up, as Signal draws them, it reads as a picture.
+pub const INLINE_SCALE: f32 = 1.3;
+
+/// A message that is only a few emoji ([`LARGE_MAX`]) is drawn this many times the body text's size, as chat apps
+/// draw such a message.
+pub const LARGE_SCALE: f32 = 2.5;
+
+/// At most this many emoji, and nothing else but white space, make a message large ([`body`]).
+pub const LARGE_MAX: usize = 3;
+
+/// How tall each line of text with emoji is, in the text's size: tall enough for an emoji at [`INLINE_SCALE`], so a
+/// line with one is as tall as the lines without, and no emoji reaches into the line above or below. Text and emoji
+/// are both centred in it. (A test checks the emoji's glyphs fit.)
+pub const EMOJI_LINE: f32 = 1.5;
+
+/// How big a job's emoji are.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Scale {
+    /// At [`INLINE_SCALE`], in lines [`EMOJI_LINE`] tall.
+    Inline,
+    /// Everything at [`LARGE_SCALE`]: a message of emoji only.
+    Large,
+    /// At the size given: emoji on their own, sized by the caller (the picker, the verification symbols).
+    AsGiven,
+}
+
+/// `text` as a layout job in `format`, with its emoji in [`family`] at [`INLINE_SCALE`]. Text without emoji is one
+/// section at `format`; lines with emoji are [`EMOJI_LINE`] tall.
 pub fn job(text: &str, format: TextFormat) -> LayoutJob {
+    job_at(text, format, Scale::Inline)
+}
+
+fn job_at(text: &str, format: TextFormat, scale: Scale) -> LayoutJob {
     let mut job = LayoutJob::default();
     if text.is_ascii() {
         job.append(text, 0.0, format);
         return job;
     }
-    let emoji_format = TextFormat { font_id: FontId::new(format.font_id.size, family()), ..format.clone() };
+    let size = format.font_id.size;
+    let (format, emoji_size) = match scale {
+        Scale::Inline => (TextFormat { line_height: Some(size * EMOJI_LINE), ..format }, size * INLINE_SCALE),
+        Scale::Large => (TextFormat { font_id: FontId::new(size * LARGE_SCALE, format.font_id.family.clone()), ..format }, size * LARGE_SCALE),
+        Scale::AsGiven => (format, size),
+    };
+    let emoji_format = TextFormat { font_id: FontId::new(emoji_size, family()), ..format.clone() };
     let mut start = 0;
     let mut current = None;
     for (at, cluster) in text.grapheme_indices(true) {
@@ -169,19 +207,67 @@ pub fn job(text: &str, format: TextFormat) -> LayoutJob {
             Some(_) => {}
         }
     }
-    job.append(&text[start..], 0.0, if current == Some(true) { emoji_format } else { format });
+    job.append(&text[start..], 0.0, if current == Some(true) { emoji_format } else { format.clone() });
+    if scale == Scale::Inline && current == Some(false) && job.sections.len() == 1 {
+        // No emoji after all: the text's own line height.
+        job.sections[0].format.line_height = None;
+    }
     job
 }
 
-/// Proportional text at `size` in `color`, with its emoji in colour.
+/// Proportional text at `size` in `color`, with its emoji in colour at [`INLINE_SCALE`]: names, previews, quotes,
+/// reactions.
 pub fn text(text: &str, size: f32, color: Color32) -> LayoutJob {
     job(text, TextFormat::simple(FontId::proportional(size), color))
 }
 
+/// A message's text at `size` in `color`: large ([`LARGE_SCALE`]) when it is only a few emoji ([`is_large`]),
+/// otherwise as [`text`].
+pub fn body(text: &str, size: f32, color: Color32) -> LayoutJob {
+    job_at(text, TextFormat::simple(FontId::proportional(size), color), if is_large(text) { Scale::Large } else { Scale::Inline })
+}
+
+/// Emoji (or text with them) at exactly `size`, for places that size emoji themselves: the picker, the quick
+/// reactions and the verification symbols.
+pub fn symbol(text: &str, size: f32, color: Color32) -> LayoutJob {
+    job_at(text, TextFormat::simple(FontId::proportional(size), color), Scale::AsGiven)
+}
+
+/// Whether a message is shown large: one to [`LARGE_MAX`] emoji and nothing else but white space.
+pub fn is_large(text: &str) -> bool {
+    let mut emoji = 0;
+    for cluster in text.graphemes(true).filter(|c| !c.chars().all(char::is_whitespace)) {
+        if !is_emoji(cluster) {
+            return false;
+        }
+        emoji += 1;
+        if emoji > LARGE_MAX {
+            return false;
+        }
+    }
+    emoji > 0
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{is_emoji, job};
-    use egui::text::TextFormat;
+    use super::{EMOJI_LINE, INLINE_SCALE, LARGE_SCALE, body, is_emoji, is_large, job, symbol, text};
+    use egui::Color32;
+    use egui::text::{LayoutJob, TextFormat};
+
+    /// Each section of a job: its text, its size, whether it is in the emoji family, and its line height.
+    fn sections(j: &LayoutJob) -> Vec<(&str, f32, bool, Option<f32>)> {
+        j.sections
+            .iter()
+            .map(|s| {
+                (
+                    &j.text[s.byte_range.start.0..s.byte_range.end.0],
+                    s.format.font_id.size,
+                    s.format.font_id.family == super::family(),
+                    s.format.line_height,
+                )
+            })
+            .collect()
+    }
 
     #[test]
     fn text_stays_text_and_emoji_are_emoji() {
@@ -208,5 +294,41 @@ mod tests {
         assert_eq!(emoji, ["1️⃣", "❤️👍🏽"]);
         assert_eq!(job("plain", TextFormat::default()).sections.len(), 1);
         assert_eq!(job("", TextFormat::default()).sections.len(), 1);
+    }
+
+    /// Emoji among text are a size up from it; every line of such text is the same height, so a line with an emoji
+    /// does not jump. Text without emoji is untouched.
+    #[test]
+    fn emoji_among_text_are_a_size_up_in_even_lines() {
+        let j = text("Hi 👍🏽 there", 14.0, Color32::WHITE);
+        let line = Some(14.0 * EMOJI_LINE);
+        assert_eq!(sections(&j), [("Hi ", 14.0, false, line), ("👍🏽", 14.0 * INLINE_SCALE, true, line), (" there", 14.0, false, line)]);
+        assert_eq!(j.text, "Hi 👍🏽 there", "what a screen reader reads is unchanged");
+        assert_eq!(sections(&text("Hi é there", 14.0, Color32::WHITE)), [("Hi é there", 14.0, false, None)]);
+        assert_eq!(sections(&text("plain", 14.0, Color32::WHITE)), [("plain", 14.0, false, None)]);
+        // Places that size emoji themselves get exactly that size.
+        assert_eq!(sections(&symbol("👍", 18.0, Color32::WHITE)), [("👍", 18.0, true, None)]);
+    }
+
+    /// A message of one to three emoji, white space aside, is large; four, or any text, is not.
+    #[test]
+    fn a_message_of_up_to_three_emoji_is_large() {
+        for large in ["😀", " 👍🏽 ", "❤\u{fe0f}👨\u{200d}👩\u{200d}👧 🇩🇰", "1\u{fe0f}\u{20e3}\n😀"] {
+            assert!(is_large(large), "{large:?} is large");
+        }
+        for not in ["", "  ", "😀😀😀😀", "hi 😀", "😀!", "❤", "©"] {
+            assert!(!is_large(not), "{not:?} is not large");
+        }
+        let said = "😀 👍🏽";
+        let j = body(said, 14.0, Color32::WHITE);
+        assert_eq!(j.text, said, "what a screen reader reads is unchanged");
+        assert_eq!(
+            sections(&j),
+            [("😀", 14.0 * LARGE_SCALE, true, None), (" ", 14.0 * LARGE_SCALE, false, None), ("👍🏽", 14.0 * LARGE_SCALE, true, None)]
+        );
+        // Four is an ordinary message, with its emoji at the inline size.
+        let four = body("😀😀😀😀", 14.0, Color32::WHITE);
+        assert_eq!(sections(&four), [("😀😀😀😀", 14.0 * INLINE_SCALE, true, Some(14.0 * EMOJI_LINE))]);
+        assert_eq!(sections(&body("hi 😀", 14.0, Color32::WHITE))[1].1, 14.0 * INLINE_SCALE);
     }
 }

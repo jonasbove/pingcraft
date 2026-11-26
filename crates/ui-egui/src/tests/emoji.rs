@@ -354,3 +354,58 @@ fn the_account_tone_decides_over_the_local_one() {
     assert_eq!(account_tone(None, Default, false), (Default, false), "nothing to move up");
     assert_eq!(account_tone(None, Medium, true), (Default, false));
 }
+
+/// Emoji among text, a size up, fit their lines in the app's fonts: no emoji reaches past its line into the next, and
+/// a line with an emoji is as tall as one without, so lines do not jump. Prints the sizes, for tuning.
+#[test]
+#[cfg_attr(not(color_emoji), ignore = "built without the colour emoji font: cargo xtask fonts")]
+fn emoji_a_size_up_fit_even_lines() {
+    let ctx = egui::Context::default();
+    crate::theme::install(&ctx);
+    ctx.run_ui(egui::RawInput::default(), |_| {}).textures_delta.clear();
+    for size in [12.5, 14.0, 16.0] {
+        let galley = ctx.fonts_mut(|f| f.layout_job(crate::emoji::text("Hg 😀 ❤\u{fe0f}\nHg only text\n👍🏽 Hg", size, egui::Color32::WHITE)));
+        let heights: Vec<f32> = galley.rows.iter().map(|r| r.size.y).collect();
+        assert_eq!(heights.len(), 3);
+        assert!(heights.iter().all(|h| *h == heights[0]), "every line is as tall: {heights:?}");
+        let text_row = ctx.fonts_mut(|f| f.row_height(&egui::FontId::proportional(size)));
+        assert!(heights[0] >= text_row, "a line with emoji is no shorter than plain text's: {heights:?} {text_row}");
+        let mut emoji = 0;
+        for row in &galley.rows {
+            for g in row.glyphs.iter().filter(|g| g.is_color) {
+                emoji += 1;
+                let (top, bottom) = (g.pos.y + g.uv_rect.offset.y, g.pos.y + g.uv_rect.offset.y + g.uv_rect.size.y);
+                eprintln!("size {size}: line {} (text alone {text_row}), emoji drawn {top}..{bottom}", row.size.y);
+                assert!(top >= -0.5 && bottom <= row.size.y + 0.5, "the emoji fits its line at {size}: {top}..{bottom} in {}", row.size.y);
+                assert!(g.uv_rect.size.y >= size * 1.15, "the emoji is a size up at {size}: {}", g.uv_rect.size.y);
+            }
+        }
+        assert_eq!(emoji, 3);
+    }
+}
+
+/// A message of only a few emoji is drawn large, and still reads as written.
+#[test]
+fn an_emoji_only_message_is_large_and_keeps_its_text() {
+    use egui_kittest::kittest::{NodeT, Queryable};
+    use pingcraft_core::app::Event;
+    use pingcraft_core::{ChatId, MessageBody, SendState};
+
+    let fake = super::Fake::default();
+    let mut h = super::messages::book_club(&fake);
+    let large = "😀 👍🏽";
+    let messages = vec![
+        super::message("8", "Mei Tanaka", false, MessageBody::Text(large.into()), SendState::Sent),
+        super::message("9", "Mei Tanaka", false, MessageBody::Text("Okay".into()), SendState::Sent),
+        super::message("10", "Mei Tanaka", false, MessageBody::Text("😀😀😀😀".into()), SendState::Sent),
+    ];
+    fake.tell([Event::Messages { chat: ChatId("!book".into()), messages }]);
+    h.run();
+    let height = |label: &str| {
+        let b = h.get_by_label(label).accesskit_node().raw_bounds().unwrap();
+        b.y1 - b.y0
+    };
+    let (large, text, four) = (height(large), height("Okay"), height("😀😀😀😀"));
+    assert!(large > text * 2.0, "two emoji are large: {large} against {text}");
+    assert!(four < text * 2.0, "four emoji are not: {four} against {text}");
+}

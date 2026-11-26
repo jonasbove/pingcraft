@@ -415,6 +415,19 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
      emoji egui's monochrome face lacks; its three tests are ignored in that build.
    - Not tried by hand in the running app; checked through the tests only. A Nix build (no network in its
      sandbox) falls back to monochrome emoji.
+   - **Emoji a size up, and large on their own** (maintainer, 2026-11-26). Emoji looked soft because they were drawn
+     at the text's size (11–14 px; epaint's placement and rasterising were already pixel-exact). Emoji among text
+     are now drawn at 1.3 times the text (`emoji::INLINE_SCALE`), as Signal does, in messages, names, previews,
+     quotes, reactions, the bars and the composer; every line of text that has an emoji is 1.5 times the text size
+     tall (`EMOJI_LINE`) with text and emoji centred in it, since egui otherwise makes only the rows with an emoji
+     taller and lines jump. A message of one to three emoji and nothing but white space (`emoji::is_large`) is
+     drawn at 2.5 times the body (`LARGE_SCALE`); four, or any text, is an ordinary message (Signal's limit is 5,
+     Telegram Desktop's 3). Previews and names never go large. The picker, the quick reactions, the emoji button and
+     the verification symbols keep the size they ask for (`emoji::symbol`). Tests: the sections' sizes and line
+     heights, which messages are large, the glyphs fitting their lines in the real fonts (at 12.5 px an emoji is now
+     about 18 px tall in a 19 px line, against a 14.4 px text line), and a large message through the AccessKit tree
+     with its text unchanged. Open: a message with an emoji has its lines a third further apart than one without
+     (the maintainer may prefer the emoji to overlap the line spacing a little instead).
 2. **Done (2026-11-25), with gaps.** **Reactions.** Show reactions under a message with counts and who reacted; add and remove one from the picker or a
    quick row of recent ones.
    Built: a chip per reaction under the message (the count, who reacted on hover and in its accessible name, in the

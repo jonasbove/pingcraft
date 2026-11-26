@@ -230,7 +230,7 @@ fn menu(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out) -> Option<Ac
             for key in crate::picker::quick_reactions(ui.ctx()) {
                 let key = key.as_str();
                 let shown = shown_key(key);
-                let mut chip = egui::Button::new(emoji::text(&drawn_key(key), 18.0, Color32::PLACEHOLDER)).frame(false);
+                let mut chip = egui::Button::new(emoji::symbol(&drawn_key(key), 18.0, Color32::PLACEHOLDER)).frame(false);
                 if message.my_reaction(key) {
                     chip = chip.selected(true);
                 }
@@ -350,7 +350,7 @@ fn chip(ui: &mut Ui, reaction: &Reaction, enabled: bool) -> egui::Response {
 fn body(ui: &mut Ui, body: &MessageBody) -> egui::Response {
     let t = Tokens::get(ui.ctx());
     match body {
-        MessageBody::Text(text) => ui.add(egui::Label::new(emoji::text(text, 14.0, Color32::PLACEHOLDER)).wrap()),
+        MessageBody::Text(text) => ui.add(egui::Label::new(emoji::body(text, 14.0, Color32::PLACEHOLDER)).wrap()),
         MessageBody::WaitingForKey => {
             egui::Frame::new()
                 .fill(t.sunken)
