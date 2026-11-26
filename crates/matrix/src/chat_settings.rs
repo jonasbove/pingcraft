@@ -123,13 +123,33 @@ impl Connection {
         // The end time first: a mute without one is a mute for good, which a failure here must not leave behind.
         set_mute_until(&room, until).await?;
         match mute {
-            Some(_) => settings.set_room_notification_mode(room.room_id(), RoomNotificationMode::Mute).await,
-            None => settings.delete_user_defined_room_rules(room.room_id()).await,
+            Some(_) => settings
+                .set_room_notification_mode(room.room_id(), RoomNotificationMode::Mute)
+                .await
+                .map_err(|e| problem("the chat's notifications could not be changed", e))?,
+            None => self.delete_room_rules(&room).await?,
         }
-        .map_err(|e| problem("the chat's notifications could not be changed", e))?;
         let mut now = self.chat_now(&room).await;
         now.muted = mute;
         Ok(now)
+    }
+
+    /// Takes away the chat's own push rules on the server, whatever this device has synced of them. The SDK's
+    /// `delete_user_defined_room_rules` deletes only the rules this device's synced copy holds: right after a mute
+    /// (here or elsewhere), before the sync brings its rule back, it found none and the chat stayed muted on the
+    /// server. Each kind of rule a chat can have is deleted by its ID (the room's), and "not there" is fine.
+    async fn delete_room_rules(&self, room: &Room) -> Result<(), String> {
+        use matrix_sdk::ruma::api::client::push::delete_pushrule;
+        use matrix_sdk::ruma::api::error::ErrorKind;
+        for kind in room_rule_kinds() {
+            let request = delete_pushrule::v3::Request::new(kind, room.room_id().to_string());
+            match self.client().send(request).await {
+                Ok(_) => {}
+                Err(e) if e.client_api_error_kind() == Some(&ErrorKind::NotFound) => {}
+                Err(e) => return Err(problem("the chat's notifications could not be changed", e)),
+            }
+        }
+        Ok(())
     }
 
     /// Marks a chat as unread.
@@ -239,6 +259,13 @@ pub(crate) async fn draft(room: &Room) -> (Option<String>, Option<DraftFor>) {
 }
 
 /// Whether a room is muted, by the rule the sync last reported.
+/// The kinds of push rule a chat's own settings use, each with the room's ID as its rule ID: a mute is an override
+/// rule, "mentions only" and the like are room rules.
+fn room_rule_kinds() -> [matrix_sdk::ruma::push::RuleKind; 2] {
+    use matrix_sdk::ruma::push::RuleKind;
+    [RuleKind::Override, RuleKind::Room]
+}
+
 pub(crate) fn is_muted(room: &Room) -> bool {
     room.cached_user_defined_notification_mode() == Some(RoomNotificationMode::Mute)
 }

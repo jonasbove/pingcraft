@@ -129,9 +129,15 @@ async fn the_first_recovery_key_can_be_made_from_settings() {
     let device = sign_in_as(&server.homeserver, &user).await;
     let sync = connect(&device).await;
     assert_eq!(within("the recovery state", sync.known_recovery_status()).await, RecoveryStatus::Off);
-    // The account has no cross-signing yet: the key sets it up, and the server asks for the password for that.
-    assert!(matches!(sync.new_recovery_key(Some("not the password")).await, Err(EncryptionError::WrongPassword)));
-    let key = within("the first recovery key", sync.new_recovery_key(Some(&user.1))).await.unwrap();
+    // The account has no cross-signing yet: the key sets it up. A server may ask for the password for that (then a
+    // wrong one is refused and leaves nothing that stops the right one), or may not (MSC3967: a first upload of
+    // cross-signing keys needs none), and then the key is made whatever was typed.
+    let key = match sync.new_recovery_key(Some("not the password")).await {
+        Ok(key) => key,
+        Err(EncryptionError::WrongPassword) => within("the first recovery key", sync.new_recovery_key(Some(&user.1))).await.unwrap(),
+        // A key's Debug is redacted, and an error never holds the password.
+        other => panic!("a first key with a wrong password: {other:?}"),
+    };
     assert_eq!(key.groups().len(), 12);
     assert_eq!(sync.recovery_status(), RecoveryStatus::On, "this device can use the key it made");
     sync.stop().await;
