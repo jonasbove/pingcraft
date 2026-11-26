@@ -469,7 +469,7 @@ fn inbox_list(ui: &mut Ui, state: &mut State, out: &mut Out) {
 fn needs_key(ui: &mut Ui, state: &mut State, out: &mut Out) {
     let t = Tokens::get(ui.ctx());
     ui.add_space(8.0);
-    egui::Frame::new().fill(t.sunken).stroke(t.hairline()).inner_margin(Margin::same(12)).show(ui, |ui| {
+    egui::Frame::new().corner_radius(t.radius_surface).fill(t.sunken).stroke(t.hairline()).inner_margin(Margin::same(12)).show(ui, |ui| {
         ui.label(RichText::new(tl!("This device can't read your earlier encrypted messages yet.")).size(t.body));
         note(ui, tl!("Type your recovery key, or verify this device from another one where you're signed in."));
         ui.horizontal(|ui| {
@@ -548,10 +548,10 @@ fn chat_row(ui: &mut Ui, chat: &Chat, accent: Option<pingcraft_core::Accent>, se
         info
     });
     if selected {
-        ui.painter().rect_filled(rect, 0.0, t.sunken);
+        ui.painter().rect_filled(rect, t.radius_control, t.sunken);
         ui.painter().vline(rect.left() + 1.0, rect.y_range(), Stroke::new(2.0, t.accent_ink));
     } else if response.hovered() {
-        ui.painter().rect_filled(rect, 0.0, t.sunken);
+        ui.painter().rect_filled(rect, t.radius_control, t.sunken);
     }
     ui.painter().hline(rect.x_range(), rect.bottom() - 0.5, t.hairline());
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(Vec2::new(16.0, 10.0))).layout(Layout::left_to_right(Align::Center)));
@@ -656,18 +656,21 @@ pub fn recovery_key(ctx: &egui::Context, state: &mut State, out: &mut Out) {
         |ui| {
             let t = Tokens::get(ui.ctx());
             ui.label(RichText::new(tl!("Your messages are encrypted. This key unlocks them on a new device: PingCraft keeps a backup of your message keys on your server, locked with it.")).size(t.body));
-            egui::Frame::new().fill(t.sunken).stroke(t.hairline()).inner_margin(Margin::symmetric(20, 14)).show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                for row in key.groups().chunks(6) {
-                    ui.label(RichText::new(row.join(" ")).size(t.heading).color(t.ink_strong));
-                }
-            });
+            egui::Frame::new().corner_radius(t.radius_surface).fill(t.sunken).stroke(t.hairline()).inner_margin(Margin::symmetric(20, 14)).show(
+                ui,
+                |ui| {
+                    ui.set_width(ui.available_width());
+                    for row in key.groups().chunks(6) {
+                        ui.label(RichText::new(row.join(" ")).size(t.heading).color(t.ink_strong));
+                    }
+                },
+            );
             let label = if copied.get() { tl!("Copied") } else { tl!("Copy") };
             if button(ui, label, Kind::Secondary, true).clicked() {
                 ui.ctx().copy_text(key.expose().to_owned());
                 copied.set(true);
             }
-            egui::Frame::new().stroke(t.hairline()).inner_margin(Margin::same(14)).show(ui, |ui| {
+            egui::Frame::new().corner_radius(t.radius_surface).stroke(t.hairline()).inner_margin(Margin::same(14)).show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 hud(ui, tl!("If you lose it"), Shade::Muted);
                 ui.label(RichText::new(tl!("If you lose every device you're signed in on and this key, your encrypted message history is gone for good. Nobody can get it back for you, not even your server's admin.")).size(t.body));
@@ -820,14 +823,17 @@ fn symbol_tiles(ui: &mut Ui, symbols: &[SasSymbol]) {
     let t = Tokens::get(ui.ctx());
     ui.horizontal(|ui| {
         for s in symbols {
-            egui::Frame::new().fill(t.sunken).stroke(t.hairline()).inner_margin(Margin::symmetric(4, 10)).show(ui, |ui| {
-                ui.set_width(80.0);
-                ui.vertical_centered(|ui| {
-                    ui.label(crate::emoji::symbol(&s.symbol, 34.0, egui::Color32::PLACEHOLDER));
-                    // The spec's English name; translated through the catalog like any other text.
-                    ui.label(RichText::new(tl!(&s.name)).size(t.label).color(t.muted));
-                });
-            });
+            egui::Frame::new().corner_radius(t.radius_surface).fill(t.sunken).stroke(t.hairline()).inner_margin(Margin::symmetric(4, 10)).show(
+                ui,
+                |ui| {
+                    ui.set_width(80.0);
+                    ui.vertical_centered(|ui| {
+                        ui.label(crate::emoji::symbol(&s.symbol, 34.0, egui::Color32::PLACEHOLDER));
+                        // The spec's English name; translated through the catalog like any other text.
+                        ui.label(RichText::new(tl!(&s.name)).size(t.label).color(t.muted));
+                    });
+                },
+            );
         }
     });
 }

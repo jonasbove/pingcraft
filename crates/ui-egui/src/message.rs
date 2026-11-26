@@ -98,22 +98,26 @@ pub fn message_view(ui: &mut Ui, message: &Message, cx: &Cx<'_>, ticked: Option<
     let Some(on) = ticked else { return message_only(ui, message, cx, out) };
     let t = Tokens::get(ui.ctx());
     let mut act = None;
-    let row = egui::Frame::new().fill(if on { t.sunken } else { Color32::TRANSPARENT }).inner_margin(Margin::symmetric(8, 6)).show(ui, |ui| {
-        ui.horizontal_top(|ui| {
-            let mut value = on;
-            let label = fmt(tl!("Select: {sender}, {text}"), &[("sender", &who(message)), ("text", &snippet(&message.body))]);
-            let response = ui.add(egui::Checkbox::without_text(&mut value));
-            response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, &label));
-            if response.clicked() {
-                act = Some(Act::Toggle(message.id.clone()));
-            }
-            ui.vertical(|ui| {
-                ui.set_width(ui.available_width());
-                let (_, inner) = message_only(ui, message, cx, out);
-                act = act.take().or(inner);
+    let row = egui::Frame::new()
+        .corner_radius(t.radius_control)
+        .fill(if on { t.sunken } else { Color32::TRANSPARENT })
+        .inner_margin(Margin::symmetric(8, 6))
+        .show(ui, |ui| {
+            ui.horizontal_top(|ui| {
+                let mut value = on;
+                let label = fmt(tl!("Select: {sender}, {text}"), &[("sender", &who(message)), ("text", &snippet(&message.body))]);
+                let response = ui.add(egui::Checkbox::without_text(&mut value));
+                response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, &label));
+                if response.clicked() {
+                    act = Some(Act::Toggle(message.id.clone()));
+                }
+                ui.vertical(|ui| {
+                    ui.set_width(ui.available_width());
+                    let (_, inner) = message_only(ui, message, cx, out);
+                    act = act.take().or(inner);
+                });
             });
         });
-    });
     (row.response.rect, act)
 }
 
@@ -151,7 +155,7 @@ fn own(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out, act: &mut Opt
     let t = Tokens::get(ui.ctx());
     ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
         let rule = if matches!(message.state, SendState::Failed(_)) { t.bad } else { t.accent_ink };
-        let frame = egui::Frame::new().fill(t.accent_tint).inner_margin(Margin::symmetric(14, 10)).show(ui, |ui| {
+        let frame = egui::Frame::new().corner_radius(t.radius_surface).fill(t.accent_tint).inner_margin(Margin::symmetric(14, 10)).show(ui, |ui| {
             ui.set_max_width(460.0);
             ui.with_layout(Layout::top_down(Align::Min), |ui| {
                 contents(ui, message, cx, out, act);
@@ -346,7 +350,7 @@ fn chip(ui: &mut Ui, reaction: &Reaction, enabled: bool, presentation: EmojiPres
     let text = emoji::text(&format!("{} {count}", drawn_key(&reaction.key)), t.body, if reaction.mine { t.on_tint } else { t.ink }, presentation);
     let stroke = Stroke::new(1.0, if reaction.mine { t.accent_ink } else { t.line_strong });
     let fill = if reaction.mine { t.accent_tint } else { Color32::TRANSPARENT };
-    let response = ui.add_enabled(enabled, egui::Button::new(text).fill(fill).stroke(stroke).corner_radius(egui::CornerRadius::ZERO));
+    let response = ui.add_enabled(enabled, egui::Button::new(text).fill(fill).stroke(stroke).corner_radius(t.radius_control));
     let mut names = reaction.by.iter().take(MAX_NAMES).cloned().collect::<Vec<_>>().join(", ");
     if reaction.by.len() > MAX_NAMES {
         names = fmt(tl!("{names} and {n} more"), &[("names", &names), ("n", &(reaction.by.len() - MAX_NAMES).to_string())]);
@@ -366,6 +370,7 @@ fn body(ui: &mut Ui, body: &MessageBody, presentation: EmojiPresentation) -> egu
         MessageBody::Text(text) => ui.add(egui::Label::new(emoji::body(text, t.body, Color32::PLACEHOLDER, presentation)).wrap()),
         MessageBody::WaitingForKey => {
             egui::Frame::new()
+                .corner_radius(t.radius_surface)
                 .fill(t.sunken)
                 .stroke(t.hairline())
                 .inner_margin(Margin::same(14))

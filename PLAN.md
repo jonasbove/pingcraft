@@ -756,6 +756,15 @@ craft-ui's dialog host, the i18n swap, the automation interface and colour theme
     icons); the risk scale's level is told by its description, not a toggled state (a badge has none); sheet titles
     are found on their dialog node, a footer's Close below the dialog's own; the harness runs up to 12 steps while a
     dialog opens; labels are in sentence case.
+- **The corner rule** (maintainer, 2026-11-26): what can be clicked, typed in or chosen (buttons, fields, chips,
+  swatches, menu rows, a clickable row's highlight) is rounded with craft-ui's control radius (`Tokens::radius_control`),
+  ideally by being craft-ui's own component; surfaces that sit apart from their surroundings (cards, the account rows,
+  message bubbles, boxed notes in sheets, the emoji picker) take craft-ui's surface radius (`radius_surface`), as its
+  dialogs and menus do; labels, tags, badges and status words may be square, but nothing that is not interactive may
+  look like a button. Regions that run edge to edge (panels, the header, the problem and reply bars) stay square,
+  and the QR code is square by nature. Done 2026-11-26 across `crates/ui-egui`; "Connected" on a card is a craft-ui
+  `Badge` in line with Connect. The rounded surfaces are still egui frames with craft-ui's radius, not craft-ui's own
+  surface (`Stack::surface`), since their content is egui's.
 - **craft-libs gaps found with the dialogs and menus:** a `Dialog`'s close action cannot be turned off (its
   `closable` has no setter), so the sheets that have nothing to cancel show a close action that does nothing; egui's
   `Popup::menu` does not see the framework's click (`widgets::menu_under` opens it from the button's output); a menu

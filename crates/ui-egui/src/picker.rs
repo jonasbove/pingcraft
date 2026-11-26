@@ -220,7 +220,7 @@ fn tone_row(ui: &mut Ui) {
                 egui::Button::new(emoji::symbol(&hand, 16.0, Color32::PLACEHOLDER))
                     .frame(on)
                     .selected(on)
-                    .corner_radius(egui::CornerRadius::ZERO)
+                    .corner_radius(Tokens::get(ui.ctx()).radius_control)
                     .min_size(egui::vec2(26.0, 26.0)),
             );
             response.widget_info(|| egui::WidgetInfo::selected(egui::Role::RadioButton, true, on, each.name()));

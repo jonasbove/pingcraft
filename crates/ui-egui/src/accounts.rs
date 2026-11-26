@@ -162,7 +162,7 @@ fn cards(ui: &mut Ui, state: &mut State) {
         for (i, (id, ui)) in NETWORKS.iter().zip(columns.iter_mut()).enumerate() {
             let network = Network::from_id(id);
             let entry = state.accounts.networks.get(&network).cloned();
-            egui::Frame::new().stroke(t.hairline()).show(ui, |ui| {
+            egui::Frame::new().corner_radius(t.radius_surface).stroke(t.hairline()).show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.set_min_height(250.0);
                 ui.spacing_mut().item_spacing.y = 6.0;
@@ -284,7 +284,7 @@ fn your_accounts(ui: &mut Ui, state: &mut State) {
         return;
     }
     for account in accounts {
-        egui::Frame::new().stroke(t.hairline()).inner_margin(Margin::symmetric(20, 14)).show(ui, |ui| {
+        egui::Frame::new().corner_radius(t.radius_surface).stroke(t.hairline()).inner_margin(Margin::symmetric(20, 14)).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
                 // Room between the tag, the account's name (often a phone number) and its state.

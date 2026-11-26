@@ -2,7 +2,7 @@
 //! roles, icons) wherever one fits, and a few small pieces of PingCraft's own (the avatar, the sheet's frame) drawn
 //! from the theme's tokens. Every control has an accessible name that starts with its visible label.
 
-use egui::{Align2, CornerRadius, FontId, Response, Sense, Stroke, TextureHandle, Ui, Vec2};
+use egui::{Align2, FontId, Response, Sense, Stroke, TextureHandle, Ui, Vec2};
 use pingcraft_core::{Accent, Alerts, Network};
 
 use craft_behavior::IconId;
@@ -181,14 +181,15 @@ pub fn alerts_controls(ui: &mut Ui, own: Alerts, shown: Alerts, what: &str, inhe
             let painter = ui.painter();
             match choice {
                 Some(_) => {
-                    painter.rect_filled(rect.shrink(3.0), CornerRadius::ZERO, colour);
+                    painter.rect_filled(rect.shrink(3.0), t.radius_control, colour);
                 }
                 None => {
-                    painter.rect_stroke(rect.shrink(3.0), CornerRadius::ZERO, Stroke::new(1.0, colour), egui::StrokeKind::Inside);
+                    painter.rect_stroke(rect.shrink(3.0), t.radius_control, Stroke::new(1.0, colour), egui::StrokeKind::Inside);
                 }
             }
             if selected {
-                painter.rect_stroke(rect, CornerRadius::ZERO, Stroke::new(1.5, t.ink_strong), egui::StrokeKind::Inside);
+                // The selection ring follows the swatch's corners, a step out.
+                painter.rect_stroke(rect, t.radius_control + 3.0, Stroke::new(1.5, t.ink_strong), egui::StrokeKind::Inside);
             }
             let name = choice.map_or_else(|| inherit.to_owned(), accent_name);
             let label = format!("{prefix}: {name}");

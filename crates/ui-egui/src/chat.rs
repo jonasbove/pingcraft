@@ -532,7 +532,7 @@ fn composer(ui: &mut Ui, open: &mut OpenChat, name: &str, chat: Option<&Chat>, o
 fn reaction_picker(ctx: &egui::Context, open: &mut OpenChat, out: &mut Out) {
     let Some(id) = open.reacting.clone() else { return };
     let t = Tokens::get(ctx);
-    let frame = egui::Frame::new().fill(t.bg).stroke(Stroke::new(1.0, t.line_strong)).inner_margin(Margin::same(16));
+    let frame = egui::Frame::new().corner_radius(t.radius_surface).fill(t.bg).stroke(Stroke::new(1.0, t.line_strong)).inner_margin(Margin::same(16));
     let modal = egui::Modal::new(egui::Id::unique("pingcraft-reaction-picker")).frame(frame).backdrop_color(t.scrim).show(ctx, |ui| {
         hud(ui, tl!("React"), Shade::Muted);
         crate::picker::picker(ui, egui::Id::unique("pingcraft-reaction-picker").with("picker"))
@@ -552,8 +552,8 @@ fn emoji_button(ui: &mut Ui, edit_id: egui::Id) -> Option<String> {
     let pick = ui.add(
         egui::Button::new(emoji::symbol("😀", 16.0, Color32::PLACEHOLDER))
             .stroke(Stroke::new(1.0, t.line_strong))
-            .corner_radius(egui::CornerRadius::ZERO)
-            .min_size(Vec2::splat(34.0)),
+            .corner_radius(t.radius_control)
+            .min_size(Vec2::splat(t.control)),
     );
     pick.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, tl!("Emoji")));
     let mut chosen = None;
@@ -605,7 +605,7 @@ fn shortcode_suggestions(ui: &mut Ui, open: &mut OpenChat, edit_id: egui::Id) {
             for (code, e) in found {
                 let chip = egui::Button::new(emoji::text(&format!("{e} :{code}:"), t.label, t.ink, EmojiPresentation::Unicode))
                     .stroke(t.hairline())
-                    .corner_radius(egui::CornerRadius::ZERO);
+                    .corner_radius(t.radius_control);
                 let response = ui.add(chip);
                 let label = fmt(tl!("Insert {emoji} :{code}:"), &[("emoji", &e), ("code", code)]);
                 response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
