@@ -133,6 +133,7 @@ mod tests {
             muted: None,
             marked_unread: false,
             archived: None,
+            alerts: crate::Alerts::default(),
             draft: None,
             draft_for: None,
         }

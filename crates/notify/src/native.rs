@@ -49,6 +49,13 @@ impl Notifier for Native {
             shown.appname(APP_NAME).summary(&n.title).body(&n.body);
             #[cfg(target_os = "windows")]
             shown.app_id(crate::APP_ID);
+            // Windows' own default notification sound; without a sound name a toast is silent. macOS: notify-rust
+            // has no way to ask for the system's default sound (UNNotificationSound.defaultSound), so notifications
+            // there stay silent for now whatever the setting (PLAN.md, "Messages and chats" 11).
+            #[cfg(target_os = "windows")]
+            if n.sound {
+                shown.sound_name("Default");
+            }
             let handle = match shown.show() {
                 Ok(h) => h,
                 Err(e) => return off_once(&OFF, &e),

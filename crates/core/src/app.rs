@@ -6,7 +6,7 @@ use zeroize::Zeroizing;
 
 use crate::bridge::{Answers, BridgeError, BridgedNetwork, LoginStep, StepRef};
 use crate::encryption::{RecoveryKey, RecoveryStatus, Verification};
-use crate::{AccountId, ChatId, ConnectionState, DraftFor, InboxChange, Message, MessageDetails, MessageId, Mute, Network, Quote};
+use crate::{AccountId, Alerts, ChatId, ConnectionState, DraftFor, InboxChange, Message, MessageDetails, MessageId, Mute, Network, Quote};
 
 /// Something the user asked for. `Debug` never shows a password, passphrase or message text.
 pub enum Command {
@@ -86,6 +86,18 @@ pub enum Command {
     Archive {
         chat: ChatId,
         archive: bool,
+    },
+    /// Sets a chat's own notification sound and accent colour (what is unset follows its network). Kept with the
+    /// account, in PingCraft's own room account data.
+    ChatAlerts {
+        chat: ChatId,
+        alerts: Alerts,
+    },
+    /// Sets a network's notification sound and accent colour, for its chats that do not set their own. Kept with the
+    /// account, in PingCraft's own global account data.
+    NetworkAlerts {
+        network: Network,
+        alerts: Alerts,
     },
     /// Keeps what the user typed in a chat and has not sent, with the message it replies to or edits (`draft_for`),
     /// or (empty) forgets it.
@@ -169,6 +181,8 @@ impl std::fmt::Debug for Command {
             Self::PinChat { chat, pin } => f.debug_struct("PinChat").field("chat", chat).field("pin", pin).finish(),
             Self::Mute { chat, mute } => f.debug_struct("Mute").field("chat", chat).field("mute", mute).finish(),
             Self::MarkUnread(c) => f.debug_tuple("MarkUnread").field(c).finish(),
+            Self::ChatAlerts { chat, alerts } => f.debug_struct("ChatAlerts").field("chat", chat).field("alerts", alerts).finish(),
+            Self::NetworkAlerts { network, alerts } => f.debug_struct("NetworkAlerts").field("network", network).field("alerts", alerts).finish(),
             Self::Archive { chat, archive } => f.debug_struct("Archive").field("chat", chat).field("archive", archive).finish(),
             Self::SaveDraft { chat, draft_for, .. } => {
                 f.debug_struct("SaveDraft").field("chat", chat).field("draft_for", draft_for).finish_non_exhaustive()
@@ -263,6 +277,9 @@ pub enum Event {
     /// that is asked of the server itself, never assumed from a sync that has not arrived yet. Sent once signed in
     /// and whenever another device changes it.
     SkinTone(Option<String>),
+    /// Each network's notification sound and accent colour, as the account keeps them (networks without settings
+    /// are left out). Sent once signed in and whenever they change.
+    NetworkAlerts(std::collections::BTreeMap<Network, Alerts>),
     /// The first sign-in made a recovery key: show it until the user has saved it.
     NewRecoveryKey(RecoveryKey),
     Recovery(RecoveryStatus),

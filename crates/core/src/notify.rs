@@ -12,6 +12,8 @@ pub struct Notification {
     pub title: String,
     /// The sender and a short preview of the message.
     pub body: String,
+    /// Whether it plays the operating system's own notification sound (the chat's and its network's setting).
+    pub sound: bool,
 }
 
 /// Never shows the title or body: they are a chat's name and a message's text.
@@ -36,7 +38,7 @@ mod tests {
 
     #[test]
     fn debug_never_shows_the_text() {
-        let n = Notification { chat: ChatId("!a".into()), title: "Secret club".into(), body: "Ana: private words".into() };
+        let n = Notification { chat: ChatId("!a".into()), title: "Secret club".into(), body: "Ana: private words".into(), sound: true };
         let shown = format!("{n:?}");
         assert!(!shown.contains("Secret") && !shown.contains("private"), "{shown}");
     }

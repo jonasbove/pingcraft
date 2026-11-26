@@ -7,7 +7,7 @@ use pingcraft_core::bridge::{BridgeError, BridgedNetwork, LoginStep};
 use pingcraft_core::encryption::{RecoveryKey, RecoveryStatus, Verification};
 use pingcraft_core::notify::Notification;
 use pingcraft_core::{
-    Account, ChatId, ConnectionState, DraftFor, Filter, Inbox, InboxChange, Message, MessageBody, MessageDetails, MessageId, Network, Quote,
+    Account, Alerts, ChatId, ConnectionState, DraftFor, Filter, Inbox, InboxChange, Message, MessageBody, MessageDetails, MessageId, Network, Quote,
 };
 use zeroize::Zeroizing;
 
@@ -345,6 +345,8 @@ pub struct State {
     pub focused: bool,
     /// Desktop notifications to show, taken by the app each frame.
     pub notifications: Vec<Notification>,
+    /// Each network's notification sound and accent colour, as the account keeps them.
+    pub network_alerts: BTreeMap<Network, Alerts>,
 }
 
 impl State {
@@ -390,8 +392,9 @@ impl State {
                 if let InboxChange::Upsert(chat) = &change
                     && self.inbox_loaded
                     && self.open.as_ref().is_none_or(|o| o.id != chat.id)
-                    && let Some(n) = crate::notify::for_inbox_change(self.inbox.get(&chat.id), chat)
+                    && let Some(mut n) = crate::notify::for_inbox_change(self.inbox.get(&chat.id), chat)
                 {
+                    n.sound = self.alerts(chat).sounds();
                     self.notifications.push(n);
                 }
                 self.inbox.apply(change);
@@ -400,7 +403,8 @@ impl State {
                 if let Some(open) = self.open.as_mut().filter(|o| o.id == chat) {
                     // The chat is in sight only on the INBOX tab of a window with focus.
                     let seen = self.focused && self.tab == Tab::Inbox;
-                    if let Some(n) = crate::notify::for_open_chat(&open.messages, &messages, self.inbox.get(&chat), seen) {
+                    if let Some(mut n) = crate::notify::for_open_chat(&open.messages, &messages, self.inbox.get(&chat), seen) {
+                        n.sound = self.inbox.get(&chat).is_none_or(|c| Self::alerts_with(&self.network_alerts, c).sounds());
                         self.notifications.push(n);
                     }
                     open.set_messages(messages);
@@ -429,6 +433,7 @@ impl State {
             }
             // Kept with the picker (`PingCraftApp::ui`), which draws them.
             Event::RecentEmoji(_) | Event::SkinTone(_) => {}
+            Event::NetworkAlerts(alerts) => self.network_alerts = alerts,
             Event::ReachedStart(chat) => {
                 if let Some(open) = self.open.as_mut().filter(|o| o.id == chat) {
                     open.at_start = true;
@@ -502,6 +507,15 @@ impl State {
         }
     }
 
+    /// A chat's notification sound and accent colour: its own settings over its network's.
+    pub fn alerts(&self, chat: &pingcraft_core::Chat) -> Alerts {
+        Self::alerts_with(&self.network_alerts, chat)
+    }
+
+    fn alerts_with(networks: &BTreeMap<Network, Alerts>, chat: &pingcraft_core::Chat) -> Alerts {
+        chat.alerts.over(networks.get(&chat.network).copied().unwrap_or_default())
+    }
+
     /// Opens a chat (the caller tells the backend), with its draft in the composer.
     pub fn open_chat(&mut self, id: ChatId) {
         if self.open.as_ref().is_some_and(|o| o.id == id) {
@@ -551,6 +565,7 @@ mod tests {
             muted: None,
             marked_unread: false,
             archived: None,
+            alerts: pingcraft_core::Alerts::default(),
             draft: None,
             draft_for: None,
         }

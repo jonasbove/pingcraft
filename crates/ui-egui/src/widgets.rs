@@ -2,9 +2,11 @@
 //! labels and buttons, the orchid for what needs attention. Every control has an accessible name.
 
 use egui::{Align2, Color32, CornerRadius, FontId, Frame, Margin, Response, RichText, Sense, Stroke, TextureHandle, Ui, Vec2};
-use pingcraft_core::Network;
+use pingcraft_core::{Accent, Alerts, Network};
 
+use crate::i18n::fmt;
 use crate::theme::{Tokens, wash};
+use crate::tl;
 
 /// A small mono capitals label (the design's HUD style).
 pub fn hud(ui: &mut Ui, text: &str, color: Color32) -> Response {
@@ -87,8 +89,14 @@ pub fn network_name(network: &Network) -> String {
 
 /// The network tag: the name in capitals, outlined in the network's colour over a wash of it (Matrix neutral).
 pub fn network_tag(ui: &mut Ui, network: &Network) -> Response {
+    network_tag_in(ui, network, None)
+}
+
+/// The network tag in a chosen accent colour (a chat's or its network's), or the network's own.
+pub fn network_tag_in(ui: &mut Ui, network: &Network, accent: Option<Accent>) -> Response {
     let t = Tokens::get(ui.ctx());
-    let (ink, fill, line) = match t.network(network) {
+    let colour = accent.map(|a| t.accent_colour(a)).or_else(|| t.network(network));
+    let (ink, fill, line) = match colour {
         Some(c) => (c, wash(c), c),
         None => (t.muted, Color32::TRANSPARENT, t.line_strong),
     };
@@ -98,6 +106,61 @@ pub fn network_tag(ui: &mut Ui, network: &Network) -> Response {
         .inner_margin(Margin::symmetric(5, 1))
         .show(ui, |ui| ui.label(RichText::new(network_name(network).to_uppercase()).monospace().size(10.0).color(ink)))
         .inner
+}
+
+/// The accent colour's name, as the network colour it is.
+pub fn accent_name(accent: Accent) -> String {
+    fmt(tl!("{network}'s"), &[("network", &network_name(&Network::from_id(accent.id())))])
+}
+
+/// The notification sound and accent colour controls, for a chat (`what` empty) or a network (`what` its name, in
+/// the accessible names). `own` is what is set at this level, `shown` what applies once the levels above are taken
+/// in. Returns the new settings for this level when the user changed one.
+pub fn alerts_controls(ui: &mut Ui, own: Alerts, shown: Alerts, what: &str, inherit: &str) -> Option<Alerts> {
+    let t = Tokens::get(ui.ctx());
+    let mut changed = None;
+    let for_what =
+        |label: &str| if what.is_empty() { label.to_owned() } else { fmt(tl!("{setting} for {what}"), &[("setting", label), ("what", what)]) };
+    let mut on = shown.sounds();
+    let sound = ui.checkbox(&mut on, tl!("Notification sound"));
+    let label = for_what(tl!("Notification sound"));
+    sound.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, &label));
+    if sound.clicked() {
+        changed = Some(Alerts { sound: Some(on), ..own });
+    }
+    if what.is_empty() && own.sound.is_some() && ui.small_button(tl!("Use the network's sound setting")).clicked() {
+        changed = Some(Alerts { sound: None, ..own });
+    }
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(tl!("Accent colour")).size(12.0).color(t.muted));
+        let prefix = for_what(tl!("Accent colour"));
+        let choices = std::iter::once(None).chain(Accent::ALL.into_iter().map(Some));
+        for choice in choices {
+            let selected = own.accent == choice;
+            let colour = choice.map_or(t.muted, |a| t.accent_colour(a));
+            let (rect, response) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::click());
+            let painter = ui.painter();
+            match choice {
+                Some(_) => {
+                    painter.rect_filled(rect.shrink(3.0), CornerRadius::ZERO, colour);
+                }
+                None => {
+                    painter.rect_stroke(rect.shrink(3.0), CornerRadius::ZERO, Stroke::new(1.0, colour), egui::StrokeKind::Inside);
+                }
+            }
+            if selected {
+                painter.rect_stroke(rect, CornerRadius::ZERO, Stroke::new(1.5, t.ink_strong), egui::StrokeKind::Inside);
+            }
+            let name = choice.map_or_else(|| inherit.to_owned(), accent_name);
+            let label = format!("{prefix}: {name}");
+            let response = response.on_hover_text(&name);
+            response.widget_info(|| egui::WidgetInfo::selected(egui::Role::RadioButton, true, selected, &label));
+            if response.clicked() {
+                changed = Some(Alerts { accent: choice, ..changed.unwrap_or(own) });
+            }
+        }
+    });
+    changed
 }
 
 /// The initials of a name, for an avatar: the first letters of the first two words.

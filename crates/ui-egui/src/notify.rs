@@ -48,7 +48,14 @@ fn notification(chat: &Chat, sender: &str, body: &MessageBody) -> Notification {
     if line.chars().count() > PREVIEW {
         preview.push('…');
     }
-    Notification { chat: chat.id.clone(), title: chat.name.clone(), body: fmt(tl!("{sender}: {text}"), &[("sender", sender), ("text", &preview)]) }
+    // The chat's own sound setting; the caller applies its network's (`State::alerts`).
+    let sound = chat.alerts.sounds();
+    Notification {
+        chat: chat.id.clone(),
+        title: chat.name.clone(),
+        body: fmt(tl!("{sender}: {text}"), &[("sender", sender), ("text", &preview)]),
+        sound,
+    }
 }
 
 #[cfg(test)]
@@ -74,6 +81,7 @@ mod tests {
             muted: None,
             marked_unread: false,
             archived: None,
+            alerts: pingcraft_core::Alerts::default(),
             draft: None,
             draft_for: None,
         }

@@ -152,7 +152,7 @@ impl PingCraftApp {
                 Screen::Inbox => {
                     match self.state.tab {
                         Tab::Inbox => view::inbox(ui, &mut self.state, &mut out),
-                        Tab::Accounts => accounts::accounts(ui, &mut self.state),
+                        Tab::Accounts => accounts::accounts(ui, &mut self.state, &mut out),
                     }
                     accounts::connect_sheet(&ctx, &mut self.state, &mut out);
                     accounts::remove_sheet(&ctx, &mut self.state, &mut out);

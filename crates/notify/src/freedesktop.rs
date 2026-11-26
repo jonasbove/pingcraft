@@ -94,9 +94,7 @@ fn run(address: Option<String>, queue: Receiver<Notification>, click: Sender<Cha
     let shown: Shown = Arc::new(Mutex::new(VecDeque::new()));
     listen(&proxy, Arc::clone(&shown), click, wake);
     for n in queue {
-        let mut hints = HashMap::new();
-        hints.insert("desktop-entry", Value::from(APP_ID));
-        hints.insert("category", Value::from("im.received"));
+        let hints = hints(n.sound);
         // "default" is the click on the notification itself; its label is not shown.
         match proxy.notify(APP_NAME, 0, APP_ID, &escape(&n.title), &escape(&n.body), &["default", "Open"], hints, -1) {
             Ok(id) => {
@@ -110,6 +108,21 @@ fn run(address: Option<String>, queue: Receiver<Notification>, click: Sender<Cha
             Err(e) => off_once(&OFF, &format!("the notification service did not answer ({e})")),
         }
     }
+}
+
+/// The hints sent with a notification. With `sound`, the desktop's own sound for an instant message (the
+/// freedesktop sound naming spec's `message-new-instant`, from the user's sound theme: no sound file of
+/// PingCraft's); without, a request for silence, which services that play a sound of their own honour.
+fn hints(sound: bool) -> HashMap<&'static str, Value<'static>> {
+    let mut hints = HashMap::new();
+    hints.insert("desktop-entry", Value::from(APP_ID));
+    hints.insert("category", Value::from("im.received"));
+    if sound {
+        hints.insert("sound-name", Value::from("message-new-instant"));
+    } else {
+        hints.insert("suppress-sound", Value::from(true));
+    }
+    hints
 }
 
 /// Listens for clicks on PingCraft's notifications, on a thread of its own.
@@ -142,18 +155,31 @@ fn escape(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Freedesktop, escape};
+    use super::{Freedesktop, escape, hints};
     use pingcraft_core::ChatId;
     use pingcraft_core::notify::{Notification, Notifier};
     use std::sync::Arc;
+    use zbus::zvariant::Value;
 
     #[test]
     fn without_a_bus_notifications_are_dropped_quietly() {
         let mut n = Freedesktop::start(Some("unix:path=/nonexistent/pingcraft-test-bus".into()), Arc::new(|| {}));
         for _ in 0..3 {
-            n.show(Notification { chat: ChatId("!a".into()), title: "Book club".into(), body: "Ana: hi".into() });
+            n.show(Notification { chat: ChatId("!a".into()), title: "Book club".into(), body: "Ana: hi".into(), sound: true });
         }
         assert!(n.clicked().is_empty());
+    }
+
+    /// With sound, the desktop's own instant-message sound is asked for; without, silence.
+    #[test]
+    fn the_sound_is_the_desktops_own_or_none() {
+        let on = hints(true);
+        assert_eq!(on.get("sound-name"), Some(&Value::from("message-new-instant")));
+        assert!(!on.contains_key("suppress-sound"));
+        let off = hints(false);
+        assert_eq!(off.get("suppress-sound"), Some(&Value::from(true)));
+        assert!(!off.contains_key("sound-name"));
+        assert_eq!(off.get("category"), Some(&Value::from("im.received")));
     }
 
     #[test]

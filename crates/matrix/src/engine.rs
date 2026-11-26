@@ -131,6 +131,8 @@ struct SignedIn {
     shown_emoji: Option<String>,
     /// The skin tone kept with the account, between this device and the server.
     skin_tone: crate::emoji_settings::ToneSync,
+    /// Each network's alerts as last told to the interface (raw, to tell when another device changed them).
+    shown_network_alerts: Option<String>,
 }
 
 struct Worker {
@@ -222,6 +224,7 @@ impl Worker {
                     self.save_recent_emoji(false).await;
                     self.recent_emoji().await;
                     self.skin_tone(false).await;
+                    self.network_alerts().await;
                 }
             }
         }
@@ -361,10 +364,22 @@ impl Worker {
             emoji_uses: crate::recent_emoji::Pending::default(),
             shown_emoji: None,
             skin_tone: crate::emoji_settings::ToneSync::default(),
+            shown_network_alerts: None,
         });
         self.tick();
         self.recent_emoji().await;
         self.skin_tone(false).await;
+        self.network_alerts().await;
+    }
+
+    /// Tells the interface each network's alerts when they changed (here, or synced from another device).
+    async fn network_alerts(&mut self) {
+        let Some(s) = self.signed_in.as_mut() else { return };
+        let (alerts, seen) = s.connection.network_alerts().await;
+        if s.shown_network_alerts.as_ref() != Some(&seen) {
+            s.shown_network_alerts = Some(seen);
+            self.emit.send(Event::NetworkAlerts(alerts));
+        }
     }
 
     /// Tells the interface when the connection or the recovery state changed.
@@ -630,11 +645,13 @@ impl Worker {
                 Ok(())
             }
             Command::EnableEncryption(chat) => s.connection.enable_encryption(&chat).await,
-            Command::PinChat { chat, pin } => s.connection.pin_chat(&chat, pin).await.map(|c| upsert = Some(c)),
-            Command::Mute { chat, mute } => s.connection.mute(&chat, mute).await.map(|c| upsert = Some(c)),
-            Command::MarkUnread(chat) => s.connection.mark_unread(&chat).await.map(|c| upsert = Some(c)),
-            Command::Archive { chat, archive } => s.connection.archive(&chat, archive).await.map(|c| upsert = Some(c)),
-            Command::SaveDraft { chat, text, draft_for } => s.connection.save_draft(&chat, &text, draft_for.as_ref()).await.map(|c| upsert = Some(c)),
+            command @ (Command::PinChat { .. }
+            | Command::Mute { .. }
+            | Command::MarkUnread(_)
+            | Command::ChatAlerts { .. }
+            | Command::Archive { .. }
+            | Command::SaveDraft { .. }) => chat_setting(s, command).await.map(|c| upsert = c),
+            Command::NetworkAlerts { network, alerts } => set_network_alerts(s, &self.emit, network, alerts).await,
             // Typing notices are a courtesy: one that fails is not worth a problem bar.
             Command::Typing { chat, typing } => {
                 let _ = s.connection.typing(&chat, typing).await;
@@ -722,6 +739,34 @@ async fn chat_command(s: &SignedIn, command: Command) -> Result<Option<Event>, S
         _ => return Err("that chat is not open".into()),
     };
     done.map(|()| None).map_err(|e| e.to_string())
+}
+
+/// A change to one chat's own settings; returns the chat as it now is.
+async fn chat_setting(s: &SignedIn, command: Command) -> Result<Option<pingcraft_core::Chat>, String> {
+    let c = &s.connection;
+    let chat = match command {
+        Command::PinChat { chat, pin } => c.pin_chat(&chat, pin).await,
+        Command::Mute { chat, mute } => c.mute(&chat, mute).await,
+        Command::MarkUnread(chat) => c.mark_unread(&chat).await,
+        Command::ChatAlerts { chat, alerts } => c.set_chat_alerts(&chat, alerts).await,
+        Command::Archive { chat, archive } => c.archive(&chat, archive).await,
+        Command::SaveDraft { chat, text, draft_for } => c.save_draft(&chat, &text, draft_for.as_ref()).await,
+        _ => return Ok(None),
+    };
+    chat.map(Some)
+}
+
+/// Sets a network's alerts, and tells the interface at once; the sync brings the server's copy a moment later.
+async fn set_network_alerts(s: &SignedIn, emit: &Emitter, network: pingcraft_core::Network, alerts: pingcraft_core::Alerts) -> Result<(), String> {
+    s.connection.set_network_alerts(&network, alerts).await?;
+    let (mut all, _) = s.connection.network_alerts().await;
+    if alerts == pingcraft_core::Alerts::default() {
+        all.remove(&network);
+    } else {
+        all.insert(network, alerts);
+    }
+    emit.send(Event::NetworkAlerts(all));
+    Ok(())
 }
 
 /// The header's REFRESH: a new sync connection, and the bridges asked again.

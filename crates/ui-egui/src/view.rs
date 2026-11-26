@@ -13,7 +13,7 @@ use crate::state::{NetworkEntry, Screen, State, Tab};
 use crate::theme::Tokens;
 use crate::time::short_time;
 use crate::tl;
-use crate::widgets::{Kind, avatar, button, field, hud, mark, network_name, network_tag, note, problem, unread};
+use crate::widgets::{Kind, avatar, button, field, hud, mark, network_name, note, problem, unread};
 
 /// The commands the screens collected in one frame.
 pub type Out = Vec<Command>;
@@ -319,7 +319,8 @@ pub fn inbox(ui: &mut Ui, state: &mut State, out: &mut Out) {
     egui::CentralPanel::default().frame(egui::Frame::new().fill(t.bg)).show(ui, |ui| match state.open.as_mut() {
         Some(open) => {
             let chat = state.inbox.get(&open.id).cloned();
-            leave = crate::chat::chat_view(ui, open, chat.as_ref(), out);
+            let network = chat.as_ref().and_then(|c| state.network_alerts.get(&c.network).copied()).unwrap_or_default();
+            leave = crate::chat::chat_view(ui, open, chat.as_ref(), network, out);
         }
         None => empty_chat(ui, state, out),
     });
@@ -449,7 +450,8 @@ fn inbox_list(ui: &mut Ui, state: &mut State, out: &mut Out) {
         }
         for chat in &visible {
             let selected = state.open.as_ref().is_some_and(|o| o.id == chat.id);
-            if chat_row(ui, chat, selected).clicked() && !selected {
+            let accent = state.alerts(chat).accent;
+            if chat_row(ui, chat, accent, selected).clicked() && !selected {
                 out.extend(state.leaving());
                 state.open_chat(chat.id.clone());
                 out.push(Command::OpenChat(chat.id.clone()));
@@ -507,7 +509,7 @@ pub(crate) const PINNED_MARK: &str = "📌";
 pub(crate) const MUTED_MARK: &str = "🔕";
 
 /// One chat in the list. Its accessible name says the chat, its network, the unread count and the last message.
-fn chat_row(ui: &mut Ui, chat: &Chat, selected: bool) -> egui::Response {
+fn chat_row(ui: &mut Ui, chat: &Chat, accent: Option<pingcraft_core::Accent>, selected: bool) -> egui::Response {
     let t = Tokens::get(ui.ctx());
     let width = ui.available_width();
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 64.0), Sense::click());
@@ -572,7 +574,7 @@ fn chat_row(ui: &mut Ui, chat: &Chat, selected: bool) -> egui::Response {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let when = chat.last_message.as_ref().map(|m| short_time(m.at)).unwrap_or_default();
                 ui.label(RichText::new(when).monospace().size(12.0).color(if strong { t.ink } else { t.muted }));
-                network_tag(ui, &chat.network);
+                crate::widgets::network_tag_in(ui, &chat.network, accent);
                 // Marks drawn from the bundled emoji font (a test checks they have glyphs).
                 if chat.muted.is_some() {
                     ui.label(RichText::new(MUTED_MARK).size(12.0).color(t.muted));

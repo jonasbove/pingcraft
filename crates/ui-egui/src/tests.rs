@@ -95,6 +95,7 @@ pub(super) fn chat(id: &str, name: &str, network: &str, unread: u32, preview: Op
         muted: None,
         marked_unread: false,
         archived: None,
+        alerts: pingcraft_core::Alerts::default(),
         draft: None,
         draft_for: None,
     }

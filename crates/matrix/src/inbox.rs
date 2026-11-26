@@ -204,6 +204,7 @@ pub(crate) async fn chat_from_room(room: &Room, own: Option<&UserId>) -> Chat {
         draft,
         draft_for,
         archived: crate::chat_settings::archived(room).await,
+        alerts: crate::chat_settings::alerts(room).await,
     }
 }
 

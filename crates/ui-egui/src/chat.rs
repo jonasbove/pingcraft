@@ -3,7 +3,7 @@
 
 use egui::{Align, Color32, Layout, Margin, RichText, ScrollArea, Sense, Stroke, Ui, Vec2};
 use pingcraft_core::app::Command;
-use pingcraft_core::{Chat, Mute, Network};
+use pingcraft_core::{Alerts, Chat, Mute, Network};
 
 use crate::emoji;
 use crate::i18n::fmt;
@@ -13,10 +13,10 @@ use crate::theme::Tokens;
 use crate::time::day_label;
 use crate::tl;
 use crate::view::Out;
-use crate::widgets::{Kind, avatar, button, hud, network_name, network_tag, note};
+use crate::widgets::{Kind, avatar, button, hud, network_name, note};
 
 /// The open chat. Returns whether the user left it (marking it unread).
-pub fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, out: &mut Out) -> bool {
+pub fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, network: Alerts, out: &mut Out) -> bool {
     let t = Tokens::get(ui.ctx());
     let name = chat.map(|c| c.name.clone()).unwrap_or_default();
     let mut leave = false;
@@ -32,12 +32,12 @@ pub fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, out: &mu
                 ui.add_space(((ui.available_height() - height) / 2.0).max(0.0));
                 ui.label(emoji::text(&name, 16.0, t.ink_strong));
                 if let Some(chat) = chat {
-                    network_tag(ui, &chat.network);
+                    crate::widgets::network_tag_in(ui, &chat.network, chat.alerts.over(network).accent);
                 }
             });
             if let Some(chat) = chat {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    leave = chat_menu(ui, chat, out);
+                    leave = chat_menu(ui, chat, network, out);
                     let (text, color) = match (chat.encrypted, chat.network.is_matrix()) {
                         (true, true) => (tl!("End-to-end encrypted"), t.good),
                         (true, false) => (tl!("Encrypted · via your bridge"), t.muted),
@@ -149,7 +149,7 @@ pub fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, out: &mu
 
 /// The chat's "…" menu: pin it to the top of the inbox, mark it unread, archive it, mute it. Returns whether the
 /// user left the chat (marking it unread, or archiving it).
-fn chat_menu(ui: &mut Ui, chat: &Chat, out: &mut Out) -> bool {
+fn chat_menu(ui: &mut Ui, chat: &Chat, network: Alerts, out: &mut Out) -> bool {
     let t = Tokens::get(ui.ctx());
     let mut leave = false;
     let more = ui.add(
@@ -206,6 +206,12 @@ fn chat_menu(ui: &mut Ui, chat: &Chat, out: &mut Out) -> bool {
             }
         }
         note(ui, tl!("A muted chat still counts as unread. PingCraft turns notifications back on at the time you chose while it is running."));
+        ui.separator();
+        hud(ui, tl!("Sound and colour"), t.muted);
+        if let Some(alerts) = crate::widgets::alerts_controls(ui, chat.alerts, chat.alerts.over(network), "", tl!("the network's")) {
+            out.push(Command::ChatAlerts { chat: id.clone(), alerts });
+        }
+        note(ui, tl!("Your system's own notification sound. Kept with your account, in PingCraft only: the network is not told."));
     });
     leave
 }

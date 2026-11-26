@@ -17,7 +17,7 @@ use matrix_sdk::ruma::OwnedRoomId;
 use matrix_sdk::ruma::events::RoomAccountDataEventType;
 use matrix_sdk::ruma::serde::Raw;
 use matrix_sdk::store::{ComposerDraft, ComposerDraftType};
-use pingcraft_core::{Chat, ChatId, DraftFor, Mute, Timestamp};
+use pingcraft_core::{Accent, Alerts, Chat, ChatId, DraftFor, Mute, Timestamp};
 use serde_json::json;
 
 use crate::connection::Connection;
@@ -32,6 +32,37 @@ pub(crate) async fn mute_until(room: &Room) -> Option<Timestamp> {
     let raw = room.account_data(RoomAccountDataEventType::from(MUTE_UNTIL)).await.ok()??;
     let content: serde_json::Value = raw.get_field("content").ok()??;
     content.get("until").and_then(serde_json::Value::as_u64).filter(|&t| t > 0).map(Timestamp)
+}
+
+/// Room account data where PingCraft keeps a chat's own notification sound and accent colour
+/// (`{"sound": true, "accent": "signal"}`, each key left out to follow the network's). PingCraft's own: no Matrix
+/// event says how a client should sound or colour a chat.
+pub(crate) const ALERTS: &str = crate::namespaced!("alerts");
+
+/// Alerts from saved content: only a true or false sound and a known colour are taken; anything else is unset.
+pub(crate) fn alerts_from(content: &serde_json::Value) -> Alerts {
+    Alerts {
+        sound: content.get("sound").and_then(serde_json::Value::as_bool),
+        accent: content.get("accent").and_then(serde_json::Value::as_str).and_then(Accent::from_id),
+    }
+}
+
+/// Alerts as saved: unset ones are left out.
+pub(crate) fn alerts_json(alerts: Alerts) -> serde_json::Value {
+    let mut map = serde_json::Map::new();
+    if let Some(sound) = alerts.sound {
+        map.insert("sound".to_owned(), json!(sound));
+    }
+    if let Some(accent) = alerts.accent {
+        map.insert("accent".to_owned(), json!(accent.id()));
+    }
+    serde_json::Value::Object(map)
+}
+
+/// A chat's own alerts, from its room account data.
+pub(crate) async fn alerts(room: &Room) -> Alerts {
+    let Some(raw) = room.account_data(RoomAccountDataEventType::from(ALERTS)).await.ok().flatten() else { return Alerts::default() };
+    raw.get_field::<serde_json::Value>("content").ok().flatten().map(|c| alerts_from(&c)).unwrap_or_default()
 }
 
 /// Room account data where PingCraft keeps when the user archived a chat (`{"at": ms}`; 0 when it is not).
@@ -121,6 +152,18 @@ impl Connection {
         Ok(now)
     }
 
+    /// Sets a chat's own notification sound and accent colour.
+    pub async fn set_chat_alerts(&self, chat: &ChatId, alerts: Alerts) -> Result<Chat, String> {
+        let room = self.room(chat)?;
+        let content = Raw::new(&alerts_json(alerts)).map_err(|e| problem("the chat's sound and colour could not be saved", e))?.cast_unchecked();
+        room.set_account_data_raw(RoomAccountDataEventType::from(ALERTS), content)
+            .await
+            .map_err(|e| problem("the chat's sound and colour could not be saved", e))?;
+        let mut now = self.chat_now(&room).await;
+        now.alerts = alerts;
+        Ok(now)
+    }
+
     /// Keeps the user's draft for a chat, with the message it replies to or edits (by event ID), or (empty) forgets
     /// it.
     pub async fn save_draft(&self, chat: &ChatId, text: &str, draft_for: Option<&DraftFor>) -> Result<Chat, String> {
@@ -205,7 +248,22 @@ mod tests {
     use matrix_sdk::store::ComposerDraftType;
     use pingcraft_core::DraftFor;
 
-    use super::{ARCHIVED, MUTE_UNTIL, archive_time, draft_for, draft_type};
+    use pingcraft_core::{Accent, Alerts};
+    use serde_json::json;
+
+    use super::{ALERTS, ARCHIVED, MUTE_UNTIL, alerts_from, alerts_json, archive_time, draft_for, draft_type};
+
+    /// What is saved reads back the same; anything PingCraft does not know is unset, never guessed.
+    #[test]
+    fn alerts_are_saved_and_read_back_and_nothing_else_is_taken() {
+        assert_eq!(ALERTS, "io.github.jonasbove.pingcraft.alerts");
+        for alerts in [Alerts::default(), Alerts { sound: Some(false), accent: Some(Accent::Discord) }, Alerts { sound: Some(true), accent: None }] {
+            assert_eq!(alerts_from(&alerts_json(alerts)), alerts);
+        }
+        assert_eq!(alerts_json(Alerts::default()), json!({}));
+        assert_eq!(alerts_from(&json!({ "sound": "yes", "accent": "#ff00ff" })), Alerts::default());
+        assert_eq!(alerts_from(&json!([1])), Alerts::default());
+    }
 
     /// The name other Matrix apps and later versions find the data under: it must not change by accident.
     #[test]

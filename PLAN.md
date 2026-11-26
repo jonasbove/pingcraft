@@ -463,6 +463,36 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
 11. **Notification sounds and colours.** Choose a sound for each network or chat (a few built-in sounds under an
     allowlisted licence, or none), and pick a chat's or network's accent colour, tied to the network colours under
     "Later". Builds on milestone 6's desktop notifications.
+    **First step done (2026-11-26), with gaps** (maintainer, 2026-11-26: system sound first). Per chat and per
+    network: the notification sound on or off, and an accent colour.
+    - **Sound:** the operating system's own notification sound, no audio library and no sound files. Linux and the
+      BSDs: the freedesktop hint `sound-name = message-new-instant` (the user's sound theme), or `suppress-sound`
+      when off (tested: the hints sent). Windows: the toast's `Default` sound when on; without it a toast was and is
+      silent (built with `cargo check --target aarch64-pc-windows-msvc`, not run). **macOS: not done** — notify-rust
+      4.19 cannot ask for `UNNotificationSound.defaultSound`, so notifications there stay silent whatever the
+      setting. **Default: on** (decided here, for the maintainer to confirm): that is a change on Windows, where
+      toasts were silent, and on Linux services that play no sound unless asked.
+    - **Accent colour:** one of the network colours (`Accent`: Telegram's, Signal's, WhatsApp's, Discord's, by id),
+      or the network's own; it colours the chat's network tag in the inbox and the chat header. A minimal choice
+      (swatches as radio buttons), no colour picker: **a fuller choice comes with the craft-libs update**
+      (craft-color-ui's colour picker, maintainer 2026-11-26). Saved values are only ever one of the four ids.
+    - **Where they live** (decided here, for the maintainer to confirm): with the account, so they follow the user
+      between devices, in PingCraft's own namespace, since no Matrix event says how a client sounds or colours a
+      chat. A chat's: room account data `io.github.jonasbove.pingcraft.alerts` (`{"sound": false, "accent":
+      "signal"}`, a key left out follows the network), read with the inbox like `mute_until`. A network's: global
+      account data `io.github.jonasbove.pingcraft.networks` (one entry per network), changed on top of the server's
+      copy (other networks and keys kept), watched for other devices' changes. A chat's setting wins over its
+      network's, which wins over the default. They are PingCraft's only; the networks are not told, as the menus say.
+    - **Where they are set:** a SOUND AND COLOUR part of the chat's "…" menu (with USE THE NETWORK'S SOUND SETTING
+      once the chat has its own), and a SOUND AND COLOUR list on the ACCOUNTS tab, one row per network (Matrix
+      too). **No frames yet** for either; they need the maintainer's design pass.
+    - Tests: the levels and the colour ids (core), reading and writing both kinds of data and refusing anything else
+      (adapter), the Linux hints, and through the AccessKit tree the chat menu's controls, a network's setting
+      reaching a chat, a notification's sound following the chat over its network, and the ACCOUNTS tab's controls.
+      Live tests (`tests/network_alerts.rs`, two devices; the chat's in `tests/timeline.rs`) **were not run** (no
+      test server in this session). Not heard: no sound was played by hand on any system.
+    - **Open:** custom sounds (a few built-in sounds under an allowlisted licence) are later; sound per account (two
+      Telegram accounts) and the "Later" network colours themselves (`inbox-networks`) are not decided.
 12. **Other everyday actions,** to decide when the design is made: mark as unread, archive a chat, drafts kept
     per chat, typing indicators, a "jump to latest" button, and the context menu that holds all of the above
     (right-click and a keyboard shortcut, through `craft-libs` `menu` and `keymap`).

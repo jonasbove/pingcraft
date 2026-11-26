@@ -140,6 +140,8 @@ pub struct Chat {
     /// When the user archived it (PingCraft's own room account data). Whether it is still archived is
     /// [`Chat::is_archived`]: a newer message brings it back unless it is muted.
     pub archived: Option<Timestamp>,
+    /// The chat's own notification sound and accent colour; what it leaves unset follows its network's.
+    pub alerts: Alerts,
 }
 
 /// What a draft is for, besides a new message: a reply to a message, or an edit of one of the user's own, by the
@@ -148,6 +150,59 @@ pub struct Chat {
 pub enum DraftFor {
     Reply(String),
     Edit(String),
+}
+
+/// The accent colours a chat or a network can take: the network colours, by the network they belong to by default
+/// (PLAN.md, "Later": network colours). Saved by [`Accent::id`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Accent {
+    Telegram,
+    Signal,
+    WhatsApp,
+    Discord,
+}
+
+impl Accent {
+    pub const ALL: [Self; 4] = [Self::Telegram, Self::Signal, Self::WhatsApp, Self::Discord];
+
+    /// The name it is saved under, which is also the network whose colour it is. Never change one.
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Telegram => "telegram",
+            Self::Signal => "signal",
+            Self::WhatsApp => "whatsapp",
+            Self::Discord => "discord",
+        }
+    }
+
+    /// The colour saved under `id`; `None` for anything else (a saved value is never trusted).
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|a| a.id() == id)
+    }
+}
+
+/// How a chat's or a network's new messages are announced: a notification sound (the operating system's own) on or
+/// off, and an accent colour. `None` follows the level above: a chat its network's, a network the default (sound on,
+/// its own colour).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Alerts {
+    pub sound: Option<bool>,
+    pub accent: Option<Accent>,
+}
+
+impl Alerts {
+    /// Whether a notification sounds when there are no settings at all.
+    pub const DEFAULT_SOUND: bool = true;
+
+    /// These settings, with what they leave unset taken from `above`.
+    pub fn over(self, above: Alerts) -> Alerts {
+        Alerts { sound: self.sound.or(above.sound), accent: self.accent.or(above.accent) }
+    }
+
+    /// Whether a notification sounds, once every level has been applied.
+    pub fn sounds(self) -> bool {
+        self.sound.unwrap_or(Self::DEFAULT_SOUND)
+    }
 }
 
 /// How long a chat stays muted.
@@ -310,6 +365,23 @@ pub enum SendState {
 mod tests {
     use super::{Chat, ChatId, MessageBody, MessagePreview, Network, Timestamp};
 
+    /// A chat's settings win over its network's, which win over the default; a saved colour is only ever one of the
+    /// network colours.
+    #[test]
+    fn a_chats_alerts_win_over_its_networks() {
+        use super::{Accent, Alerts};
+        let network = Alerts { sound: Some(false), accent: Some(Accent::Signal) };
+        let chat = Alerts { sound: None, accent: Some(Accent::WhatsApp) };
+        assert_eq!(chat.over(network), Alerts { sound: Some(false), accent: Some(Accent::WhatsApp) });
+        assert!(!chat.over(network).sounds());
+        assert!(Alerts::default().over(Alerts::default()).sounds(), "sound is on unless turned off");
+        for accent in Accent::ALL {
+            assert_eq!(Accent::from_id(accent.id()), Some(accent));
+        }
+        assert_eq!(Accent::from_id("#ff0000"), None);
+        assert_eq!(Accent::from_id(""), None);
+    }
+
     #[test]
     fn network_ids_are_case_insensitive_and_empty_means_matrix() {
         assert_eq!(Network::from_id("Telegram"), Network::from_id("telegram"));
@@ -343,6 +415,7 @@ mod tests {
             muted: None,
             marked_unread: false,
             archived: None,
+            alerts: crate::Alerts::default(),
             draft: None,
             draft_for: None,
         };

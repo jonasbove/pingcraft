@@ -3,7 +3,7 @@
 
 use egui::{Color32, CornerRadius, Stroke};
 
-use pingcraft_core::Network;
+use pingcraft_core::{Accent, Network};
 
 const fn hex(rgb: u32) -> Color32 {
     let [_, r, g, b] = rgb.to_be_bytes();
@@ -106,6 +106,16 @@ impl Tokens {
 
     pub fn hairline(&self) -> Stroke {
         Stroke::new(1.0, self.line)
+    }
+
+    /// An accent colour a chat or network can take: one of the network colours.
+    pub fn accent_colour(&self, accent: Accent) -> Color32 {
+        match accent {
+            Accent::Telegram => self.net_telegram,
+            Accent::Signal => self.net_signal,
+            Accent::WhatsApp => self.net_whatsapp,
+            Accent::Discord => self.net_discord,
+        }
     }
 
     /// A network tag's colour; Matrix and networks without a colour of their own stay neutral.
