@@ -34,7 +34,7 @@ maintainer approves.
 - **Licences.** The client's dependencies follow the allowlist in `AGENTS.md`. The mautrix bridges are
   AGPL-3.0, which is not on the allowlist. They run as separate, unmodified programs in their own containers and
   are never linked into PingCraft, but whether that is acceptable is a maintainer decision: Phase 0 writes it up
-  as an ADR and stops for approval (house rule 9).
+  as an ADR and stops for approval (ADR 0002 records the approval).
 - **Networks' terms.** Bridging some networks breaks their terms of service or can get an account banned.
   Each network's ADR says what the risk is, so people can choose.
 - **Shared libraries first.** Check `storytold/craft-libs` (for example `settings`, `i18n`, `keymap`, `menu`,

@@ -32,6 +32,13 @@ These apply from milestone 2 on (ADR 0009):
 - Every crate root carries the never-crash `deny` attribute.
 - UI changes get `egui_kittest` tests of the AccessKit tree.
 - CI calls `storytold/craft-common-actions` and builds every target CraftCloud ships.
+- **The shared agent rules** (craft-contrib RFC-0072, adopted 2026-11-26 because the House rules check requires
+  them): `AGENTS.md` now carries the suite's `craft-agents` block in place of the retired house-rules blocks, and
+  "house rule N" elsewhere in this plan refers to the old numbering. Where PingCraft does not follow the new rules
+  yet: integration tests are several binaries in `crates/matrix/tests/` rather than one `tests/it/main.rs` per
+  crate (rule 30); there is no automation interface or `pingcraft-cli mcp` (rules 14 and 18); interface text goes
+  through a stand-in for craft-i18n, which does not yet compile next to matrix-sdk (rule 16); colours come from
+  PingCraft's own tokens until it moves onto craft-theme (rule 14).
 - **Git dependencies** (maintainer, 2026-11-26): any `github.com/storytold` repository may be a cargo git source
   (for example `storytold/vectorcraft`, which craft-libs' `craft-svg` pulls in through `craft-ui`), always pinned
   by `rev`. The change that first needs a storytold source not yet in `deny.toml` replaces the per-repository
