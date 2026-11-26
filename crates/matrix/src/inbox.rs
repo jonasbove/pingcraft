@@ -5,6 +5,10 @@
 //! state in a room can send such an event, so one counts only when its sender is the bridge bot it names
 //! (`content.bridgebot`) and that bot is on the user's own server, where the admin runs the bridges. A room without
 //! one is a Matrix chat. [`crate::bridge_info`] gets that state into the local store and says which rooms changed.
+//!
+//! A chat's archive, sound and colour, and mute end are PingCraft's own room account data ([`crate::chat_settings`]).
+//! The room list does not notice a change to those, so the inbox also watches the sync's room updates for them and
+//! sends such a chat again, whether the change was made here or on another device.
 
 use std::collections::{HashMap, HashSet};
 use std::pin::pin;
@@ -14,8 +18,10 @@ use futures_util::{Stream, StreamExt, stream};
 use matrix_sdk::deserialized_responses::{RawAnySyncOrStrippedState, TimelineEventKind};
 use matrix_sdk::executor::{AbortOnDrop, spawn};
 use matrix_sdk::latest_events::LatestEventValue;
-use matrix_sdk::ruma::events::StateEventType;
+use matrix_sdk::ruma::events::{AnyRoomAccountDataEvent, StateEventType};
+use matrix_sdk::ruma::serde::Raw;
 use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId, UserId};
+use matrix_sdk::sync::RoomUpdates;
 use matrix_sdk::{Client, Room};
 use matrix_sdk_ui::RoomListService;
 use matrix_sdk_ui::eyeball_im::{Vector, VectorDiff};
@@ -42,9 +48,11 @@ pub struct InboxFeed {
 
 impl InboxFeed {
     pub(crate) async fn start(client: Client, rooms: Arc<RoomListService>, bridges: broadcast::Receiver<OwnedRoomId>) -> Result<Self, SyncError> {
+        // Before the room list, so no change falls between the chats first sent and the watch.
+        let settings = client.subscribe_to_all_room_updates();
         let list = rooms.all_rooms().await.map_err(|e| SyncError(e.to_string()))?;
         let (tx, changes) = unbounded_channel();
-        let task = spawn(run(client, list, bridges, tx));
+        let task = spawn(run(client, list, bridges, settings, tx));
         Ok(Self { changes, _task: AbortOnDrop::new(task) })
     }
 
@@ -65,6 +73,38 @@ enum Wake {
     Rooms(Vec<VectorDiff<RoomListItem>>),
     /// A room's bridge info may have changed; `None` means some updates were missed, so look at every room.
     Bridge(Option<OwnedRoomId>),
+    /// The sync brought PingCraft's own room account data for these rooms; `None` means some sync updates were
+    /// missed, so send every room again.
+    Settings(Option<Vec<OwnedRoomId>>),
+}
+
+/// The joined rooms in a sync's room updates that bring some of PingCraft's own room account data.
+fn rooms_with_own_settings(updates: &RoomUpdates) -> Vec<OwnedRoomId> {
+    let own = |raw: &Raw<AnyRoomAccountDataEvent>| {
+        raw.get_field::<String>("type")
+            .ok()
+            .flatten()
+            .is_some_and(|kind| kind.strip_prefix(crate::NAMESPACE).is_some_and(|rest| rest.starts_with('.')))
+    };
+    updates.joined.iter().filter(|(_, update)| update.account_data.iter().any(own)).map(|(id, _)| id.clone()).collect()
+}
+
+/// Wakes for the rooms whose PingCraft settings the sync brought. Updates without any are skipped.
+fn settings_updates(rx: broadcast::Receiver<RoomUpdates>) -> impl Stream<Item = Wake> {
+    stream::unfold(rx, |mut rx| async move {
+        loop {
+            match rx.recv().await {
+                Ok(updates) => {
+                    let rooms = rooms_with_own_settings(&updates);
+                    if !rooms.is_empty() {
+                        return Some((Wake::Settings(Some(rooms)), rx));
+                    }
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => return Some((Wake::Settings(None), rx)),
+                Err(broadcast::error::RecvError::Closed) => return None,
+            }
+        }
+    })
 }
 
 fn bridge_updates(rx: broadcast::Receiver<OwnedRoomId>) -> impl Stream<Item = Wake> {
@@ -93,11 +133,17 @@ impl State {
     }
 }
 
-async fn run(client: Client, list: RoomList, bridges: broadcast::Receiver<OwnedRoomId>, tx: UnboundedSender<InboxChange>) {
+async fn run(
+    client: Client,
+    list: RoomList,
+    bridges: broadcast::Receiver<OwnedRoomId>,
+    settings: broadcast::Receiver<RoomUpdates>,
+    tx: UnboundedSender<InboxChange>,
+) {
     let (entries, controller) = list.entries_with_dynamic_adapters(MAX_CHATS);
     // Joined rooms that are not spaces. Invites come with the screen that accepts them.
     controller.set_filter(Box::new(new_filter_all(vec![Box::new(new_filter_joined()), Box::new(new_filter_not(Box::new(new_filter_space())))])));
-    let mut wakes = pin!(stream::select(entries.map(Wake::Rooms), bridge_updates(bridges)));
+    let mut wakes = pin!(stream::select(stream::select(entries.map(Wake::Rooms), bridge_updates(bridges)), settings_updates(settings)));
     let latest = client.latest_events().await;
     let mut state =
         State { rooms: Vector::new(), sent_network: HashMap::new(), listening: HashSet::new(), own: client.user_id().map(ToOwned::to_owned) };
@@ -116,6 +162,7 @@ async fn run(client: Client, list: RoomList, bridges: broadcast::Receiver<OwnedR
                 changes
             }
             Wake::Bridge(room) => bridge_changed(&mut state, room).await,
+            Wake::Settings(rooms) => settings_changed(&mut state, rooms.as_deref()).await,
         };
         for change in changes {
             if tx.send(change).is_err() {
@@ -176,6 +223,18 @@ async fn bridge_changed(state: &mut State, room: Option<OwnedRoomId>) -> Vec<Inb
         if state.sent_network.get(room.room_id()) != Some(&network) {
             changes.push(InboxChange::Upsert(Box::new(state.chat(&room).await)));
         }
+    }
+    changes
+}
+
+/// Sends the chats again whose PingCraft settings the sync brought (`None`: every chat). Only rooms in the list
+/// are sent: a space, or a room the user left, must not turn up in the inbox.
+async fn settings_changed(state: &mut State, rooms: Option<&[OwnedRoomId]>) -> Vec<InboxChange> {
+    let candidates: Vec<Room> =
+        state.rooms.iter().filter(|r| rooms.is_none_or(|ids| ids.iter().any(|id| r.room_id() == id))).map(|r| Room::clone(r)).collect();
+    let mut changes = Vec::with_capacity(candidates.len());
+    for room in candidates {
+        changes.push(InboxChange::Upsert(Box::new(state.chat(&room).await)));
     }
     changes
 }
@@ -322,7 +381,10 @@ async fn preview(room: &Room, own: Option<&UserId>) -> Option<MessagePreview> {
 
 #[cfg(test)]
 mod tests {
-    use super::{body_from_event, body_from_message_content, network_from_bridge_events};
+    use super::{body_from_event, body_from_message_content, network_from_bridge_events, rooms_with_own_settings};
+    use matrix_sdk::ruma::serde::Raw;
+    use matrix_sdk::ruma::{OwnedRoomId, owned_room_id};
+    use matrix_sdk::sync::{JoinedRoomUpdate, LeftRoomUpdate, RoomUpdates};
     use pingcraft_core::{MessageBody, Network};
     use serde_json::{Value, json};
 
@@ -376,6 +438,41 @@ mod tests {
         let not_an_id = json!({"state_key": "a", "sender": "signalbot", "content": {"bridgebot": "signalbot", "protocol": {"id": "signal"}}});
         let wrong_types = json!({"state_key": "a", "sender": 1, "content": {"bridgebot": ["@signalbot:example.org"], "protocol": {"id": "signal"}}});
         assert!(network_from_bridge_events(&[no_sender, no_bot, not_an_id, wrong_types], SERVER).is_matrix());
+    }
+
+    /// Room account data of these types, as a sync brings it.
+    fn account_data(types: &[&str]) -> Vec<Raw<matrix_sdk::ruma::events::AnyRoomAccountDataEvent>> {
+        types.iter().map(|t| Raw::new(&json!({"type": t, "content": {"at": 1}})).unwrap().cast_unchecked()).collect()
+    }
+
+    fn joined(types: &[&str]) -> JoinedRoomUpdate {
+        JoinedRoomUpdate { account_data: account_data(types), ..Default::default() }
+    }
+
+    /// Archiving, a chat's sound and colour, and a mute's end are PingCraft's own room account data, which changes
+    /// nothing the room list watches: the inbox must hear of them from the sync itself. Other apps' account data,
+    /// and rooms the user left, wake nothing.
+    #[test]
+    fn only_pingcraft_settings_in_joined_rooms_wake_the_inbox() {
+        let (archived, alerts, muted, tagged, left): (OwnedRoomId, OwnedRoomId, OwnedRoomId, OwnedRoomId, OwnedRoomId) = (
+            owned_room_id!("!archived:example.org"),
+            owned_room_id!("!alerts:example.org"),
+            owned_room_id!("!muted:example.org"),
+            owned_room_id!("!tagged:example.org"),
+            owned_room_id!("!left:example.org"),
+        );
+        let mut updates = RoomUpdates::default();
+        updates.joined.insert(archived.clone(), joined(&[crate::chat_settings::ARCHIVED]));
+        updates.joined.insert(alerts.clone(), joined(&["m.tag", crate::chat_settings::ALERTS]));
+        updates.joined.insert(muted.clone(), joined(&[crate::chat_settings::MUTE_UNTIL]));
+        updates.joined.insert(tagged, joined(&["m.tag", "m.fully_read", "io.github.jonasbove.pingcraftish.archived", "com.example.archived"]));
+        updates.left.insert(left, LeftRoomUpdate { account_data: account_data(&[crate::chat_settings::ARCHIVED]), ..Default::default() });
+        let mut woken = rooms_with_own_settings(&updates);
+        woken.sort();
+        let mut expected = vec![archived, alerts, muted];
+        expected.sort();
+        assert_eq!(woken, expected);
+        assert!(rooms_with_own_settings(&RoomUpdates::default()).is_empty());
     }
 
     #[test]
