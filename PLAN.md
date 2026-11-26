@@ -668,6 +668,45 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
     react, select and the rest come with the menus (part 1, step 4) where the catalogue has them. Network marks:
     the network tags (craft-ui badges, step 3); no network logos, as before.
 
+## craft-libs update, part 1: PingCraft on craft-ui (2026-11-26)
+
+The maintainer's rule (2026-11-26): craft-libs is the standard and dictates how PingCraft looks and feels. Part 1
+(branch `craft-ui-1`) moves the interface onto craft-ui; the window and title bar, platform appearance, dialogs on
+craft-ui's dialog host, the i18n swap, the automation interface and colour themes come later.
+
+- **Fonts** (step 1): craft-ui's font stack, see M2 ticket 9 and "Messages and chats" 1.
+- **Runtime and icons** (step 2): see "Messages and chats" 13. The runtime is hosted through `craft_ui::shell::embed`
+  (`framework.rs`). **Not run:** the desktop app's hooks (`raw_input_hook`, `logic`, `before_ui`), `SystemWindows` and
+  the OS appearance reader only compile; the tests install the runtime headless and run no hooks, and nobody has
+  opened the window since.
+- **Theme and components** (step 3): PingCraft's own look is gone: the orchid tokens, the square corners, the mono
+  capitals and the hand-made buttons, toggles and badges. Colours, sizes and type come from craft-ui's resolved
+  theme, its default theme in the system's light or dark (`RootEnv::new()`), read through `theme::Tokens` and written
+  into egui's style for the parts still drawn with egui (`theme::apply`, each frame, only when they change). Buttons
+  are craft-ui `Button`s (primary, secondary, danger), fields `TextField`s (Enter submits through the field's own
+  output), check boxes `Checkbox`es, the header's tabs `ToggleButton`s, the ALL / UNREAD / ARCHIVED filter a
+  `Segmented`, the unread count a count `Badge`, the encryption state a `Badge`, the risk scale `Badge`s, labels and
+  notes `Text` in the caption and body roles, and the avatar a round mark in the accent's soft fill. Labels are in
+  sentence case now ("Sign in", not "SIGN IN"); the tests find them so. The sheets stay egui `Modal`s on the theme's
+  raised surface until the dialogs move onto craft-ui's dialog host (read here as part of the later "dialogs" work;
+  `DialogFrame` would put PingCraft's egui content inside a craft-ui container). Still egui, with a reason each: the
+  composer and the inbox search (`TextField` cannot lay its text out with PingCraft's emoji layout), the emoji
+  chips, quick reactions and picker cells (a craft-ui button's label is plain text, not a layout job), the message
+  list and inbox rows, and the menus' rows (step 4). Network colours stay data (`theme.rs`), a dot beside the
+  network's neutral badge.
+  - **Not done in part 1:** the accent colour picker from craft-color-ui (ticket 11). A free colour changes what is
+    stored (`Accent` holds one of four network ids, and the account data refuses anything else), so its format is a
+    maintainer decision first; the swatches stay as they are, drawn from the theme.
+  - **Maintainer decision: PingCraft's own theme.** M3 ticket 7 says "PingCraft's own look becomes a theme and stays
+    the default". Under the new rule the default is craft-libs' default theme, which part 1 uses. craft-ui has an
+    app-defaults hook the other apps use: `RootEnv::library_theme(ThemeDef)` (craft-launcher builds its own
+    `ThemeDef` from its tokens that way), and a theme file's per-app section (`ThemeDef.apps`, craft-framework.md 4.6
+    step 4). Whether PingCraft ships an orchid theme or app section is the maintainer's call; part 1 ships none.
+  - **The design file** (`design/`) now differs from the built app everywhere the look changed: corners, type,
+    sentence-case labels, buttons, tabs, badges, icons and the sheets' hero (no orchid band or rule). It is to be
+    redrawn later.
+  - **Not looked at by eye:** no screenshot was taken; the tests check the AccessKit tree and some geometry only.
+
 ## craft-libs: what PingCraft lacks
 
 The maintainer's rule (2026-11-26): craft-libs dictates how PingCraft looks and feels. PingCraft adopts craft-ui as
@@ -691,7 +730,18 @@ from craft-libs' own pieces and writes the gap down here, for a craft-libs chang
   stays the emoji 😀), reply, forward, react (add a reaction), unpin, select, send, archive and mark as unread.
   Present and used where they fit: `more`, `close`, `chevron_right`, `pin`, `copy`, `trash`, `pencil`, `info`,
   `arrow_down`, `lock`, `search`, `settings`.
-- **Emoji layout** (`emoji.rs`): craft-ui's text has no equivalent of PingCraft's emoji a size up among text, large
+- **A theme for an app's own egui code** (`craft_ui::style`). craft-framework.md says `craft_ui::style` turns tokens
+  into egui styling "stock widgets included", but at the pinned revision nothing public does: the resolved tokens are
+  `Env::tokens` (doc-hidden, "read in `style` only"), and the other apps keep their own `theme.rs`. Stopgap:
+  `theme::Tokens` reads them through `Env::of_root` and `theme::apply` writes egui's visuals and text sizes.
+- **A badge in a colour from data** (`craft_ui::display::Badge`). It takes a tone only. Stopgap: a dot in the
+  network's colour beside a neutral badge (`widgets::network_tag_in`).
+- **A badge's selected state** (`Badge`). `Props::selected` does not reach its AccessKit node. Stopgap: the risk
+  scale's level badge carries the description "This network's level".
+- **Rich labels** (`Button`, `TextField`, `Text`): no way to give a label or a field's text a laid-out job, so emoji
+  in buttons, chips and the composer cannot take PingCraft's emoji layout. Those stay egui widgets.
+- **Emoji layout** (`emoji.rs`): craft-ui's text exports no equivalent (its cluster script rules,
+  `fonts/script.rs`, are crate-private) of PingCraft's emoji a size up among text, large
   emoji-only messages, or a network's own emoji presentation (`pingcraft_core::EmojiPresentation`), so these stay
   PingCraft's.
 

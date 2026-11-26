@@ -22,7 +22,7 @@ fn the_inbox_says_which_chats_are_pinned_muted_or_marked_unread() {
     h.get_by_label("Lars Holm, on Matrix, pinned");
     h.get_by_label("Book club, on Telegram, muted, 2 unread. Lars: The ending of chapter 8");
     h.get_by_label("Mei Tanaka, on Telegram, marked unread");
-    h.get_by_label("UNREAD 2");
+    h.get_by_label("Unread 2");
 }
 
 fn chat_menu(h: &mut egui_kittest::Harness<'static, crate::PingCraftApp>) {
@@ -144,7 +144,7 @@ fn typing_is_shown_and_told() {
     super::type_into(&mut h, "Message Book club", "on my way");
     let sent = fake.take_all();
     assert!(sent.iter().any(|c| matches!(c, Command::Typing { typing: true, .. })), "{sent:?}");
-    h.get_by_label("SEND").click();
+    h.get_by_label("Send").click();
     h.run();
     let sent = fake.take_all();
     assert!(sent.iter().any(|c| matches!(c, Command::Typing { typing: false, .. })), "{sent:?}");
@@ -159,7 +159,7 @@ fn jump_to_latest_shows_when_scrolled_up() {
     fake.tell([Event::Messages { chat: ChatId("!book".into()), messages: many }]);
     h.run();
     assert!(h.query_by_label("Jump to latest").is_none(), "at the newest message already");
-    h.get_by_label("LOAD OLDER MESSAGES").scroll_to_me();
+    h.get_by_label("Load older messages").scroll_to_me();
     h.run();
     h.get_by_label("Jump to latest").click();
     h.run();
@@ -177,7 +177,7 @@ fn sending_a_kept_draft_forgets_it() {
     h.get_by_label_contains("Book club, on Telegram").click();
     h.run();
     fake.take();
-    h.get_by_label("SEND").click();
+    h.get_by_label("Send").click();
     h.run();
     let sent = fake.take();
     assert!(
@@ -205,9 +205,9 @@ fn a_chat_can_be_archived_and_found_under_archived() {
     fake.tell([Event::Inbox(InboxChange::Upsert(Box::new(book.clone())))]);
     h.run();
     assert!(h.query_by_label_contains("Book club, on Telegram").is_none(), "out of the inbox");
-    h.get_by_label("ALL 1");
-    h.get_by_label("UNREAD 0");
-    h.get_by_label("ARCHIVED 1").click();
+    h.get_by_label("All 1");
+    h.get_by_label("Unread 0");
+    h.get_by_label("Archived 1").click();
     h.run();
     h.get_by_label_contains("Book club, on Telegram").click();
     h.run();
@@ -219,7 +219,7 @@ fn a_chat_can_be_archived_and_found_under_archived() {
     assert!(matches!(&sent[..], [Command::Archive { chat, archive: false }] if chat.0 == "!book"), "{sent:?}");
 
     // A message after it was archived brings it back by itself.
-    h.get_by_label("ALL 1").click();
+    h.get_by_label("All 1").click();
     h.run();
     let mut newer = chat("!book", "Book club", "Telegram", 3, Some(("Lars", "Chapter 9 now")));
     newer.archived = book.archived;
@@ -227,7 +227,7 @@ fn a_chat_can_be_archived_and_found_under_archived() {
     fake.tell([Event::Inbox(InboxChange::Upsert(Box::new(newer)))]);
     h.run();
     h.get_by_label_contains("Book club, on Telegram");
-    h.get_by_label("ARCHIVED 0");
+    h.get_by_label("Archived 0");
 }
 
 /// The draft that is kept, as the backend was asked to keep it: its text and what it is for.
@@ -267,7 +267,7 @@ fn a_reply_in_progress_is_kept_with_the_draft() {
     h.run();
     h.get_by_label("Replying to Lars Holm");
     fake.take();
-    h.get_by_label("SEND").click();
+    h.get_by_label("Send").click();
     h.run();
     let sent = fake.take();
     assert!(
@@ -320,7 +320,7 @@ fn an_edit_in_progress_is_kept_with_the_draft() {
     h.run();
     h.get_by_label("Editing your message");
     fake.take();
-    h.get_by_label("SAVE").click();
+    h.get_by_label("Save").click();
     h.run();
     let sent = fake.take();
     assert!(matches!(&sent[..], [Command::Edit { message, text, .. }, ..] if message.0 == "2" && text == "Thursday works. Friday too."), "{sent:?}");
@@ -424,7 +424,7 @@ fn a_networks_sound_and_colour_are_set_on_the_accounts_tab() {
     use pingcraft_core::{Accent, Alerts, Network};
     let fake = Fake::default();
     let mut h = signed_in(&fake);
-    h.get_by_label("ACCOUNTS").click();
+    h.get_by_label("Accounts").click();
     h.run();
     fake.take();
     // Below the cards and the accounts: scrolled to, as a screen reader would.

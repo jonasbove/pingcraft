@@ -130,6 +130,7 @@ impl PingCraftApp {
     /// Draws one frame: applies what the backend said since the last one, then sends what the user did.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
+        theme::apply(&ctx);
         picker::set_tone(&ctx, self.skin_tone);
         self.state.focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
         let mut out = Vec::new();

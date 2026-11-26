@@ -14,6 +14,13 @@ use crate::theme::Tokens;
 use crate::tl;
 use crate::view::Out;
 use crate::widgets::{Kind, button, field, hud, network_name, network_tag, note, problem};
+use craft_theme::variant::{Emphasis, Tone};
+use craft_ui::buttons::Button;
+use craft_ui::choice::Checkbox;
+use craft_ui::contract::{Bind, Props as _, Show as _};
+use craft_ui::display::Shade;
+use craft_ui::display::{Badge, Text};
+use craft_ui::style::Variant;
 
 /// The networks the screen offers, in the design's order. Discord waits for its bridge (ADR 0008).
 pub const NETWORKS: &[&str] = &["telegram", "signal", "whatsapp", "discord"];
@@ -107,12 +114,12 @@ pub fn accounts(ui: &mut Ui, state: &mut State, out: &mut Out) {
     egui::CentralPanel::default().frame(egui::Frame::new().fill(t.bg).inner_margin(Margin::symmetric(24, 24))).show(ui, |ui| {
         ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 8.0;
-            hud(ui, &format!("{} · {}", tl!("Accounts"), tl!("Connect a network")), t.muted);
+            hud(ui, &format!("{} · {}", tl!("Accounts"), tl!("Connect a network")), Shade::Muted);
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 0.0;
-                ui.label(RichText::new(tl!("Connect a ")).size(40.0).strong().color(t.ink_strong));
-                ui.label(RichText::new(tl!("network")).size(40.0).strong().color(t.accent_ink));
-                ui.label(RichText::new(".").size(40.0).strong().color(t.ink_strong));
+                ui.label(RichText::new(tl!("Connect a ")).size(t.display).strong().color(t.ink_strong));
+                ui.label(RichText::new(tl!("network")).size(t.display).strong().color(t.accent_ink));
+                ui.label(RichText::new(".").size(t.display).strong().color(t.ink_strong));
             });
             note(
                 ui,
@@ -128,7 +135,7 @@ pub fn accounts(ui: &mut Ui, state: &mut State, out: &mut Out) {
             if let Some(n) = state.accounts.notice.clone() {
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(n).size(13.0).color(t.ink));
+                    ui.label(RichText::new(n).size(t.body).color(t.ink));
                     if button(ui, tl!("Close"), Kind::Secondary, true).clicked() {
                         state.accounts.notice = None;
                     }
@@ -163,7 +170,7 @@ fn cards(ui: &mut Ui, state: &mut State) {
                 egui::Frame::new().inner_margin(Margin::symmetric(20, 10)).show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new(format!("{:02}", i + 1)).monospace().size(12.0).color(t.muted));
+                        ui.label(RichText::new(format!("{:02}", i + 1)).size(t.label).color(t.muted));
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             let (word, color) = match network.risk_level() {
                                 _ if !offered(&network) => (tl!("Later").to_owned(), t.muted),
@@ -180,13 +187,13 @@ fn cards(ui: &mut Ui, state: &mut State) {
                     ui.set_width(ui.available_width());
                     let name_color = if offered(&network) { t.ink_strong } else { t.muted };
                     let top = ui.cursor().top();
-                    ui.label(RichText::new(network_name(&network)).size(22.0).strong().color(name_color));
-                    ui.add(egui::Label::new(RichText::new(how_you_log_in(&network)).size(13.0).color(t.muted)).wrap());
+                    ui.label(RichText::new(network_name(&network)).size(t.heading).strong().color(name_color));
+                    ui.add(egui::Label::new(RichText::new(how_you_log_in(&network)).size(t.body).color(t.muted)).wrap());
                     let text_height = ui.cursor().top() - top;
                     tallest_now = tallest_now.max(text_height);
                     ui.add_space(12.0 + (tallest - text_height).max(0.0));
                     let (line, can_connect) = card_line(&network, entry.as_ref());
-                    hud(ui, &line, t.muted);
+                    hud(ui, &line, Shade::Muted);
                     if is_connected(entry.as_ref()) {
                         connected_cell(ui, &network);
                         return;
@@ -223,7 +230,7 @@ fn cards(ui: &mut Ui, state: &mut State) {
 /// Each network's notification sound and accent colour, which its chats follow unless they set their own.
 fn sound_and_colour(ui: &mut Ui, state: &mut State, out: &mut Out) {
     let t = Tokens::get(ui.ctx());
-    hud(ui, tl!("Sound and colour"), t.muted);
+    hud(ui, tl!("Sound and colour"), Shade::Muted);
     note(
         ui,
         tl!(
@@ -237,7 +244,7 @@ fn sound_and_colour(ui: &mut Ui, state: &mut State, out: &mut Out) {
         egui::Frame::new().stroke(t.hairline()).inner_margin(Margin::symmetric(16, 8)).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
-                ui.add_sized([120.0, 18.0], egui::Label::new(RichText::new(&name).size(14.0).color(t.ink_strong)));
+                ui.add_sized([120.0, 18.0], egui::Label::new(RichText::new(&name).size(t.body).color(t.ink_strong)));
                 if let Some(alerts) = crate::widgets::alerts_controls(ui, own, own, &name, tl!("its own")) {
                     // Shown at once, so a second change before the backend answers builds on this one.
                     state.network_alerts.insert(network.clone(), alerts);
@@ -257,7 +264,7 @@ fn is_connected(entry: Option<&NetworkEntry>) -> bool {
 fn connected_cell(ui: &mut Ui, network: &Network) {
     let t = Tokens::get(ui.ctx());
     let spoken = fmt(tl!("{network}: connected"), &[("network", &network_name(network))]);
-    let text = RichText::new(tl!("Connected").to_uppercase()).monospace().strong().size(11.0).color(t.good);
+    let text = RichText::new(tl!("Connected")).strong().size(t.caption).color(t.good);
     let width =
         egui::WidgetText::from(text.clone()).into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, egui::TextStyle::Button).size().x;
     let frame = egui::Frame::new().stroke(Stroke::new(1.0, t.good)).inner_margin(Margin::symmetric(10, 0)).show(ui, |ui| {
@@ -293,7 +300,7 @@ fn risk_color(t: &Tokens, risk: RiskLevel) -> Color32 {
 /// A small outlined word in mono capitals.
 fn badge(ui: &mut Ui, text: &str, color: Color32) {
     egui::Frame::new().stroke(Stroke::new(1.0, color)).inner_margin(Margin::symmetric(6, 2)).show(ui, |ui| {
-        ui.label(RichText::new(text.to_uppercase()).monospace().size(10.0).color(color));
+        ui.label(RichText::new(text).size(Tokens::get(ui.ctx()).caption).color(color));
     });
 }
 
@@ -308,7 +315,7 @@ fn your_accounts(ui: &mut Ui, state: &mut State) {
         })
         .flatten()
         .collect();
-    hud(ui, &format!("{} · {}", tl!("Your accounts"), trn(accounts.len() as u64, "{n} account", "{n} accounts")), t.muted);
+    hud(ui, &format!("{} · {}", tl!("Your accounts"), trn(accounts.len() as u64, "{n} account", "{n} accounts")), Shade::Muted);
     if accounts.is_empty() {
         note(ui, tl!("No network is connected yet. Your Matrix chats are in the inbox either way."));
         return;
@@ -320,22 +327,19 @@ fn your_accounts(ui: &mut Ui, state: &mut State) {
                 // Room between the tag, the account's name (often a phone number) and its state.
                 ui.spacing_mut().item_spacing.x = 20.0;
                 network_tag(ui, &account.network);
-                ui.label(RichText::new(&account.name).size(14.0).color(t.ink_strong));
+                ui.label(RichText::new(&account.name).size(t.body).color(t.ink_strong));
                 let (word, color) = match &account.state {
-                    AccountState::Connected => (tl!("Connected").to_owned(), t.good),
-                    AccountState::Connecting => (tl!("Connecting…").to_owned(), t.warn),
-                    AccountState::LoggedOut => (tl!("Logged out: connect it again").to_owned(), t.bad),
-                    AccountState::Error(why) => (fmt(tl!("Not working: {why}"), &[("why", why)]), t.bad),
+                    AccountState::Connected => (tl!("Connected").to_owned(), Tone::Good),
+                    AccountState::Connecting => (tl!("Connecting…").to_owned(), Tone::Warn),
+                    AccountState::LoggedOut => (tl!("Logged out: connect it again").to_owned(), Tone::Bad),
+                    AccountState::Error(why) => (fmt(tl!("Not working: {why}"), &[("why", why)]), Tone::Bad),
                 };
-                ui.label(RichText::new(word).size(12.5).color(color));
+                Text::new(word).tone(color).show(ui);
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let label = fmt(tl!("Remove {account}"), &[("account", &account.name)]);
-                    let remove = egui::Button::new(RichText::new(tl!("Remove").to_uppercase()).monospace().strong().size(11.0).color(t.ink))
-                        .stroke(Stroke::new(1.0, t.line_strong))
-                        .min_size(Vec2::new(0.0, 30.0));
-                    let response = crate::widgets::animated(ui, remove, state.accounts.removing.is_none(), Color32::TRANSPARENT, t.line);
-                    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, state.accounts.removing.is_none(), &label));
-                    if response.clicked() {
+                    let remove =
+                        Button::new(label).painted(tl!("Remove")).variant(Variant::SECONDARY).enabled(state.accounts.removing.is_none()).show(ui);
+                    if remove.clicked() {
                         state.accounts.removing = Some(account.clone());
                     }
                 });
@@ -364,7 +368,7 @@ pub fn remove_sheet(ctx: &egui::Context, state: &mut State, out: &mut Out) {
                     tl!("The bridge logs {account} out of {network} and stops carrying its messages."),
                     &[("account", &account.name), ("network", &name)],
                 ))
-                .size(14.0),
+                .size(Tokens::get(ui.ctx()).body),
             );
             note(ui, tl!("Depending on how your server is set up, its chats may leave your inbox. You can connect the account again later."));
         },
@@ -409,34 +413,29 @@ fn risk_sheet(ctx: &egui::Context, state: &State, network: Network, understood: 
         700.0,
         (&fmt(tl!("Before you connect {network}"), &[("network", &name)]), &caption),
         |ui| {
-            let t = Tokens::get(ui.ctx());
             ui.horizontal(|ui| {
-                hud(ui, tl!("Risk level"), t.ink);
+                hud(ui, tl!("Risk level"), Shade::Normal);
                 ui.spacing_mut().item_spacing.x = 0.0;
+                // A scale to read, not a control: this network's level is the solid badge, and its name says so too.
                 for level in [RiskLevel::Low, RiskLevel::Medium, RiskLevel::MediumHigh, RiskLevel::High] {
                     let on = risk == Some(level);
-                    let text = RichText::new(risk_name(level).to_uppercase()).monospace().size(11.0).color(if on { t.invert_fg } else { t.muted });
-                    let cell = egui::Button::new(text)
-                        .fill(if on { t.invert_bg } else { Color32::TRANSPARENT })
-                        .stroke(Stroke::new(1.0, t.line_strong))
-                        .selected(on);
-                    // A scale to read, not a control: it does nothing when clicked, and says which level is this one.
-                    let response = ui.add(cell.sense(Sense::hover()));
-                    response.widget_info(|| {
-                        let mut info = egui::WidgetInfo::labeled(egui::Role::ListItem, true, risk_name(level).to_uppercase());
-                        info.selected = Some(on);
-                        info
-                    });
+                    let badge = Badge::new(risk_name(level));
+                    if on {
+                        // craft-ui's badge reports no selected state, so the description says it.
+                        badge.variant(Variant::look(Emphasis::Solid, Tone::Warn)).description(tl!("This network's level")).show(ui);
+                    } else {
+                        badge.show(ui);
+                    }
                 }
             });
             for (heading, text) in risk_blocks(&network) {
-                hud(ui, heading, t.ink);
-                ui.add(egui::Label::new(RichText::new(text).size(13.5).color(t.muted)).wrap());
+                hud(ui, heading, Shade::Normal);
+                note(ui, &text);
             }
             let sentence =
                 fmt(tl!("I understand that {network} may restrict or ban this account, and I want to connect it anyway."), &[("network", &name)]);
             let mut on = ticked.get();
-            ui.checkbox(&mut on, sentence);
+            Checkbox::new(Bind::bound(&mut on)).label(sentence).show(ui);
             ticked.set(on);
         },
         |ui| {
@@ -515,7 +514,7 @@ fn waiting_sheet(ctx: &egui::Context, network: Network) -> Option<Connect> {
         560.0,
         (&fmt(tl!("Connect {network}"), &[("network", &name)]), tl!("Asking the bridge")),
         |ui| {
-            ui.label(RichText::new(tl!("Waiting for the bridge on your server…")).size(14.0));
+            ui.label(RichText::new(tl!("Waiting for the bridge on your server…")).size(Tokens::get(ui.ctx()).body));
         },
         |_| {},
     );
@@ -549,12 +548,12 @@ fn step_sheet(
         |ui| match &step {
             LoginStep::Show { instructions, display, .. } => {
                 if !instructions.is_empty() {
-                    ui.add(egui::Label::new(RichText::new(instructions).size(14.0)).wrap());
+                    ui.add(egui::Label::new(RichText::new(instructions).size(Tokens::get(ui.ctx()).body)).wrap());
                 }
                 match display {
                     Display::Qr(data) => qr_code(ui, data, &fmt(tl!("QR code to scan with {network}"), &[("network", &name)])),
                     Display::Code(code) | Display::Emoji(code) => {
-                        ui.label(RichText::new(code).monospace().size(28.0).strong());
+                        ui.label(RichText::new(code).size(Tokens::get(ui.ctx()).heading).strong());
                     }
                     Display::Nothing => {}
                 }
@@ -562,7 +561,7 @@ fn step_sheet(
             }
             LoginStep::Ask { instructions, fields, .. } => {
                 if !instructions.is_empty() {
-                    ui.add(egui::Label::new(RichText::new(instructions).size(14.0)).wrap());
+                    ui.add(egui::Label::new(RichText::new(instructions).size(Tokens::get(ui.ctx()).body)).wrap());
                 }
                 for f in fields {
                     let value = typed.entry(f.id.clone()).or_insert_with(|| Zeroizing::new(f.default.clone().unwrap_or_default()));
@@ -571,7 +570,7 @@ fn step_sheet(
                         _ => "",
                     };
                     let response = field(ui, &f.name, value, f.kind.is_secret(), hint);
-                    if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    if response.submitted {
                         submit.set(true);
                     }
                     if !f.description.is_empty() {

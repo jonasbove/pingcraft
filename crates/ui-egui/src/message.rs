@@ -190,10 +190,10 @@ fn contents(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out, act: &mu
 fn head(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out, act: &mut Option<Act>) {
     let t = Tokens::get(ui.ctx());
     ui.horizontal(|ui| {
-        ui.label(emoji::text(&who(message), 13.0, t.ink_strong, cx.emoji));
-        ui.label(RichText::new(crate::time::clock(message.at)).monospace().size(12.0).color(t.muted));
+        ui.label(emoji::text(&who(message), t.body, t.ink_strong, cx.emoji));
+        ui.label(RichText::new(crate::time::clock(message.at)).size(t.label).color(t.muted));
         if message.edited {
-            ui.label(RichText::new(tl!("edited")).monospace().size(12.0).color(t.muted));
+            ui.label(RichText::new(tl!("edited")).size(t.label).color(t.muted));
         }
         if message.own {
             ui.add_space(24.0);
@@ -202,7 +202,7 @@ fn head(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out, act: &mut Op
                 SendState::Sending => (tl!("Sending…"), t.muted),
                 SendState::Failed(_) => (tl!("Not sent"), t.bad),
             };
-            ui.label(RichText::new(state.to_uppercase()).monospace().size(11.0).color(color));
+            ui.label(RichText::new(state).size(t.caption).color(color));
         }
         if message.body != MessageBody::Deleted {
             more(ui, message, cx, out, act);
@@ -213,7 +213,7 @@ fn head(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out, act: &mut Op
 /// The "more" button that opens the message's menu.
 fn more(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out, act: &mut Option<Act>) {
     let label = fmt(tl!("Message actions: {sender}, {text}"), &[("sender", &who(message)), ("text", &snippet(&message.body))]);
-    let button = crate::widgets::icon_button(ui, crate::widgets::icon::MORE, &label);
+    let button = crate::widgets::menu_button(ui, crate::widgets::icon::MORE, &label);
     crate::widgets::menu_under(&button).show(|ui| {
         if let Some(a) = menu(ui, message, cx, out) {
             *act = Some(a);
@@ -298,8 +298,8 @@ fn quote_view(ui: &mut Ui, quote: &Quote, reply: &MessageId, presentation: Emoji
     let sender = if quote.sender.is_empty() { tl!("a message") } else { quote.sender.as_str() };
     let inner = egui::Frame::new().inner_margin(Margin { left: 10, right: 0, top: 2, bottom: 2 }).show(ui, |ui| {
         ui.set_max_width(420.0);
-        ui.label(emoji::text(sender, 12.0, t.accent_ink, presentation));
-        ui.add(egui::Label::new(emoji::text(&text, 12.5, t.muted, presentation)).truncate());
+        ui.label(emoji::text(sender, t.label, t.accent_ink, presentation));
+        ui.add(egui::Label::new(emoji::text(&text, t.label, t.muted, presentation)).truncate());
     });
     let rect = inner.response.rect;
     ui.painter().vline(rect.left() + 1.0, rect.y_range(), Stroke::new(2.0, t.line_strong));
@@ -330,7 +330,7 @@ fn chip(ui: &mut Ui, reaction: &Reaction, enabled: bool, presentation: EmojiPres
     let t = Tokens::get(ui.ctx());
     let shown = shown_key(&reaction.key);
     let count = reaction.by.len().max(1);
-    let text = emoji::text(&format!("{} {count}", drawn_key(&reaction.key)), 13.0, if reaction.mine { t.accent_ink } else { t.ink }, presentation);
+    let text = emoji::text(&format!("{} {count}", drawn_key(&reaction.key)), t.body, if reaction.mine { t.accent_ink } else { t.ink }, presentation);
     let stroke = Stroke::new(1.0, if reaction.mine { t.accent_ink } else { t.line_strong });
     let fill = if reaction.mine { t.accent_tint } else { Color32::TRANSPARENT };
     let response = ui.add_enabled(enabled, egui::Button::new(text).fill(fill).stroke(stroke).corner_radius(egui::CornerRadius::ZERO));
@@ -350,7 +350,7 @@ fn chip(ui: &mut Ui, reaction: &Reaction, enabled: bool, presentation: EmojiPres
 fn body(ui: &mut Ui, body: &MessageBody, presentation: EmojiPresentation) -> egui::Response {
     let t = Tokens::get(ui.ctx());
     match body {
-        MessageBody::Text(text) => ui.add(egui::Label::new(emoji::body(text, 14.0, Color32::PLACEHOLDER, presentation)).wrap()),
+        MessageBody::Text(text) => ui.add(egui::Label::new(emoji::body(text, t.body, Color32::PLACEHOLDER, presentation)).wrap()),
         MessageBody::WaitingForKey => {
             egui::Frame::new()
                 .fill(t.sunken)
@@ -358,14 +358,14 @@ fn body(ui: &mut Ui, body: &MessageBody, presentation: EmojiPresentation) -> egu
                 .inner_margin(Margin::same(14))
                 .show(ui, |ui| {
                     ui.set_max_width(500.0);
-                    ui.label(RichText::new(tl!("Waiting for the key to this message")).size(14.0));
+                    ui.label(RichText::new(tl!("Waiting for the key to this message")).size(t.body));
                     note(ui, tl!("It was sent before this device could read it. It opens by itself once one of your other devices, or your key backup, shares the key."));
                 })
                 .response
         }
-        MessageBody::Deleted => ui.label(RichText::new(tl!("Message deleted")).italics().size(13.0).color(t.muted)),
-        MessageBody::Loading => ui.label(RichText::new("…").size(14.0).color(t.muted)),
-        MessageBody::Unsupported(kind) => ui.label(RichText::new(unsupported(kind)).italics().size(14.0).color(t.muted)),
+        MessageBody::Deleted => ui.label(RichText::new(tl!("Message deleted")).italics().size(t.body).color(t.muted)),
+        MessageBody::Loading => ui.label(RichText::new("…").size(t.body).color(t.muted)),
+        MessageBody::Unsupported(kind) => ui.label(RichText::new(unsupported(kind)).italics().size(t.body).color(t.muted)),
     }
 }
 
@@ -380,12 +380,15 @@ pub fn delete_sheet(ctx: &egui::Context, messages: &[Message], cx: &Cx<'_>, chat
         ctx,
         "delete-message",
         560.0,
-        (&title, &chat_name.to_uppercase()),
+        (&title, chat_name),
         |ui| {
             for message in messages.iter().take(5) {
-                ui.label(emoji::text(&snippet(&message.body), 13.0, Color32::PLACEHOLDER, cx.emoji));
+                ui.label(emoji::text(&snippet(&message.body), Tokens::get(ui.ctx()).body, Color32::PLACEHOLDER, cx.emoji));
             }
-            ui.label(RichText::new(tl!("They are deleted for everyone in this chat, and a “Message deleted” line stays in their place.")).size(14.0));
+            ui.label(
+                RichText::new(tl!("They are deleted for everyone in this chat, and a “Message deleted” line stays in their place."))
+                    .size(Tokens::get(ui.ctx()).body),
+            );
             note(ui, tl!("PingCraft asks the network's bridge to delete them there too. Whether they disappear there depends on the network."));
         },
         |ui| {

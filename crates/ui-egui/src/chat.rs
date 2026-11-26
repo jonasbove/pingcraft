@@ -14,6 +14,12 @@ use crate::time::day_label;
 use crate::tl;
 use crate::view::Out;
 use crate::widgets::{Kind, avatar, button, hud, network_name, note};
+use craft_theme::variant::{Emphasis, Tone};
+use craft_ui::buttons::Button;
+use craft_ui::contract::{Props as _, Show as _};
+use craft_ui::display::Badge;
+use craft_ui::display::Shade;
+use craft_ui::style::Variant;
 
 /// How the chat's network's app draws symbols that are text by default; Unicode's way before the chat is known.
 fn emoji_presentation(chat: Option<&Chat>) -> EmojiPresentation {
@@ -32,35 +38,33 @@ pub fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, network:
             avatar(ui, &name, 36.0);
             ui.vertical(|ui| {
                 // Centre the name and tag on the avatar: a vertical block in a centred row starts at the top.
-                let name_h = ui.fonts_mut(|f| f.row_height(&egui::FontId::proportional(16.0)));
-                let tag_h = ui.fonts_mut(|f| f.row_height(&egui::FontId::monospace(10.0))) + 2.0;
+                let name_h = ui.fonts_mut(|f| f.row_height(&egui::FontId::proportional(t.title)));
+                // The tag is craft-ui's badge, whose height its style decides: as tall as it was last frame.
+                let tag_id = egui::Id::unique("pingcraft-chat-header-tag");
+                let tag_h = ui.data(|d| d.get_temp::<f32>(tag_id)).unwrap_or(t.control);
                 let height = if chat.is_some() { name_h + ui.spacing().item_spacing.y + tag_h } else { name_h };
                 ui.add_space(((ui.available_height() - height) / 2.0).max(0.0));
-                ui.label(emoji::text(&name, 16.0, t.ink_strong, presentation));
+                ui.label(emoji::text(&name, t.title, t.ink_strong, presentation));
                 if let Some(chat) = chat {
-                    crate::widgets::network_tag_in(ui, &chat.network, chat.alerts.over(network).accent);
+                    let tag = crate::widgets::network_tag_in(ui, &chat.network, chat.alerts.over(network).accent);
+                    ui.data_mut(|d| d.insert_temp(tag_id, tag.rect.height()));
                 }
             });
             if let Some(chat) = chat {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     leave = chat_menu(ui, chat, network, out);
-                    let (text, color) = match (chat.encrypted, chat.network.is_matrix()) {
-                        (true, true) => (tl!("End-to-end encrypted"), t.good),
-                        (true, false) => (tl!("Encrypted · via your bridge"), t.muted),
-                        (false, _) => (tl!("Not encrypted"), t.warn),
-                    };
                     if chat.encrypted {
-                        egui::Frame::new().stroke(t.hairline()).inner_margin(Margin::symmetric(10, 5)).show(ui, |ui| {
-                            ui.label(RichText::new(text).size(12.5).color(color));
-                        });
+                        let (text, tone) = if chat.network.is_matrix() {
+                            (tl!("End-to-end encrypted"), Tone::Good)
+                        } else {
+                            (tl!("Encrypted · via your bridge"), Tone::Neutral)
+                        };
+                        Badge::new(text).variant(Variant::look(Emphasis::Soft, tone)).show(ui);
                     } else {
                         // Not encrypted: a button that offers to turn it on.
-                        let badge = egui::Button::new(RichText::new(text).size(12.5).color(color))
-                            .stroke(t.hairline())
-                            .corner_radius(egui::CornerRadius::ZERO);
-                        let response = crate::widgets::animated(ui, badge, true, Color32::TRANSPARENT, t.line);
-                        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, tl!("Not encrypted: turn on encryption")));
-                        if response.clicked() {
+                        let offer =
+                            Button::new(tl!("Not encrypted: turn on encryption")).painted(tl!("Not encrypted")).variant(Variant::SECONDARY).show(ui);
+                        if offer.clicked() {
                             open.encrypt_sheet = true;
                         }
                     }
@@ -123,13 +127,11 @@ pub fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, network:
         open.at_bottom = bottom >= shown.content_size.y - 24.0;
         if !open.at_bottom {
             // Over the bottom right of the timeline.
-            let size = Vec2::new(150.0, 34.0);
-            let rect = egui::Rect::from_min_size(shown.inner_rect.right_bottom() - size - Vec2::new(8.0, 8.0), size);
-            let jump = ui.put(
-                rect,
-                egui::Button::new(RichText::new(tl!("Jump to latest").to_uppercase()).monospace().size(11.0)).fill(Tokens::get(ui.ctx()).bg),
-            );
-            jump.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, tl!("Jump to latest")));
+            let size = Vec2::new(t.control * 6.0, t.control);
+            let rect = egui::Rect::from_min_size(shown.inner_rect.right_bottom() - size - Vec2::splat(t.label), size);
+            let jump = ui
+                .scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| crate::widgets::button(ui, tl!("Jump to latest"), Kind::Secondary, true))
+                .inner;
             if jump.clicked() {
                 open.to_bottom = true;
             }
@@ -156,9 +158,8 @@ pub fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, network:
 /// The chat's "…" menu: pin it to the top of the inbox, mark it unread, archive it, mute it. Returns whether the
 /// user left the chat (marking it unread, or archiving it).
 fn chat_menu(ui: &mut Ui, chat: &Chat, network: Alerts, out: &mut Out) -> bool {
-    let t = Tokens::get(ui.ctx());
     let mut leave = false;
-    let more = crate::widgets::icon_button(ui, crate::widgets::icon::MORE, tl!("Chat actions"));
+    let more = crate::widgets::menu_button(ui, crate::widgets::icon::MORE, tl!("Chat actions"));
     crate::widgets::menu_under(&more).show(|ui| {
         ui.set_min_width(260.0);
         let id = chat.id.clone();
@@ -182,7 +183,7 @@ fn chat_menu(ui: &mut Ui, chat: &Chat, network: Alerts, out: &mut Out) -> bool {
         }
         note(ui, tl!("An archived chat comes back to the inbox when a new message arrives, unless it is muted."));
         ui.separator();
-        hud(ui, tl!("Notifications"), t.muted);
+        hud(ui, tl!("Notifications"), Shade::Muted);
         match chat.muted {
             Some(mute) => {
                 let until = match mute {
@@ -207,7 +208,7 @@ fn chat_menu(ui: &mut Ui, chat: &Chat, network: Alerts, out: &mut Out) -> bool {
         }
         note(ui, tl!("A muted chat still counts as unread. PingCraft turns notifications back on at the time you chose while it is running."));
         ui.separator();
-        hud(ui, tl!("Sound and colour"), t.muted);
+        hud(ui, tl!("Sound and colour"), Shade::Muted);
         if let Some(alerts) = crate::widgets::alerts_controls(ui, chat.alerts, chat.alerts.over(network), "", tl!("the network's")) {
             out.push(Command::ChatAlerts { chat: id.clone(), alerts });
         }
@@ -239,9 +240,7 @@ fn pinned_bar(ui: &mut Ui, open: &mut OpenChat, presentation: EmojiPresentation,
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                     let line = format!("{sender}: {text}");
                     let shown = ui.add(
-                        egui::Label::new(emoji::text(&format!("{}   {line}", count.to_uppercase()), 12.5, t.ink, presentation))
-                            .truncate()
-                            .sense(Sense::click()),
+                        egui::Label::new(emoji::text(&format!("{}   {line}", count), 12.5, t.ink, presentation)).truncate().sense(Sense::click()),
                     );
                     let label = format!("{count}: {line}");
                     shown.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
@@ -317,11 +316,11 @@ fn selection_bar(ui: &mut Ui, open: &mut OpenChat) {
             }
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                 let t = Tokens::get(ui.ctx());
-                ui.label(RichText::new(fmt(tl!("{n} selected"), &[("n", &count.to_string())])).monospace().size(11.0).color(t.ink));
+                ui.label(RichText::new(fmt(tl!("{n} selected"), &[("n", &count.to_string())])).size(t.caption).color(t.ink));
                 // Cut short when it does not fit (the whole sentence on hover, and as its accessible name); left out
                 // when hardly a word would show.
                 if count > 0 && !deletable && ui.available_width() >= MIN_NOTE_WIDTH {
-                    ui.add(egui::Label::new(RichText::new(tl!("Only your own messages can be deleted.")).size(12.5).color(t.muted)).truncate());
+                    ui.add(egui::Label::new(RichText::new(tl!("Only your own messages can be deleted.")).size(t.label).color(t.muted)).truncate());
                 }
             });
         });
@@ -351,10 +350,10 @@ fn details_sheet(ctx: &egui::Context, open: &mut OpenChat, chat: Option<&Chat>) 
         // A new id once the details are in: egui keeps a sheet where it first was, and the loaded one is taller.
         if details.is_some() { "message-details" } else { "message-details-loading" },
         620.0,
-        (tl!("Message details"), &caption.to_uppercase()),
+        (tl!("Message details"), &caption),
         |ui| {
             let t = Tokens::get(ui.ctx());
-            ui.label(RichText::new(crate::view::preview_text(&message.body)).size(13.0).color(t.muted));
+            ui.label(RichText::new(crate::view::preview_text(&message.body)).size(t.body).color(t.muted));
             let Some(d) = &details else {
                 note(ui, tl!("Loading…"));
                 return;
@@ -362,8 +361,8 @@ fn details_sheet(ctx: &egui::Context, open: &mut OpenChat, chat: Option<&Chat>) 
             let fact = |ui: &mut Ui, label: &str, value: &str| {
                 ui.horizontal(|ui| {
                     let (rect, _) = ui.allocate_exact_size(Vec2::new(110.0, 16.0), egui::Sense::hover());
-                    ui.put(rect, egui::Label::new(RichText::new(label.to_uppercase()).monospace().size(11.0).color(t.muted)));
-                    ui.label(RichText::new(value).size(12.5));
+                    ui.put(rect, egui::Label::new(RichText::new(label).size(t.caption).color(t.muted)));
+                    ui.label(RichText::new(value).size(t.label));
                 });
             };
             fact(ui, tl!("Sent"), &crate::time::full(d.sent));
@@ -386,11 +385,11 @@ fn details_sheet(ctx: &egui::Context, open: &mut OpenChat, chat: Option<&Chat>) 
             };
             fact(ui, tl!("Read by"), &read);
             if d.versions.len() > 1 {
-                hud(ui, tl!("Edit history"), t.muted);
+                hud(ui, tl!("Edit history"), Shade::Muted);
                 for (at, body) in &d.versions {
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new(at.map(crate::time::clock).unwrap_or_default()).monospace().size(12.0).color(t.muted));
-                        ui.label(RichText::new(crate::view::preview_text(body)).size(12.5));
+                        ui.label(RichText::new(at.map(crate::time::clock).unwrap_or_default()).size(t.label).color(t.muted));
+                        ui.label(RichText::new(crate::view::preview_text(body)).size(t.label));
                     });
                 }
             }
@@ -427,8 +426,8 @@ fn composer(ui: &mut Ui, open: &mut OpenChat, name: &str, chat: Option<&Chat>, o
                 ui.set_width(ui.available_width());
                 ui.horizontal(|ui| {
                     ui.vertical(|ui| {
-                        ui.label(RichText::new(title).monospace().size(11.0).color(t.accent_ink));
-                        ui.add(egui::Label::new(emoji::text(line, 12.5, t.muted, presentation)).truncate());
+                        ui.label(RichText::new(title).size(t.caption).color(t.accent_ink));
+                        ui.add(egui::Label::new(emoji::text(line, t.label, t.muted, presentation)).truncate());
                     });
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         cancelled = crate::widgets::icon_button(ui, crate::widgets::icon::CLOSE, cancel).clicked();
@@ -456,7 +455,7 @@ fn composer(ui: &mut Ui, open: &mut OpenChat, name: &str, chat: Option<&Chat>, o
         }
         if let Some(line) = typing_line(&open.typing) {
             egui::Frame::new().inner_margin(Margin { left: 24, right: 24, top: 6, bottom: 0 }).show(ui, |ui| {
-                ui.label(emoji::text(&line, 12.5, t.muted, presentation));
+                ui.label(emoji::text(&line, t.label, t.muted, presentation));
             });
         }
         let edit_id = egui::Id::unique(("pingcraft-composer", &open.id.0));
@@ -534,7 +533,7 @@ fn reaction_picker(ctx: &egui::Context, open: &mut OpenChat, out: &mut Out) {
     let t = Tokens::get(ctx);
     let frame = egui::Frame::new().fill(t.bg).stroke(Stroke::new(1.0, t.line_strong)).inner_margin(Margin::same(16));
     let modal = egui::Modal::new(egui::Id::unique("pingcraft-reaction-picker")).frame(frame).backdrop_color(t.scrim).show(ctx, |ui| {
-        hud(ui, tl!("React"), t.muted);
+        hud(ui, tl!("React"), Shade::Muted);
         crate::picker::picker(ui, egui::Id::unique("pingcraft-reaction-picker").with("picker"))
     });
     if let Some(key) = modal.inner {
@@ -603,7 +602,7 @@ fn shortcode_suggestions(ui: &mut Ui, open: &mut OpenChat, edit_id: egui::Id) {
     egui::Frame::new().inner_margin(Margin { left: 24, right: 24, top: 6, bottom: 0 }).show(ui, |ui| {
         ui.horizontal_wrapped(|ui| {
             for (code, e) in found {
-                let chip = egui::Button::new(emoji::text(&format!("{e} :{code}:"), 12.5, t.ink, EmojiPresentation::Unicode))
+                let chip = egui::Button::new(emoji::text(&format!("{e} :{code}:"), t.label, t.ink, EmojiPresentation::Unicode))
                     .stroke(t.hairline())
                     .corner_radius(egui::CornerRadius::ZERO);
                 let response = ui.add(chip);
@@ -655,7 +654,7 @@ fn divider(ui: &mut Ui, label: &str) {
         let w = (ui.available_width() - 160.0).max(20.0) / 2.0;
         let (left, _) = ui.allocate_exact_size(Vec2::new(w, 12.0), Sense::hover());
         ui.painter().hline(left.x_range(), left.center().y, t.hairline());
-        hud(ui, label, t.muted);
+        hud(ui, label, Shade::Muted);
         let (right, _) = ui.allocate_exact_size(Vec2::new(w, 12.0), Sense::hover());
         ui.painter().hline(right.x_range(), right.center().y, t.hairline());
     });
@@ -670,12 +669,12 @@ fn encrypt_sheet(ctx: &egui::Context, open: &mut OpenChat, name: &str, out: &mut
         ctx,
         "encrypt-chat",
         520.0,
-        (tl!("Turn on encryption"), &name.to_uppercase()),
+        (tl!("Turn on encryption"), name),
         |ui| {
             ui.spacing_mut().item_spacing.y = 10.0;
             ui.label(
                 RichText::new(tl!("New messages in this chat will be end-to-end encrypted: only the people in it can read them, not the server."))
-                    .size(14.0),
+                    .size(Tokens::get(ui.ctx()).body),
             );
             note(
                 ui,

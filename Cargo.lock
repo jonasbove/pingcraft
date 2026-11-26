@@ -5693,6 +5693,7 @@ dependencies = [
  "chrono",
  "craft-behavior",
  "craft-host",
+ "craft-theme",
  "craft-ui",
  "craft-window",
  "egui",

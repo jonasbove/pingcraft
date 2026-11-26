@@ -51,7 +51,7 @@ fn emoji_sequences_are_single_colour_glyphs() {
 
 /// Laid out as plain text, a keycap starts in the text face (egui picks the face by the first character, and the
 /// text face has the digits), which is why messages lay emoji out in their own family. (`❤️` would too with a text
-/// face that has U+2764; egui's Ubuntu Light has not.)
+/// face that has U+2764.)
 #[test]
 #[cfg_attr(not(color_emoji), ignore = "built without the colour emoji font: cargo xtask fonts")]
 fn plain_layout_would_draw_keycaps_as_text() {
@@ -104,13 +104,13 @@ fn the_picker_finds_an_emoji_and_puts_it_in_the_message() {
     h.get_by_label("thumbs up").click();
     h.run();
     assert!(h.query_by_label("Search emoji").is_none(), "the picker closes");
-    h.get_by_label("SEND").click();
+    h.get_by_label("Send").click();
     h.run();
     assert_eq!(sent_texts(&fake), ["text Great 👍"]);
     // Recently used, at the top of the picker next time.
     h.get_by_label("Emoji").click();
     h.run();
-    h.get_by_label("RECENTLY USED");
+    h.get_by_label("Recently used");
 }
 
 #[test]
@@ -122,7 +122,7 @@ fn a_shortcode_becomes_its_emoji_as_it_is_finished() {
     // Suggestions while it is typed.
     h.get_by_label("Insert 😄 :smile:");
     super::type_into(&mut h, "Message Book club", "le: all");
-    h.get_by_label("SEND").click();
+    h.get_by_label("Send").click();
     h.run();
     assert_eq!(sent_texts(&fake), ["text hi 😄 all"]);
 }
@@ -243,7 +243,7 @@ fn a_skin_tone_is_chosen_in_the_picker_and_applies_to_its_emoji() {
     super::type_into(&mut h, "Search emoji", "thumbs up");
     h.get_by_label("thumbs up: medium skin tone").click();
     h.run();
-    h.get_by_label("SEND").click();
+    h.get_by_label("Send").click();
     h.run();
     assert_eq!(sent_texts(&fake), ["text 👍🏽"]);
 }
@@ -270,7 +270,7 @@ fn a_saved_skin_tone_applies_to_quick_reactions_and_shortcodes() {
     super::type_into(&mut h, "Message Book club", "ok :+1");
     h.get_by_label("Insert 👍🏿 :+1:");
     super::type_into(&mut h, "Message Book club", ": :wave: :smile:");
-    h.get_by_label("SEND").click();
+    h.get_by_label("Send").click();
     h.run();
     assert_eq!(sent_texts(&fake), ["text ok 👍🏿 👋🏿 😄"]);
 }
@@ -458,4 +458,31 @@ fn the_composer_keeps_its_height_with_an_emoji() {
     let before = height(&h);
     super::type_into(&mut h, "Message Book club", "Great 👍🏽");
     assert_eq!(height(&h), before);
+}
+
+/// The reaction picker is a sheet over the chat: with a control inside it focused, Tab keeps the keyboard inside the
+/// sheet, and Escape closes it. (craft-ui's runtime takes Tab and Escape from egui for the whole window, so this is
+/// what tells whether a sheet still gets them.)
+#[test]
+fn the_reaction_picker_keeps_tab_inside_and_closes_on_escape() {
+    use egui_kittest::kittest::{NodeT, Queryable};
+    let fake = super::Fake::default();
+    let mut h = super::messages::book_club(&fake);
+    h.get_by_label("Message actions: Lars Holm, Next meeting on Thursday?").click();
+    h.run();
+    h.get_by_label("More reactions…").click();
+    h.run();
+    h.get_by_role_and_label(egui::accesskit::Role::TextInput, "Search emoji").focus();
+    h.run();
+    let picker = h.get_by_role_and_label(egui::accesskit::Role::TextInput, "Search emoji").accesskit_node().raw_bounds().map(|b| (b.x0, b.x1));
+    for _ in 0..3 {
+        h.key_press(egui::Key::Tab);
+        h.run();
+        let focused = h.query_all_by(|node| node.is_focused()).next().map(|n| n.accesskit_node().raw_bounds());
+        let (Some((x0, x1)), Some(Some(b))) = (picker, focused) else { panic!("something in the sheet has the keyboard: {focused:?}") };
+        assert!(b.x0 >= x0 - 1.0 && b.x1 <= x1 + 1.0, "Tab stays inside the sheet: {b:?} against {x0}..{x1}");
+    }
+    h.key_press(egui::Key::Escape);
+    h.run();
+    assert!(h.query_by_role_and_label(egui::accesskit::Role::TextInput, "Search emoji").is_none(), "Escape closes the sheet");
 }
