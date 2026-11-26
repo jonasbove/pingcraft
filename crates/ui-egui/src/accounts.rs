@@ -221,7 +221,7 @@ fn cards(ui: &mut Ui, state: &mut State) {
 }
 
 /// Each network's notification sound and accent colour, which its chats follow unless they set their own.
-fn sound_and_colour(ui: &mut Ui, state: &State, out: &mut Out) {
+fn sound_and_colour(ui: &mut Ui, state: &mut State, out: &mut Out) {
     let t = Tokens::get(ui.ctx());
     hud(ui, tl!("Sound and colour"), t.muted);
     note(
@@ -239,6 +239,8 @@ fn sound_and_colour(ui: &mut Ui, state: &State, out: &mut Out) {
             ui.horizontal(|ui| {
                 ui.add_sized([120.0, 18.0], egui::Label::new(RichText::new(&name).size(14.0).color(t.ink_strong)));
                 if let Some(alerts) = crate::widgets::alerts_controls(ui, own, own, &name, tl!("its own")) {
+                    // Shown at once, so a second change before the backend answers builds on this one.
+                    state.network_alerts.insert(network.clone(), alerts);
                     out.push(Command::NetworkAlerts { network: network.clone(), alerts });
                 }
             });

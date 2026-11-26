@@ -438,6 +438,11 @@ fn a_networks_sound_and_colour_are_set_on_the_accounts_tab() {
         matches!(&sent[..], [Command::NetworkAlerts { network, alerts: Alerts { sound: Some(false), accent: None } }] if *network == Network::from_id("telegram")),
         "{sent:?}"
     );
+    // A second change before the backend answers builds on the first.
+    h.get_by_role_and_label(Role::RadioButton, "Accent colour for Telegram: Discord's").click();
+    h.run();
+    let sent = fake.take();
+    assert!(matches!(&sent[..], [Command::NetworkAlerts { alerts: Alerts { sound: Some(false), accent: Some(Accent::Discord) }, .. }]), "{sent:?}");
     h.get_by_role_and_label(Role::RadioButton, "Accent colour for Signal: WhatsApp's").scroll_to_me();
     h.run();
     h.get_by_role_and_label(Role::RadioButton, "Accent colour for Signal: WhatsApp's").click();

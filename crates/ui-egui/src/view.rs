@@ -353,7 +353,15 @@ fn forward_sheet(ctx: &egui::Context, state: &mut State, out: &mut Out) {
         1 => tl!("Forward a message").to_owned(),
         n => fmt(tl!("Forward {n} messages"), &[("n", &n.to_string())]),
     };
-    let chats: Vec<Chat> = state.inbox.visible(Filter::All, &forwarding.search).filter(|c| c.id != from).take(50).cloned().collect();
+    // Archived chats too: forwarding to one is no reason to look in the archive first.
+    let chats: Vec<Chat> = state
+        .inbox
+        .visible(Filter::All, &forwarding.search)
+        .chain(state.inbox.visible(Filter::Archived, &forwarding.search))
+        .filter(|c| c.id != from)
+        .take(50)
+        .cloned()
+        .collect();
     let (mut close, mut send) = (false, false);
     let chosen = forwarding.to.is_some();
     crate::widgets::sheet(
