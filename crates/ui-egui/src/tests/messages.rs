@@ -266,6 +266,37 @@ fn several_messages_can_be_selected_copied_and_forwarded() {
     assert!(h.query_by_label("2 selected").is_none(), "forwarding ends the selection");
 }
 
+/// In a narrow chat the note on why nothing can be deleted gives way to the buttons: it is cut short (the whole
+/// sentence stays its accessible name) and never drawn under them.
+#[test]
+fn a_narrow_selection_bar_keeps_its_note_clear_of_the_buttons() {
+    let fake = Fake::default();
+    let mut h = book_club(&fake);
+    actions(&mut h, "Lars Holm", "Next meeting on Thursday?");
+    h.get_by_label("Select").click();
+    h.run();
+    h.get_by_label("Select: You, Thursday works.").click();
+    h.run();
+    let bounds = |h: &Harness<'static, PingCraftApp>, label: &str| h.get_by_label(label).accesskit_node().raw_bounds().unwrap();
+    let wide = (bounds(&h, "2 selected"), bounds(&h, "CANCEL"));
+    // A chat about 560 px wide, as in the report: the window narrowed by what the chat loses.
+    let chat_now = wide.1.x1 - wide.0.x0;
+    h.set_size(egui::vec2(1200.0 - (chat_now as f32 - 560.0), 760.0));
+    h.run();
+    let count = bounds(&h, "2 selected");
+    let buttons: Vec<_> = ["COPY", "FORWARD", "DELETE", "CANCEL"].iter().map(|b| (*b, bounds(&h, b))).collect();
+    for (name, b) in &buttons {
+        assert!(count.x1 <= b.x0, "the count runs under {name}: {count:?} vs {b:?}");
+    }
+    let note = bounds(&h, "Only your own messages can be deleted.");
+    for (name, b) in &buttons {
+        assert!(note.x1 <= b.x0, "the note runs under {name}: {note:?} vs {b:?}");
+    }
+    h.get_by_label("CANCEL").click();
+    h.run();
+    assert!(h.query_by_label("2 selected").is_none(), "CANCEL is still clickable");
+}
+
 #[test]
 fn deleting_several_of_your_messages_asks_once() {
     let fake = Fake::default();

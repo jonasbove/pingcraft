@@ -287,6 +287,9 @@ fn apply(open: &mut OpenChat, act: Act, out: &mut Out) {
     }
 }
 
+/// The narrowest the selection bar's note is shown at, cut short.
+const MIN_NOTE_WIDTH: f32 = 80.0;
+
 /// Instead of the composer while selecting: how many are selected, and COPY, FORWARD, DELETE and CANCEL.
 fn selection_bar(ui: &mut Ui, open: &mut OpenChat) {
     let selection = open.selection();
@@ -296,24 +299,28 @@ fn selection_bar(ui: &mut Ui, open: &mut OpenChat) {
     let text = crate::message::copy_lines(&selection);
     let ids: Vec<_> = selection.iter().map(|m| m.id.clone()).collect();
     egui::Panel::bottom("selection").exact_size(74.0).frame(egui::Frame::new().inner_margin(Margin::symmetric(24, 20))).show(ui, |ui| {
-        ui.horizontal(|ui| {
-            let t = Tokens::get(ui.ctx());
-            ui.label(RichText::new(fmt(tl!("{n} selected"), &[("n", &count.to_string())])).monospace().size(11.0).color(t.ink));
-            if count > 0 && !deletable {
-                note(ui, tl!("Only your own messages can be deleted."));
+        // The buttons first, from the right, so the count and the note get only the space left and never lie under
+        // them.
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if button(ui, tl!("Cancel"), Kind::Secondary, true).clicked() {
+                open.selected = None;
             }
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if button(ui, tl!("Cancel"), Kind::Secondary, true).clicked() {
-                    open.selected = None;
-                }
-                if button(ui, tl!("Delete"), Kind::Secondary, deletable).clicked() {
-                    open.deleting = ids.clone();
-                }
-                if button(ui, tl!("Forward"), Kind::Secondary, forwardable).clicked() {
-                    open.forwarding = Some(Forwarding { messages: ids.clone(), ..Forwarding::default() });
-                }
-                if button(ui, tl!("Copy"), Kind::Secondary, count > 0).clicked() {
-                    ui.ctx().copy_text(text);
+            if button(ui, tl!("Delete"), Kind::Secondary, deletable).clicked() {
+                open.deleting = ids.clone();
+            }
+            if button(ui, tl!("Forward"), Kind::Secondary, forwardable).clicked() {
+                open.forwarding = Some(Forwarding { messages: ids.clone(), ..Forwarding::default() });
+            }
+            if button(ui, tl!("Copy"), Kind::Secondary, count > 0).clicked() {
+                ui.ctx().copy_text(text);
+            }
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                let t = Tokens::get(ui.ctx());
+                ui.label(RichText::new(fmt(tl!("{n} selected"), &[("n", &count.to_string())])).monospace().size(11.0).color(t.ink));
+                // Cut short when it does not fit (the whole sentence on hover, and as its accessible name); left out
+                // when hardly a word would show.
+                if count > 0 && !deletable && ui.available_width() >= MIN_NOTE_WIDTH {
+                    ui.add(egui::Label::new(RichText::new(tl!("Only your own messages can be deleted.")).size(12.5).color(t.muted)).truncate());
                 }
             });
         });
