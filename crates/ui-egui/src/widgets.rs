@@ -145,9 +145,12 @@ pub fn network_tag_in(ui: &mut Ui, network: &Network, accent: Option<Accent>) ->
     .inner
 }
 
-/// The accent colour's name, as the network colour it is.
+/// The accent colour's name: the network whose colour it is, or its `#rrggbb`.
 pub fn accent_name(accent: Accent) -> String {
-    fmt(tl!("{network}'s"), &[("network", &network_name(&Network::from_id(accent.id())))])
+    match accent.network() {
+        Some(id) => fmt(tl!("{network}'s"), &[("network", &network_name(&Network::from_id(id)))]),
+        None => accent.hex(),
+    }
 }
 
 /// The notification sound and accent colour controls, for a chat (`what` empty) or a network (`what` its name, in
@@ -170,7 +173,7 @@ pub fn alerts_controls(ui: &mut Ui, own: Alerts, shown: Alerts, what: &str, inhe
     ui.horizontal(|ui| {
         hud(ui, tl!("Accent colour"), Shade::Muted);
         let prefix = for_what(tl!("Accent colour"));
-        let choices = std::iter::once(None).chain(Accent::ALL.into_iter().map(Some));
+        let choices = std::iter::once(None).chain(Accent::NETWORKS.into_iter().map(Accent::of_network));
         for choice in choices {
             let selected = own.accent == choice;
             let colour = choice.map_or(t.muted, |a| t.accent_colour(a));

@@ -35,15 +35,17 @@ pub(crate) async fn mute_until(room: &Room) -> Option<Timestamp> {
 }
 
 /// Room account data where PingCraft keeps a chat's own notification sound and accent colour
-/// (`{"sound": true, "accent": "signal"}`, each key left out to follow the network's). PingCraft's own: no Matrix
-/// event says how a client should sound or colour a chat.
+/// (`{"sound": true, "accent": "#1c56c4"}`, each key left out to follow the network's). PingCraft's own: no Matrix
+/// event says how a client should sound or colour a chat. The colour is any `#rrggbb` (maintainer, 2026-11-26); data
+/// saved before then holds a network's id instead (`"signal"`), which still reads as that network's colour.
 pub(crate) const ALERTS: &str = crate::namespaced!("alerts");
 
-/// Alerts from saved content: only a true or false sound and a known colour are taken; anything else is unset.
+/// Alerts from saved content: only a true or false sound and a colour [`Accent::parse`] reads are taken; anything
+/// else is unset.
 pub(crate) fn alerts_from(content: &serde_json::Value) -> Alerts {
     Alerts {
         sound: content.get("sound").and_then(serde_json::Value::as_bool),
-        accent: content.get("accent").and_then(serde_json::Value::as_str).and_then(Accent::from_id),
+        accent: content.get("accent").and_then(serde_json::Value::as_str).and_then(Accent::parse),
     }
 }
 
@@ -54,7 +56,7 @@ pub(crate) fn alerts_json(alerts: Alerts) -> serde_json::Value {
         map.insert("sound".to_owned(), json!(sound));
     }
     if let Some(accent) = alerts.accent {
-        map.insert("accent".to_owned(), json!(accent.id()));
+        map.insert("accent".to_owned(), json!(accent.hex()));
     }
     serde_json::Value::Object(map)
 }
@@ -253,16 +255,33 @@ mod tests {
 
     use super::{ALERTS, ARCHIVED, MUTE_UNTIL, alerts_from, alerts_json, archive_time, draft_for, draft_type};
 
-    /// What is saved reads back the same; anything PingCraft does not know is unset, never guessed.
+    /// What is saved reads back the same, the colour as `#rrggbb`; anything PingCraft does not know is unset, never
+    /// guessed. (Before any colour could be chosen, 2026-11-26, a `#` colour was refused; now it is the format.)
     #[test]
     fn alerts_are_saved_and_read_back_and_nothing_else_is_taken() {
         assert_eq!(ALERTS, "io.github.jonasbove.pingcraft.alerts");
-        for alerts in [Alerts::default(), Alerts { sound: Some(false), accent: Some(Accent::Discord) }, Alerts { sound: Some(true), accent: None }] {
+        let mine = Accent([0xff, 0x00, 0xff]);
+        for alerts in [Alerts::default(), Alerts { sound: Some(false), accent: Some(mine) }, Alerts { sound: Some(true), accent: None }] {
             assert_eq!(alerts_from(&alerts_json(alerts)), alerts);
         }
+        assert_eq!(alerts_json(Alerts { sound: None, accent: Some(mine) }), json!({ "accent": "#ff00ff" }));
         assert_eq!(alerts_json(Alerts::default()), json!({}));
-        assert_eq!(alerts_from(&json!({ "sound": "yes", "accent": "#ff00ff" })), Alerts::default());
+        assert_eq!(alerts_from(&json!({ "sound": "yes", "accent": "fuchsia" })), Alerts::default());
+        assert_eq!(alerts_from(&json!({ "accent": 0xff00ff })), Alerts::default());
         assert_eq!(alerts_from(&json!([1])), Alerts::default());
+    }
+
+    /// A chat's colour saved before any colour could be chosen holds a network's id: it reads as that network's
+    /// colour, and is saved as `#rrggbb` the next time the chat's settings are written.
+    #[test]
+    fn a_colour_saved_as_a_network_id_still_reads() {
+        let old = json!({ "sound": false, "accent": "discord" });
+        let read = alerts_from(&old);
+        assert_eq!(read, Alerts { sound: Some(false), accent: Accent::of_network("discord") });
+        assert_eq!(read.accent.and_then(Accent::network), Some("discord"));
+        let again = alerts_json(read);
+        assert!(again["accent"].as_str().is_some_and(|hex| hex.starts_with('#') && hex.len() == 7), "{again}");
+        assert_eq!(alerts_from(&again), read);
     }
 
     /// The name other Matrix apps and later versions find the data under: it must not change by accident.

@@ -383,11 +383,11 @@ fn a_chats_sound_and_colour_follow_its_network_unless_set() {
     h.get_by_role_and_label(Role::RadioButton, "Accent colour: Signal's").click();
     h.run();
     let sent = fake.take();
-    assert!(matches!(&sent[..], [Command::ChatAlerts { alerts: Alerts { accent: Some(Accent::Signal), .. }, .. }]), "{sent:?}");
+    assert!(matches!(&sent[..], [Command::ChatAlerts { alerts: Alerts { accent: Some(a), .. }, .. }] if a.network() == Some("signal")), "{sent:?}");
 
     // The network turns sound off; a chat without its own setting follows it.
     let mut networks = std::collections::BTreeMap::new();
-    networks.insert(Network::from_id("telegram"), Alerts { sound: Some(false), accent: Some(Accent::Discord) });
+    networks.insert(Network::from_id("telegram"), Alerts { sound: Some(false), accent: Accent::of_network("discord") });
     fake.tell([Event::NetworkAlerts(networks)]);
     h.run();
     chat_menu(&mut h);
@@ -421,7 +421,7 @@ fn a_chats_sound_and_colour_follow_its_network_unless_set() {
 #[test]
 fn a_networks_sound_and_colour_are_set_on_the_accounts_tab() {
     use egui::accesskit::Role;
-    use pingcraft_core::{Accent, Alerts, Network};
+    use pingcraft_core::{Alerts, Network};
     let fake = Fake::default();
     let mut h = signed_in(&fake);
     h.get_by_label("Accounts").click();
@@ -442,13 +442,19 @@ fn a_networks_sound_and_colour_are_set_on_the_accounts_tab() {
     h.get_by_role_and_label(Role::RadioButton, "Accent colour for Telegram: Discord's").click();
     h.run();
     let sent = fake.take();
-    assert!(matches!(&sent[..], [Command::NetworkAlerts { alerts: Alerts { sound: Some(false), accent: Some(Accent::Discord) }, .. }]), "{sent:?}");
+    assert!(
+        matches!(&sent[..], [Command::NetworkAlerts { alerts: Alerts { sound: Some(false), accent: Some(a) }, .. }] if a.network() == Some("discord")),
+        "{sent:?}"
+    );
     h.get_by_role_and_label(Role::RadioButton, "Accent colour for Signal: WhatsApp's").scroll_to_me();
     h.run();
     h.get_by_role_and_label(Role::RadioButton, "Accent colour for Signal: WhatsApp's").click();
     h.run();
     let sent = fake.take();
-    assert!(matches!(&sent[..], [Command::NetworkAlerts { alerts: Alerts { accent: Some(Accent::WhatsApp), .. }, .. }]), "{sent:?}");
+    assert!(
+        matches!(&sent[..], [Command::NetworkAlerts { alerts: Alerts { accent: Some(a), .. }, .. }] if a.network() == Some("whatsapp")),
+        "{sent:?}"
+    );
 }
 
 /// Enter in the composer sends what was typed.

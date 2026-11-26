@@ -69,9 +69,14 @@ pub struct Tokens {
     pub control: f32,
 }
 
-/// The network colours in a dark and in a light theme: each network's own, at text contrast on the theme's panels.
+/// The network colours in a dark theme (Telegram, Signal, Discord, WhatsApp): each network's own, lighter, at text
+/// contrast on the theme's panels. In a light theme they are the colours `pingcraft_core::Accent::of_network` saves.
 const NETWORKS_DARK: [Color32; 4] = [hex(0x7aa6d4), hex(0x6ea3ff), hex(0xa3a6ff), hex(0x58c486)];
-const NETWORKS_LIGHT: [Color32; 4] = [hex(0x2b5278), hex(0x1c56c4), hex(0x4a4ec8), hex(0x17703c)];
+
+/// A network's own colour in a light theme, as saved.
+fn light(network: &str) -> Color32 {
+    Accent::of_network(network).map_or(Color32::GRAY, |Accent([r, g, b])| Color32::from_rgb(r, g, b))
+}
 
 impl Tokens {
     /// The tokens of the window's root theme, as craft-ui resolved them this frame.
@@ -85,7 +90,8 @@ impl Tokens {
         let c = &tokens.color;
         let ty = &tokens.typography;
         let dark = mode == Mode::Dark;
-        let [net_telegram, net_signal, net_discord, net_whatsapp] = if dark { NETWORKS_DARK } else { NETWORKS_LIGHT };
+        let [net_telegram, net_signal, net_discord, net_whatsapp] =
+            if dark { NETWORKS_DARK } else { ["telegram", "signal", "discord", "whatsapp"].map(light) };
         let accent = colour(c.accent.strong);
         Self {
             dark,
@@ -129,14 +135,11 @@ impl Tokens {
         Stroke::new(1.0, self.line)
     }
 
-    /// An accent colour a chat or network can take: one of the network colours.
+    /// An accent colour a chat or network takes: a network's own colour in the shade for the theme's mode, any other
+    /// colour as chosen.
     pub fn accent_colour(&self, accent: Accent) -> Color32 {
-        match accent {
-            Accent::Telegram => self.net_telegram,
-            Accent::Signal => self.net_signal,
-            Accent::WhatsApp => self.net_whatsapp,
-            Accent::Discord => self.net_discord,
-        }
+        let Accent([r, g, b]) = accent;
+        accent.network().and_then(|id| self.network(&Network::from_id(id))).unwrap_or(Color32::from_rgb(r, g, b))
     }
 
     /// A network tag's colour; Matrix and networks without a colour of their own stay neutral.

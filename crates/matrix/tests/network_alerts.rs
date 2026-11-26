@@ -29,13 +29,14 @@ async fn network_alerts_follow_the_user_between_devices() {
     let (telegram, signal) = (Network::from_id("telegram"), Network::from_id("signal"));
     // The account may keep settings from an earlier run: these differ from them.
     let before = on_laptop.network_alerts().await.0.get(&telegram).copied().unwrap_or_default();
-    let one = Alerts { sound: Some(false), accent: Some(Accent::Discord) };
-    let quiet = if before == one { Alerts { sound: Some(true), accent: Some(Accent::Signal) } } else { one };
+    let one = Alerts { sound: Some(false), accent: Some(Accent([0x12, 0x34, 0x56])) };
+    let quiet = if before == one { Alerts { sound: Some(true), accent: Accent::of_network("signal") } } else { one };
 
     within("saving on the laptop", on_laptop.set_network_alerts(&telegram, quiet)).await.unwrap();
     synced_until(&on_phone, &telegram, quiet).await;
     let signal_before = on_laptop.network_alerts().await.0.get(&signal).copied().unwrap_or_default();
-    let blue = Alerts { sound: None, accent: Some(if signal_before.accent == Some(Accent::Telegram) { Accent::WhatsApp } else { Accent::Telegram }) };
+    let telegram_blue = Accent::of_network("telegram");
+    let blue = Alerts { sound: None, accent: if signal_before.accent == telegram_blue { Some(Accent([0xab, 0xcd, 0xef])) } else { telegram_blue } };
     within("saving on the phone", on_phone.set_network_alerts(&signal, blue)).await.unwrap();
     synced_until(&on_laptop, &signal, blue).await;
     synced_until(&on_laptop, &telegram, quiet).await;
