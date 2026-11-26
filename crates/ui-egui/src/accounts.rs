@@ -2,7 +2,7 @@
 //! the bridge's login steps) and removing one. The design is `design/exports/connect-network.png` and
 //! `connect-risk.png`; the words about each network's risk are PingCraft's own, from ADRs 0005 to 0008.
 
-use egui::{Align, Color32, Layout, Margin, RichText, ScrollArea, Sense, Stroke, Ui, Vec2};
+use egui::{Align, Color32, Layout, Margin, RichText, ScrollArea, Sense, Ui, Vec2};
 use pingcraft_core::app::Command;
 use pingcraft_core::bridge::{Answers, BridgeError, Display, FieldKind, LoginStep};
 use pingcraft_core::{Account, AccountState, Network, RiskLevel};
@@ -173,11 +173,11 @@ fn cards(ui: &mut Ui, state: &mut State) {
                         ui.label(RichText::new(format!("{:02}", i + 1)).size(t.label).color(t.muted));
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             let (word, color) = match network.risk_level() {
-                                _ if !offered(&network) => (tl!("Later").to_owned(), t.muted),
-                                Some(risk) => (risk_name(risk).to_owned(), risk_color(&t, risk)),
-                                None => (tl!("Unknown").to_owned(), t.muted),
+                                _ if !offered(&network) => (tl!("Later").to_owned(), Tone::Neutral),
+                                Some(risk) => (risk_name(risk).to_owned(), risk_tone(risk)),
+                                None => (tl!("Unknown").to_owned(), Tone::Neutral),
                             };
-                            badge(ui, &word, color);
+                            Badge::new(word).variant(Variant::look(Emphasis::Outline, color)).show(ui);
                         });
                     });
                 });
@@ -195,7 +195,7 @@ fn cards(ui: &mut Ui, state: &mut State) {
                     let (line, can_connect) = card_line(&network, entry.as_ref());
                     hud(ui, &line, Shade::Muted);
                     if is_connected(entry.as_ref()) {
-                        connected_cell(ui, &network);
+                        control_row(ui, t.control, |ui| connected_cell(ui, &network));
                         return;
                     }
                     let label = match entry.as_ref() {
@@ -204,7 +204,7 @@ fn cards(ui: &mut Ui, state: &mut State) {
                         _ => tl!("+ Connect"),
                     };
                     let enabled = can_connect && state.accounts.connect.is_none();
-                    let response = button(ui, label, Kind::Secondary, enabled);
+                    let response = control_row(ui, t.control, |ui| button(ui, label, Kind::Secondary, enabled));
                     // Four cards, four buttons: each says which network it connects.
                     let spoken = if label == tl!("Reconnect") {
                         fmt(tl!("Reconnect {network}"), &[("network", &network_name(&network))])
@@ -234,16 +234,14 @@ fn is_connected(entry: Option<&NetworkEntry>) -> bool {
 
 /// In place of a connected network's button: the same size, so the cards stay aligned, in the colour for "working".
 fn connected_cell(ui: &mut Ui, network: &Network) {
-    let t = Tokens::get(ui.ctx());
     let spoken = fmt(tl!("{network}: connected"), &[("network", &network_name(network))]);
-    let text = RichText::new(tl!("Connected")).strong().size(t.caption).color(t.good);
-    let width =
-        egui::WidgetText::from(text.clone()).into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, egui::TextStyle::Button).size().x;
-    let frame = egui::Frame::new().stroke(Stroke::new(1.0, t.good)).inner_margin(Margin::symmetric(10, 0)).show(ui, |ui| {
-        // As tall as a button, as wide as its word: a layout here would stretch to the scroll area's height.
-        ui.add_sized([width, 34.0], egui::Label::new(text));
-    });
-    frame.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &spoken));
+    Badge::new(tl!("Connected")).variant(Variant::look(Emphasis::Soft, Tone::Good)).description(spoken).show(ui);
+}
+
+/// A card's last line, as tall as a control: its button, or the label in its place, at the card's right edge and
+/// centred in the line, so a button and a label line up across the cards.
+fn control_row<R>(ui: &mut Ui, height: f32, add: impl FnOnce(&mut Ui) -> R) -> R {
+    ui.allocate_ui_with_layout(Vec2::new(ui.available_width(), height), Layout::right_to_left(Align::Center), add).inner
 }
 
 /// The line above a card's button, and whether it can connect now.
@@ -261,19 +259,12 @@ fn card_line(network: &Network, entry: Option<&NetworkEntry>) -> (String, bool) 
     }
 }
 
-fn risk_color(t: &Tokens, risk: RiskLevel) -> Color32 {
+fn risk_tone(risk: RiskLevel) -> Tone {
     match risk {
-        RiskLevel::Low => t.good,
-        RiskLevel::Medium => t.warn,
-        RiskLevel::MediumHigh | RiskLevel::High => t.bad,
+        RiskLevel::Low => Tone::Good,
+        RiskLevel::Medium => Tone::Warn,
+        RiskLevel::MediumHigh | RiskLevel::High => Tone::Bad,
     }
-}
-
-/// A small outlined word in mono capitals.
-fn badge(ui: &mut Ui, text: &str, color: Color32) {
-    egui::Frame::new().stroke(Stroke::new(1.0, color)).inner_margin(Margin::symmetric(6, 2)).show(ui, |ui| {
-        ui.label(RichText::new(text).size(Tokens::get(ui.ctx()).caption).color(color));
-    });
 }
 
 /// Every connected account, by network, each with a way to remove it.

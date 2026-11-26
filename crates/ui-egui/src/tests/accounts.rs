@@ -286,7 +286,7 @@ fn a_connected_network_says_so_instead_of_offering_to_connect() {
     let account =
         Account { id: AccountId("u1".into()), network: Network::from_id("signal"), name: "+45 12 34 56 78".into(), state: AccountState::Connected };
     let h = on_accounts(&fake, vec![account]);
-    h.get_by_label("Signal: connected");
+    connect_line(&h, "Signal: connected");
     assert!(h.query_by_label("Connect Signal").is_none(), "no CONNECT button for a network that is connected");
     h.get_by_label("Connect Telegram");
 }
@@ -297,7 +297,7 @@ fn a_logged_out_account_offers_to_reconnect() {
     let account =
         Account { id: AccountId("u1".into()), network: Network::from_id("signal"), name: "+45 12 34 56 78".into(), state: AccountState::LoggedOut };
     let h = on_accounts(&fake, vec![account]);
-    assert!(h.query_by_label("Signal: connected").is_none());
+    assert!(!h.get_all_by_label("Connected").any(|n| n.accesskit_node().description().is_some()), "no Connected label");
     h.get_by_label("Reconnect Signal");
 }
 
@@ -309,10 +309,39 @@ fn every_card_has_its_account_line_and_button_at_the_same_height() {
     let mut h = on_accounts(&fake, vec![account]);
     // The cards line up from the tallest description measured on the frame before.
     h.run();
-    let top = |label: &str| h.get_by_label(label).accesskit_node().raw_bounds().unwrap().y0;
-    let telegram = top("Connect Telegram");
+    // Each card's last line is a button or, once connected, a label in its place: centred on one line, at the card's
+    // right edge. The label is no button: it is not as tall as one.
+    let bounds = |h: &Harness<'static, PingCraftApp>, name: &str| connect_line(h, name);
+    let telegram = bounds(&h, "Connect Telegram");
+    let centre = |r: egui::accesskit::Rect| (r.y0 + r.y1) / 2.0;
     for other in ["Signal: connected", "Connect WhatsApp", "Discord: not yet"] {
-        assert!((top(other) - telegram).abs() < 1.0, "{other} is at {}, Telegram's button at {telegram}", top(other));
+        let r = bounds(&h, other);
+        assert!((centre(r) - centre(telegram)).abs() < 1.0, "{other} is centred at {}, Telegram's button at {}", centre(r), centre(telegram));
+    }
+    let (connect, connected) = (bounds(&h, "Connect Telegram"), bounds(&h, "Signal: connected"));
+    let width = |r: egui::accesskit::Rect| r.x1 - r.x0;
+    // Two cards of one width: the same right edge within each card.
+    let (whatsapp, discord) = (bounds(&h, "Connect WhatsApp"), bounds(&h, "Discord: not yet"));
+    // Telegram, Signal, WhatsApp and Discord, in that order: WhatsApp is two cards on from Telegram.
+    let card = (whatsapp.x1 - connect.x1) / 2.0;
+    assert!(card > 0.0, "the cards are side by side");
+    assert!(((connected.x1 - connect.x1) - card).abs() < 1.0, "Connected ends where Connect would, one card on");
+    assert!(((discord.x1 - whatsapp.x1) - card).abs() < 1.0, "every card's last line ends at its right edge");
+    assert!(connected.y1 - connected.y0 < connect.y1 - connect.y0, "Connected is a label, not as tall as a button");
+    assert!(width(connected) > 0.0);
+}
+
+/// A card's last line by its accessible name, or for "<network>: connected" the Connected label that says so.
+fn connect_line(h: &Harness<'static, PingCraftApp>, name: &str) -> egui::accesskit::Rect {
+    match name.strip_suffix(": connected") {
+        Some(network) => h
+            .get_all_by_label("Connected")
+            .find(|n| n.accesskit_node().description().is_some_and(|d| d.starts_with(network)))
+            .unwrap_or_else(|| panic!("no Connected label for {network}"))
+            .accesskit_node()
+            .raw_bounds()
+            .unwrap(),
+        None => h.get_by_label(name).accesskit_node().raw_bounds().unwrap(),
     }
 }
 
