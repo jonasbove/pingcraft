@@ -116,6 +116,19 @@ impl SettingsState {
                 }
             }
             Event::NewRecoveryKey(_) => self.new_key = None,
+            // Whatever was waiting failed (the problem bar says why): its sheet can be used again.
+            Event::Problem(_) => {
+                if self.new_key == Some(true) {
+                    self.new_key = Some(false);
+                }
+                if let Some(form) = self.passphrase.as_mut() {
+                    form.sent = false;
+                }
+                if let Some(d) = self.device_sign_out.as_mut() {
+                    d.sent = false;
+                }
+                self.renamed = None;
+            }
             _ => {}
         }
     }
@@ -396,6 +409,10 @@ impl PreferencesModel for Model<'_> {
                     ("sound", PrefValue::Bool(on)) => self.set_network(&network, Alerts { sound: Some(on), ..own }),
                     ("accent", PrefValue::Color(Rgba([r, g, b, _]))) => {
                         let picked = Accent([r, g, b]);
+                        // The colour the row already shows (a field committing what it was given) changes nothing.
+                        if picked.0 == self.accent_shown(&network) {
+                            return;
+                        }
                         // The colour shown for a network's own (its theme shade) is its own, saved as such.
                         let own_shade = self.shown_colours.get(id).copied() == Some(picked.0);
                         let accent = if own_shade { Accent::of_network(id).or(Some(picked)) } else { Some(picked) };

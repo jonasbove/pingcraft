@@ -548,10 +548,11 @@ fn chat_row(ui: &mut Ui, chat: &Chat, accent: Option<pingcraft_core::Accent>, se
         info
     });
     if selected {
-        ui.painter().rect_filled(rect, t.radius_control, t.sunken);
+        ui.painter().rect_filled(rect, 0.0, t.sunken);
         ui.painter().vline(rect.left() + 1.0, rect.y_range(), Stroke::new(2.0, t.accent_ink));
     } else if response.hovered() {
-        ui.painter().rect_filled(rect, t.radius_control, t.sunken);
+        // An edge-to-edge row with a rule under it: square, as a list's rows are (the corner rule).
+        ui.painter().rect_filled(rect, 0.0, t.sunken);
     }
     ui.painter().hline(rect.x_range(), rect.bottom() - 0.5, t.hairline());
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(Vec2::new(16.0, 10.0))).layout(Layout::left_to_right(Align::Center)));

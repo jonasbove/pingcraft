@@ -242,6 +242,11 @@ mod tests {
         let (again, _) = SettingsStore::<Prefs>::open_at(dir.path());
         assert_eq!(super::local_prefs(again.get()), chosen);
         assert_eq!(again.get().emoji.skin_tone, "dark", "the rest of the file is kept");
+        // A file holding only the appearance, as written by hand.
+        let only = tempfile::tempdir().unwrap();
+        std::fs::write(only.path().join(craft_settings::store::CONFIG_FILE), "[appearance]\nmode = \"dark\"\n").unwrap();
+        let (hand, _) = SettingsStore::<Prefs>::open_at(only.path());
+        assert_eq!(super::local_prefs(hand.get()).appearance, Appearance::Dark);
     }
 
     /// A settings file from before the account kept the tone has no `skin_tone_migrated`: it reads as not moved up

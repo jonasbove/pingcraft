@@ -781,8 +781,10 @@ craft-ui's dialog host, the i18n swap, the automation interface and colour theme
   `security.verify_this_device`, `security.sign_out`), each with its enabled state from the app's state. Only
   Settings has a default shortcut, ⌘, (Ctrl+, off macOS), as in the other Craft apps; the others wait for the design.
   A shortcut, a menu row and a command button (`Button::command`) all fire into the frame's output, which
-  `framework::before_input` keeps for the app to run (`PingCraftApp::run`); the header's tabs and a page's choices
-  run the same function. **The app menu** is craft-menu's in-window bar (`MenuBarUi`) over File (Sign out…), Edit
+  `framework::before_input` keeps for the app to run (`PingCraftApp::run`); the header's tabs and the Appearance
+  page run the same function. **Not registered yet** (rule 14, open): the per-device Verify and Sign out, renaming
+  this device, previews, a network's sound and colour, and the skin tone go straight to the backend's commands or
+  the app's state, as the rest of PingCraft does; they become registered commands with the automation interface. **The app menu** is craft-menu's in-window bar (`MenuBarUi`) over File (Sign out…), Edit
   (Settings, tagged `ItemRole::Settings`, which the Linux and Windows layouts put last in Edit as "Preferences…")
   and View (Inbox, Accounts, Refresh, Appearance). **Not done:** the native macOS menu (`craft_menu::mac::install`,
   with its per-frame poll and gate; macOS is not compiled here), so a Mac build would show the in-window bar; the
@@ -833,6 +835,12 @@ from craft-libs' own pieces and writes the gap down here, for a craft-libs chang
   emoji-only messages, or a network's own emoji presentation (`pingcraft_core::EmojiPresentation`), so these stay
   PingCraft's.
 
+- **A surface component for an app's own egui content.** Cards, account rows, bubbles and boxed notes are egui
+  frames given craft-ui's surface radius by hand (`Tokens::radius_surface`), not craft-ui's surface
+  (`Stack::surface`), because what they hold is egui's; likewise the chat menu's colour swatches are painted with the
+  control radius rather than craft-ui's `Swatch`, which reports a colour pick rather than a choice among fixed
+  colours. The PingCraft-specific heights (header 48, footer 34, panels) have no craft-ui token: they are layout,
+  not controls.
 - **Reset Section on every page** (`patterns::preferences::PreferencesPage`). It shows on every page with rows, and a
   page cannot leave it out; on Settings' Security page nothing has a default, so it does nothing there. Missing: a
   page that opts out of Reset Section.

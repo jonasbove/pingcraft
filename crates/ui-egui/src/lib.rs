@@ -226,6 +226,8 @@ impl PingCraftApp {
             match &event {
                 Event::SkinTone(account) => self.account_skin_tone(&ctx, account.as_deref(), &mut out),
                 Event::RecentEmoji(recent) => picker::set_recent(&ctx, recent),
+                // A device may have been verified: Settings lists them again.
+                Event::Verification(None) if self.state.tab == Tab::Settings => out.push(Command::LoadDevices),
                 // The next one to sign in does not see this account's.
                 Event::SignedOut | Event::Locked { .. } | Event::AlreadyRunning => picker::set_recent(&ctx, &[]),
                 _ => {}

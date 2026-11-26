@@ -131,6 +131,39 @@ fn notifications_set_previews_and_each_networks_sound_and_colour() {
     );
 }
 
+/// Moving through the Notifications page by keyboard changes nothing: a field committing the value it shows is no edit.
+#[test]
+fn tabbing_through_notifications_sends_nothing() {
+    let fake = Fake::default();
+    let mut h = on_page(&fake, "Notifications");
+    h.get_by_role_and_label(Role::Group, "Telegram").get_by_role_and_label(Role::TextInput, "Accent colour").focus();
+    h.run();
+    for _ in 0..12 {
+        h.key_press(egui::Key::Tab);
+        h.run();
+    }
+    assert!(fake.take().is_empty(), "nothing was changed");
+}
+
+/// A failure while a sheet waits leaves it usable again, and a device list comes again when a verification ends.
+#[test]
+fn a_failure_frees_the_waiting_sheet_and_a_verification_reloads_the_devices() {
+    let fake = Fake::default();
+    let mut h = on_page(&fake, "Security");
+    h.get_by_role_and_label(Role::Button, "Create a new recovery key…").click();
+    h.run();
+    h.run();
+    click_in_footer(&mut h, "Create a new key");
+    h.run();
+    fake.take();
+    fake.tell([Event::Problem("the server said no".into())]);
+    h.run();
+    assert!(!h.get_by_role_and_label(Role::Button, "Create a new key").accesskit_node().is_disabled(), "it can be tried again");
+    fake.tell([Event::Verification(None)]);
+    h.run();
+    assert!(fake.take().iter().any(|c| matches!(c, Command::LoadDevices)));
+}
+
 #[test]
 fn a_colour_swatch_opens_the_colour_picker() {
     let fake = Fake::default();
