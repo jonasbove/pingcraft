@@ -383,7 +383,7 @@ fn a_long_chat_name_truncates_and_keeps_its_network_tag_on_the_same_line() {
     let fake = Fake::default();
     let mut h = signed_in(&fake);
     let long = "m1.pingcraft.test Admin Room with a much longer name than fits in the list";
-    fake.tell([Event::Inbox(InboxChange::Upsert(chat("!admin", long, "matrix", 0, None)))]);
+    fake.tell([Event::Inbox(InboxChange::Upsert(Box::new(chat("!admin", long, "matrix", 0, None))))]);
     h.run();
     let row = h.get_by_label(&format!("{long}, on Matrix")).accesskit_node().raw_bounds().unwrap();
     let tag = h.get_all_by_label("MATRIX").map(|n| n.accesskit_node().raw_bounds().unwrap()).find(|r| r.y0 >= row.y0 && r.y1 <= row.y1).unwrap();
@@ -396,7 +396,13 @@ fn a_long_chat_name_truncates_and_keeps_its_network_tag_on_the_same_line() {
 fn a_chat_row_keeps_its_preview_inside_the_row() {
     let fake = Fake::default();
     let mut h = signed_in(&fake);
-    fake.tell([Event::Inbox(InboxChange::Upsert(chat("!admin", "m1.pingcraft.test Admin Room", "matrix", 0, Some(("You", "This works?")))))]);
+    fake.tell([Event::Inbox(InboxChange::Upsert(Box::new(chat(
+        "!admin",
+        "m1.pingcraft.test Admin Room",
+        "matrix",
+        0,
+        Some(("You", "This works?")),
+    ))))]);
     h.run();
     let row = h.get_by_label("m1.pingcraft.test Admin Room, on Matrix. You: This works?").accesskit_node().raw_bounds().unwrap();
     for label in ["m1.pingcraft.test Admin Room", "You: This works?"] {
@@ -436,7 +442,7 @@ fn an_unencrypted_chat_offers_to_turn_encryption_on() {
     let mut h = signed_in(&fake);
     let mut plain = chat("!plain", "Plain room", "matrix", 0, None);
     plain.encrypted = false;
-    fake.tell([Event::Inbox(InboxChange::Upsert(plain))]);
+    fake.tell([Event::Inbox(InboxChange::Upsert(Box::new(plain)))]);
     h.run();
     h.get_by_label("Plain room, on Matrix").click();
     h.run();
@@ -474,7 +480,7 @@ fn a_new_message_notifies_and_clicking_the_notification_opens_its_chat() {
     if let Some(m) = book.last_message.as_mut() {
         m.at = Timestamp(1_795_000_100_000);
     }
-    fake.tell([Event::Inbox(InboxChange::Upsert(book))]);
+    fake.tell([Event::Inbox(InboxChange::Upsert(Box::new(book)))]);
     h.run();
     let shown = notifier.shown.borrow().clone();
     assert_eq!(shown.len(), 1, "{shown:?}");

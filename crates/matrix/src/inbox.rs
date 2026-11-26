@@ -160,7 +160,7 @@ async fn room_list_changed(state: &mut State, diffs: Vec<VectorDiff<RoomListItem
     // A batch can touch a room more than once; its state now is what counts, so each is sent once.
     for room in touched.iter().rev() {
         if after.contains(room.room_id()) && seen.insert(room.room_id().to_owned()) {
-            changes.push(InboxChange::Upsert(state.chat(room).await));
+            changes.push(InboxChange::Upsert(Box::new(state.chat(room).await)));
         }
     }
     changes
@@ -174,7 +174,7 @@ async fn bridge_changed(state: &mut State, room: Option<OwnedRoomId>) -> Vec<Inb
     for room in candidates {
         let network = network_of(&room, state.own.as_deref()).await;
         if state.sent_network.get(room.room_id()) != Some(&network) {
-            changes.push(InboxChange::Upsert(state.chat(&room).await));
+            changes.push(InboxChange::Upsert(Box::new(state.chat(&room).await)));
         }
     }
     changes

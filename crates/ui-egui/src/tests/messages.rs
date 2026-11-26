@@ -248,7 +248,7 @@ fn several_messages_can_be_selected_copied_and_forwarded() {
     // An archived chat can be forwarded to too.
     let mut lars = super::chat("!lars", "Lars Holm", "matrix", 0, None);
     lars.archived = Some(pingcraft_core::Timestamp(1));
-    fake.tell([Event::Inbox(pingcraft_core::InboxChange::Upsert(lars))]);
+    fake.tell([Event::Inbox(pingcraft_core::InboxChange::Upsert(Box::new(lars)))]);
     h.run();
     h.get_by_label("FORWARD").click();
     h.run();

@@ -54,7 +54,7 @@ fn a_chat_can_be_pinned_muted_and_marked_unread_from_its_menu() {
     // Once the inbox says it is muted, the menu offers to turn it back on.
     let mut muted = chat("!book", "Book club", "Telegram", 0, None);
     muted.muted = Some(Mute::UntilUnmuted);
-    fake.tell([Event::Inbox(InboxChange::Upsert(muted))]);
+    fake.tell([Event::Inbox(InboxChange::Upsert(Box::new(muted)))]);
     h.run();
     chat_menu(&mut h);
     h.get_by_label("Turn notifications back on").click();
@@ -119,7 +119,7 @@ fn a_draft_is_kept_when_leaving_a_chat_and_shown_in_the_inbox() {
     // The inbox hears of it from the store.
     let mut book = chat("!book", "Book club", "Telegram", 0, Some(("Lars", "The ending of chapter 8")));
     book.draft = Some("half a thought".into());
-    fake.tell([Event::Inbox(InboxChange::Upsert(book))]);
+    fake.tell([Event::Inbox(InboxChange::Upsert(Box::new(book)))]);
     h.run();
     h.get_by_label("Book club, on Telegram. Draft: half a thought");
     h.get_by_label_contains("Book club, on Telegram").click();
@@ -172,7 +172,7 @@ fn sending_a_kept_draft_forgets_it() {
     let mut h = signed_in(&fake);
     let mut book = chat("!book", "Book club", "Telegram", 0, None);
     book.draft = Some("see you there".into());
-    fake.tell([Event::Inbox(InboxChange::Upsert(book))]);
+    fake.tell([Event::Inbox(InboxChange::Upsert(Box::new(book)))]);
     h.run();
     h.get_by_label_contains("Book club, on Telegram").click();
     h.run();
@@ -202,7 +202,7 @@ fn a_chat_can_be_archived_and_found_under_archived() {
 
     let mut book = chat("!book", "Book club", "Telegram", 2, Some(("Lars", "The ending of chapter 8")));
     book.archived = Some(Timestamp(1_795_000_000_000));
-    fake.tell([Event::Inbox(InboxChange::Upsert(book.clone()))]);
+    fake.tell([Event::Inbox(InboxChange::Upsert(Box::new(book.clone())))]);
     h.run();
     assert!(h.query_by_label_contains("Book club, on Telegram").is_none(), "out of the inbox");
     h.get_by_label("ALL 1");
@@ -224,7 +224,7 @@ fn a_chat_can_be_archived_and_found_under_archived() {
     let mut newer = chat("!book", "Book club", "Telegram", 3, Some(("Lars", "Chapter 9 now")));
     newer.archived = book.archived;
     newer.last_message.as_mut().unwrap().at = Timestamp(1_795_000_000_001);
-    fake.tell([Event::Inbox(InboxChange::Upsert(newer))]);
+    fake.tell([Event::Inbox(InboxChange::Upsert(Box::new(newer)))]);
     h.run();
     h.get_by_label_contains("Book club, on Telegram");
     h.get_by_label("ARCHIVED 0");
@@ -258,7 +258,7 @@ fn a_reply_in_progress_is_kept_with_the_draft() {
     let mut book = chat("!book", "Book club", "Telegram", 0, Some(("Lars", "The ending of chapter 8")));
     book.draft = Some("yes, Thursday".into());
     book.draft_for = Some(DraftFor::Reply("$lars".into()));
-    fake.tell([Event::Inbox(InboxChange::Upsert(book))]);
+    fake.tell([Event::Inbox(InboxChange::Upsert(Box::new(book)))]);
     h.run();
     h.get_by_label_contains("Book club, on Telegram").click();
     h.run();
@@ -312,7 +312,7 @@ fn an_edit_in_progress_is_kept_with_the_draft() {
     let mut book = chat("!book", "Book club", "Telegram", 0, None);
     book.draft = Some("Thursday works. Friday too.".into());
     book.draft_for = Some(DraftFor::Edit("$mine".into()));
-    fake.tell([Event::Inbox(InboxChange::Upsert(book))]);
+    fake.tell([Event::Inbox(InboxChange::Upsert(Box::new(book)))]);
     h.run();
     h.get_by_label_contains("Book club, on Telegram").click();
     h.run();
@@ -336,7 +336,7 @@ fn a_restored_reply_to_a_message_not_loaded_keeps_its_text() {
     let mut book = chat("!book", "Book club", "Telegram", 0, None);
     book.draft = Some("about that".into());
     book.draft_for = Some(DraftFor::Reply("$gone".into()));
-    fake.tell([Event::Inbox(InboxChange::Upsert(book))]);
+    fake.tell([Event::Inbox(InboxChange::Upsert(Box::new(book)))]);
     h.run();
     h.get_by_label_contains("Book club, on Telegram").click();
     h.run();
@@ -400,11 +400,11 @@ fn a_chats_sound_and_colour_follow_its_network_unless_set() {
     let notifier = super::FakeNotifier::default();
     h.state_mut().set_notifier(Box::new(notifier.clone()));
     let mut mei = chat("!mei", "Mei Tanaka", "Telegram", 0, Some(("Mei", "hi")));
-    fake.tell([Event::Inbox(InboxChange::Upsert(mei.clone()))]);
+    fake.tell([Event::Inbox(InboxChange::Upsert(Box::new(mei.clone())))]);
     h.run();
     mei.unread = 1;
     mei.last_message.as_mut().unwrap().at.0 += 1;
-    fake.tell([Event::Inbox(InboxChange::Upsert(mei.clone()))]);
+    fake.tell([Event::Inbox(InboxChange::Upsert(Box::new(mei.clone())))]);
     h.run();
     let shown = notifier.shown.borrow().clone();
     assert_eq!(shown.iter().map(|n| n.sound).collect::<Vec<_>>(), [false]);
@@ -412,7 +412,7 @@ fn a_chats_sound_and_colour_follow_its_network_unless_set() {
     mei.alerts.sound = Some(true);
     mei.unread = 2;
     mei.last_message.as_mut().unwrap().at.0 += 1;
-    fake.tell([Event::Inbox(InboxChange::Upsert(mei))]);
+    fake.tell([Event::Inbox(InboxChange::Upsert(Box::new(mei)))]);
     h.run();
     assert_eq!(notifier.shown.borrow().iter().map(|n| n.sound).collect::<Vec<_>>(), [false, true]);
 }

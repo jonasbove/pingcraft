@@ -406,7 +406,7 @@ impl Worker {
                     s.mute_ends.clear();
                     chats.iter().collect()
                 }
-                InboxChange::Upsert(chat) => vec![chat],
+                InboxChange::Upsert(chat) => vec![chat.as_ref()],
                 InboxChange::Remove(id) => {
                     s.mute_ends.remove(id);
                     vec![]
@@ -440,7 +440,7 @@ impl Worker {
         for chat in ended {
             s.mute_ends.remove(&chat);
             match s.connection.mute(&chat, None).await {
-                Ok(now) => self.emit.send(Event::Inbox(pingcraft_core::InboxChange::Upsert(now))),
+                Ok(now) => self.emit.send(Event::Inbox(pingcraft_core::InboxChange::Upsert(Box::new(now)))),
                 Err(e) => self.emit.send(Event::Problem(e)),
             }
         }
@@ -685,7 +685,7 @@ impl Worker {
             Command::Unlock { .. } | Command::SignIn { .. } | Command::SignOut => Ok(()),
         };
         if let Some(chat) = upsert {
-            self.inbox(InboxChange::Upsert(chat));
+            self.inbox(InboxChange::Upsert(Box::new(chat)));
         }
         if let Err(problem) = result {
             self.emit.send(Event::Problem(problem));

@@ -4,15 +4,12 @@ use crate::{Chat, ChatId};
 
 /// One change to the inbox, as the Matrix adapter reports it. The adapter sends a [`InboxChange::Reset`] first,
 /// then changes; [`Inbox::apply`] keeps the order, so the adapter does not have to.
-// A chat is a few hundred bytes and changes come one at a time over a channel, so boxing `Upsert` would only add an
-// allocation per change.
-#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InboxChange {
     /// Every chat, replacing what was there.
     Reset(Vec<Chat>),
-    /// A chat is new or changed.
-    Upsert(Chat),
+    /// A chat is new or changed. Boxed: a chat is far larger than the other variants.
+    Upsert(Box<Chat>),
     /// A chat left the inbox (the user left it, or it was upgraded or forgotten).
     Remove(ChatId),
 }
@@ -54,7 +51,7 @@ impl Inbox {
     pub fn apply(&mut self, change: InboxChange) {
         match change {
             InboxChange::Reset(chats) => *self = Self::new(chats),
-            InboxChange::Upsert(chat) => self.upsert(chat),
+            InboxChange::Upsert(chat) => self.upsert(*chat),
             InboxChange::Remove(id) => {
                 self.remove(&id);
             }
@@ -215,7 +212,7 @@ mod tests {
     fn changes_apply_in_order() {
         let mut inbox = Inbox::default();
         inbox.apply(InboxChange::Reset(vec![chat("1", "A", 1, 0), chat("2", "B", 2, 0)]));
-        inbox.apply(InboxChange::Upsert(chat("3", "C", 3, 1)));
+        inbox.apply(InboxChange::Upsert(Box::new(chat("3", "C", 3, 1))));
         inbox.apply(InboxChange::Remove(ChatId("1".into())));
         assert_eq!(names(inbox.visible(Filter::All, "")), ["C", "B"]);
         inbox.apply(InboxChange::Reset(vec![chat("9", "Z", 1, 0)]));
