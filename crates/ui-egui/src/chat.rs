@@ -471,7 +471,7 @@ fn composer(ui: &mut Ui, open: &mut OpenChat, name: &str, chat: Option<&Chat>, o
                 if response.changed() {
                     // A finished `:name:` becomes its emoji.
                     if let Some(at) = output.cursor_range.map(|r| r.primary.index.0)
-                        && let Some((text, at)) = crate::picker::complete_shortcode(&open.draft, at)
+                        && let Some((text, at)) = crate::picker::complete_shortcode(&open.draft, at, crate::picker::tone(ui.ctx()))
                     {
                         open.draft = text;
                         set_cursor(ui.ctx(), edit_id, at);
@@ -577,7 +577,7 @@ fn put(ctx: &egui::Context, edit_id: egui::Id, draft: &mut String, (from, to): (
 fn shortcode_suggestions(ui: &mut Ui, open: &mut OpenChat, edit_id: egui::Id) {
     let Some(at) = cursor(ui.ctx(), edit_id) else { return };
     let Some((colon, word)) = crate::picker::partial_shortcode(&open.draft, at) else { return };
-    let found = crate::picker::suggestions(&word);
+    let found = crate::picker::suggestions(&word, crate::picker::tone(ui.ctx()));
     if found.is_empty() {
         return;
     }
@@ -589,11 +589,11 @@ fn shortcode_suggestions(ui: &mut Ui, open: &mut OpenChat, edit_id: egui::Id) {
                     .stroke(t.hairline())
                     .corner_radius(egui::CornerRadius::ZERO);
                 let response = ui.add(chip);
-                let label = fmt(tl!("Insert {emoji} :{code}:"), &[("emoji", e), ("code", code)]);
+                let label = fmt(tl!("Insert {emoji} :{code}:"), &[("emoji", &e), ("code", code)]);
                 response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
                 if response.clicked() {
-                    crate::picker::remember(ui.ctx(), e);
-                    put(ui.ctx(), edit_id, &mut open.draft, (colon, at), e);
+                    crate::picker::remember(ui.ctx(), &e);
+                    put(ui.ctx(), edit_id, &mut open.draft, (colon, at), &e);
                 }
             }
         });

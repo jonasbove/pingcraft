@@ -25,6 +25,7 @@ use egui::{Frame, Margin};
 use pingcraft_core::app::{Backend, Command, Event};
 use pingcraft_core::notify::Notifier;
 
+pub use picker::SkinTone;
 pub use state::{Screen, State, Tab};
 pub use theme::Tokens;
 
@@ -41,11 +42,23 @@ pub struct PingCraftApp {
     styled: bool,
     /// Shows desktop notifications; without one, none are shown.
     notifier: Option<Box<dyn Notifier>>,
+    /// The skin tone for emoji, as the user last chose it in the picker.
+    skin_tone: SkinTone,
 }
 
 impl PingCraftApp {
     pub fn new(backend: Box<dyn Backend>) -> Self {
-        Self { backend, state: State::default(), styled: false, notifier: None }
+        Self { backend, state: State::default(), styled: false, notifier: None, skin_tone: SkinTone::default() }
+    }
+
+    /// The skin tone for emoji the user chose in the picker, for the app to save (it is a setting of this computer).
+    pub fn skin_tone(&self) -> SkinTone {
+        self.skin_tone
+    }
+
+    /// Uses this skin tone for emoji, as saved from an earlier run.
+    pub fn set_skin_tone(&mut self, tone: SkinTone) {
+        self.skin_tone = tone;
     }
 
     /// Shows desktop notifications through this notifier.
@@ -76,6 +89,7 @@ impl PingCraftApp {
             self.styled = true;
         }
         let ctx = ui.ctx().clone();
+        picker::set_tone(&ctx, self.skin_tone);
         self.state.focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
         for event in self.backend.poll() {
             match &event {
@@ -111,6 +125,7 @@ impl PingCraftApp {
                 }
             }
         });
+        self.skin_tone = picker::tone(&ctx);
         out.extend(picker::take_used(&ctx).into_iter().map(Command::EmojiUsed));
         for command in out {
             self.backend.send(command);

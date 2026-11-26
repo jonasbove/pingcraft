@@ -4431,6 +4431,8 @@ dependencies = [
  "pingcraft-matrix",
  "pingcraft-notify",
  "pingcraft-ui-egui",
+ "serde",
+ "tempfile",
 ]
 
 [[package]]

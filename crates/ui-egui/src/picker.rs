@@ -17,6 +17,90 @@ const PER_ROW: usize = 8;
 /// How many shortcode suggestions show over the composer.
 const SUGGESTIONS: usize = 6;
 
+/// A skin tone for the emoji that have them (people, hands): one saved default, applied in the picker, the quick
+/// reactions and `:name:` shortcodes. Emoji that already carry a tone (a recently used one, say) keep theirs. The
+/// desktop app saves it in its local settings (PLAN.md, "Messages and chats" 1).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SkinTone {
+    #[default]
+    Default,
+    Light,
+    MediumLight,
+    Medium,
+    MediumDark,
+    Dark,
+}
+
+impl SkinTone {
+    /// Every tone, in the order the picker shows them.
+    pub const ALL: [Self; 6] = [Self::Default, Self::Light, Self::MediumLight, Self::Medium, Self::MediumDark, Self::Dark];
+
+    /// The name it is saved under. Never change one: saved settings would lose their tone.
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::Light => "light",
+            Self::MediumLight => "medium-light",
+            Self::Medium => "medium",
+            Self::MediumDark => "medium-dark",
+            Self::Dark => "dark",
+        }
+    }
+
+    /// The tone saved under `id`; the default for a name it does not know.
+    pub fn from_id(id: &str) -> Self {
+        Self::ALL.into_iter().find(|t| t.id() == id).unwrap_or_default()
+    }
+
+    /// Its accessible name in the picker.
+    fn name(self) -> &'static str {
+        match self {
+            Self::Default => tl!("Default skin tone"),
+            Self::Light => tl!("Light skin tone"),
+            Self::MediumLight => tl!("Medium-light skin tone"),
+            Self::Medium => tl!("Medium skin tone"),
+            Self::MediumDark => tl!("Medium-dark skin tone"),
+            Self::Dark => tl!("Dark skin tone"),
+        }
+    }
+
+    fn data(self) -> emojis::SkinTone {
+        match self {
+            Self::Default => emojis::SkinTone::Default,
+            Self::Light => emojis::SkinTone::Light,
+            Self::MediumLight => emojis::SkinTone::MediumLight,
+            Self::Medium => emojis::SkinTone::Medium,
+            Self::MediumDark => emojis::SkinTone::MediumDark,
+            Self::Dark => emojis::SkinTone::Dark,
+        }
+    }
+
+    /// `emoji` in this tone, when it has skin tones and no tone of its own yet; otherwise `emoji` as it is. Emoji of
+    /// several people take the tone for each of them.
+    pub fn apply(self, emoji: &str) -> String {
+        match emojis::get(emoji) {
+            Some(e) if self != Self::Default && e.skin_tone() == Some(emojis::SkinTone::Default) => {
+                e.with_skin_tone(self.data()).map_or(emoji, emojis::Emoji::as_str).to_owned()
+            }
+            _ => emoji.to_owned(),
+        }
+    }
+}
+
+fn tone_id() -> Id {
+    Id::unique("pingcraft-skin-tone")
+}
+
+/// The skin tone in use.
+pub fn tone(ctx: &egui::Context) -> SkinTone {
+    ctx.data(|d| d.get_temp::<SkinTone>(tone_id())).unwrap_or_default()
+}
+
+/// Uses this skin tone from now on.
+pub fn set_tone(ctx: &egui::Context, tone: SkinTone) {
+    ctx.data_mut(|d| d.insert_temp(tone_id(), tone));
+}
+
 /// The recently used emoji, newest first, shared by the composer's picker and reactions: the account's (from the
 /// server, through `Event::RecentEmoji`), with this device's newest uses on top at once.
 #[derive(Clone, Default)]
@@ -62,10 +146,11 @@ pub fn take_used(ctx: &egui::Context) -> Vec<String> {
     ctx.data_mut(|d| std::mem::take(&mut d.get_temp_mut_or_default::<Used>(used_id()).0))
 }
 
-/// The quick reactions: the recently used emoji first, then the fixed ones, six in all.
+/// The quick reactions: the recently used emoji first, then the fixed ones in the skin tone, six in all.
 pub fn quick_reactions(ctx: &egui::Context) -> Vec<String> {
+    let tone = tone(ctx);
     let mut quick: Vec<String> = Vec::new();
-    for e in recent(ctx).into_iter().chain(crate::message::QUICK_REACTIONS.iter().map(|e| (*e).to_owned())) {
+    for e in recent(ctx).into_iter().chain(crate::message::QUICK_REACTIONS.iter().map(|e| tone.apply(e))) {
         if quick.len() == crate::message::QUICK_REACTIONS.len() {
             break;
         }
@@ -96,8 +181,34 @@ fn emoji_button(ui: &mut Ui, emoji: &str, size: f32) -> bool {
     response.clicked()
 }
 
-/// The picker: a search field, the recently used emoji and the grid. Returns the emoji the user chose. `id` keeps
-/// its search text apart from other pickers'.
+/// The skin tone row: a raised hand in each tone, the one in use marked. Changes the tone in use when one is
+/// clicked.
+fn tone_row(ui: &mut Ui) {
+    let t = Tokens::get(ui.ctx());
+    let mut tone = tone(ui.ctx());
+    ui.horizontal(|ui| {
+        hud(ui, tl!("Skin tone"), t.muted);
+        for each in SkinTone::ALL {
+            let on = each == tone;
+            let hand = each.apply("✋");
+            let response = ui.add(
+                egui::Button::new(emoji::text(&hand, 16.0, Color32::PLACEHOLDER))
+                    .frame(on)
+                    .selected(on)
+                    .corner_radius(egui::CornerRadius::ZERO)
+                    .min_size(egui::vec2(26.0, 26.0)),
+            );
+            response.widget_info(|| egui::WidgetInfo::selected(egui::Role::RadioButton, true, on, each.name()));
+            if response.clicked() {
+                tone = each;
+            }
+        }
+    });
+    set_tone(ui.ctx(), tone);
+}
+
+/// The picker: a search field, the skin tone, the recently used emoji and the grid, in the skin tone. Returns the
+/// emoji the user chose. `id` keeps its search text apart from other pickers'.
 pub fn picker(ui: &mut Ui, id: Id) -> Option<String> {
     let t = Tokens::get(ui.ctx());
     let search_id = id.with("search");
@@ -106,6 +217,8 @@ pub fn picker(ui: &mut Ui, id: Id) -> Option<String> {
     ui.set_width(PER_ROW as f32 * 34.0 + 16.0);
     let field = ui.add(egui::TextEdit::singleline(&mut query).hint_text(tl!("Search emoji")).desired_width(f32::INFINITY));
     field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, tl!("Search emoji")));
+    tone_row(ui);
+    let tone = tone(ui.ctx());
     if query.is_empty() {
         let recent = recent(ui.ctx());
         if !recent.is_empty() {
@@ -129,8 +242,9 @@ pub fn picker(ui: &mut Ui, id: Id) -> Option<String> {
         for row in range {
             ui.horizontal(|ui| {
                 for e in found.iter().skip(row * PER_ROW).take(PER_ROW) {
-                    if emoji_button(ui, e.as_str(), 20.0) {
-                        chosen = Some(e.as_str().to_owned());
+                    let e = tone.apply(e.as_str());
+                    if emoji_button(ui, &e, 20.0) {
+                        chosen = Some(e);
                     }
                 }
             });
@@ -158,9 +272,9 @@ pub fn partial_shortcode(text: &str, cursor: usize) -> Option<(usize, String)> {
     (starts_word && !word.is_empty() && word.chars().all(shortcode_char)).then_some((colon, word))
 }
 
-/// Every finished `:name:` in the text replaced by its emoji (typed, pasted or committed by an input method in one
-/// go), with the cursor (a char index) moved to match. `None` when there is none.
-pub fn complete_shortcode(text: &str, cursor: usize) -> Option<(String, usize)> {
+/// Every finished `:name:` in the text replaced by its emoji in the skin tone (typed, pasted or committed by an input
+/// method in one go), with the cursor (a char index) moved to match. `None` when there is none.
+pub fn complete_shortcode(text: &str, cursor: usize, tone: SkinTone) -> Option<(String, usize)> {
     let chars: Vec<char> = text.chars().collect();
     let mut out = String::with_capacity(text.len());
     let (mut i, mut new_cursor, mut changed) = (0, cursor, false);
@@ -170,13 +284,14 @@ pub fn complete_shortcode(text: &str, cursor: usize) -> Option<(String, usize)> 
             .then(|| chars[i + 1..].iter().position(|c| !shortcode_char(*c)).map(|n| i + 1 + n))
             .flatten()
             .filter(|&end| end > i + 1 && chars[end] == ':');
-        let found = end.and_then(|end| emojis::get_by_shortcode(&chars[i + 1..end].iter().collect::<String>()).map(|e| (end, e.as_str())));
+        let found =
+            end.and_then(|end| emojis::get_by_shortcode(&chars[i + 1..end].iter().collect::<String>()).map(|e| (end, tone.apply(e.as_str()))));
         let Some((end, emoji)) = found else {
             out.push(chars[i]);
             i += 1;
             continue;
         };
-        out.push_str(emoji);
+        out.push_str(&emoji);
         let (taken, put) = (end + 1 - i, emoji.chars().count());
         if cursor > end {
             new_cursor = new_cursor + put - taken;
@@ -189,8 +304,8 @@ pub fn complete_shortcode(text: &str, cursor: usize) -> Option<(String, usize)> 
     changed.then_some((out, new_cursor))
 }
 
-/// Shortcodes starting with what is being typed, with their emoji.
-pub fn suggestions(word: &str) -> Vec<(&'static str, &'static str)> {
+/// Shortcodes starting with what is being typed, with their emoji in the skin tone.
+pub fn suggestions(word: &str, tone: SkinTone) -> Vec<(&'static str, String)> {
     if word.chars().count() < 2 {
         return Vec::new();
     }
@@ -198,22 +313,22 @@ pub fn suggestions(word: &str) -> Vec<(&'static str, &'static str)> {
         emojis::iter().flat_map(|e| e.shortcodes().filter(|s| s.starts_with(word)).map(move |s| (s, e.as_str()))).collect();
     found.sort_by_key(|(s, _)| (s.len(), *s));
     found.truncate(SUGGESTIONS);
-    found
+    found.into_iter().map(|(s, e)| (s, tone.apply(e))).collect()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{complete_shortcode, partial_shortcode, search, suggestions};
+    use super::{SkinTone, complete_shortcode, partial_shortcode, search, suggestions};
 
     #[test]
     fn a_finished_shortcode_becomes_its_emoji() {
-        assert_eq!(complete_shortcode("hi :smile:", 10), Some(("hi 😄".to_owned(), 4)));
-        assert_eq!(complete_shortcode(":+1: there", 4), Some(("👍 there".to_owned(), 1)));
-        assert_eq!(complete_shortcode("hi :nope_not_one:", 17), None);
-        assert_eq!(complete_shortcode("at 10:30:", 9), None, "a time is not a shortcode");
-        assert_eq!(complete_shortcode("hi :smile", 9), None, "not finished");
-        assert_eq!(complete_shortcode("hi :smile: all", 14), Some(("hi 😄 all".to_owned(), 8)), "typed or pasted in one go");
-        assert_eq!(complete_shortcode(":wave: :smile:x", 0), Some(("👋 😄x".to_owned(), 0)));
+        assert_eq!(complete_shortcode("hi :smile:", 10, SkinTone::Default), Some(("hi 😄".to_owned(), 4)));
+        assert_eq!(complete_shortcode(":+1: there", 4, SkinTone::Default), Some(("👍 there".to_owned(), 1)));
+        assert_eq!(complete_shortcode("hi :nope_not_one:", 17, SkinTone::Default), None);
+        assert_eq!(complete_shortcode("at 10:30:", 9, SkinTone::Default), None, "a time is not a shortcode");
+        assert_eq!(complete_shortcode("hi :smile", 9, SkinTone::Default), None, "not finished");
+        assert_eq!(complete_shortcode("hi :smile: all", 14, SkinTone::Default), Some(("hi 😄 all".to_owned(), 8)), "typed or pasted in one go");
+        assert_eq!(complete_shortcode(":wave: :smile:x", 0, SkinTone::Default), Some(("👋 😄x".to_owned(), 0)));
     }
 
     #[test]
@@ -222,8 +337,12 @@ mod tests {
         assert_eq!(partial_shortcode("hi :smi", 5), Some((3, "s".to_owned())));
         assert_eq!(partial_shortcode("10:3", 4), None);
         assert_eq!(partial_shortcode("hi : x", 6), None);
-        assert!(suggestions("smi").iter().any(|(s, e)| *s == "smile" && *e == "😄"), "{:?}", suggestions("smi"));
-        assert!(suggestions("s").is_empty());
+        assert!(
+            suggestions("smi", SkinTone::Default).iter().any(|(s, e)| *s == "smile" && *e == "😄"),
+            "{:?}",
+            suggestions("smi", SkinTone::Default)
+        );
+        assert!(suggestions("s", SkinTone::Default).is_empty());
     }
 
     #[test]
@@ -232,5 +351,31 @@ mod tests {
         assert!(search("+1").iter().any(|e| e.as_str() == "👍"));
         assert!(search("").len() > 1000);
         assert!(search("zzzz qqqq").is_empty());
+    }
+}
+
+#[cfg(test)]
+mod tone_tests {
+    use super::SkinTone;
+
+    #[test]
+    fn a_tone_applies_only_to_emoji_with_skin_tones() {
+        assert_eq!(SkinTone::Medium.apply("👍"), "👍🏽");
+        assert_eq!(SkinTone::Dark.apply("👩\u{200d}❤\u{fe0f}\u{200d}👨"), "👩🏿\u{200d}❤\u{fe0f}\u{200d}👨🏿", "both people");
+        assert_eq!(SkinTone::Medium.apply("😄"), "😄");
+        assert_eq!(SkinTone::Medium.apply("❤\u{fe0f}"), "❤\u{fe0f}");
+        assert_eq!(SkinTone::Medium.apply("👍🏻"), "👍🏻", "an emoji with a tone of its own keeps it");
+        assert_eq!(SkinTone::Default.apply("👍"), "👍");
+        assert_eq!(SkinTone::Medium.apply("not an emoji"), "not an emoji");
+    }
+
+    #[test]
+    fn a_tone_is_saved_by_a_name_that_does_not_change() {
+        let names: Vec<&str> = SkinTone::ALL.iter().map(|t| t.id()).collect();
+        assert_eq!(names, ["default", "light", "medium-light", "medium", "medium-dark", "dark"]);
+        for tone in SkinTone::ALL {
+            assert_eq!(SkinTone::from_id(tone.id()), tone);
+        }
+        assert_eq!(SkinTone::from_id("purple"), SkinTone::Default, "an unknown name is the default");
     }
 }

@@ -3,6 +3,9 @@
 //! Its data (the encrypted stores, and the vault where there is no keychain) is in the platform's data folder,
 //! or in `PINGCRAFT_DATA_DIR` when that is set. `PINGCRAFT_NO_KEYCHAIN=1` makes it use the unlock passphrase even
 //! where a keychain works, to try that path.
+//!
+//! Its settings on this computer (for now the emoji skin tone) are craft-settings' `config.toml` in the platform's
+//! configuration folder, or in `PINGCRAFT_CONFIG_DIR`.
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable))]
 // A Windows GUI program: no console window opens with it (packaging/windows/package.ps1 checks this).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
@@ -10,21 +13,60 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
+use std::time::Instant;
+
+use craft_settings::{Location, SettingsStore};
+use serde::{Deserialize, Serialize};
 
 use pingcraft_keychain::KdfParams;
 use pingcraft_matrix::engine::{Engine, Secrets};
-use pingcraft_ui_egui::PingCraftApp;
+use pingcraft_ui_egui::{PingCraftApp, SkinTone};
 
 /// The folder name under the platform's data folder.
 const APP_ID: &str = "pingcraft";
 
+/// PingCraft's settings on this computer. What belongs to the account (recently used emoji, say) is on the server.
+#[derive(Serialize, Deserialize, Default, Clone, PartialEq)]
+#[serde(default)]
+struct Prefs {
+    emoji: EmojiPrefs,
+}
+
+#[derive(Serialize, Deserialize, Default, Clone, PartialEq)]
+#[serde(default)]
+struct EmojiPrefs {
+    /// The skin tone chosen in the emoji picker, by [`SkinTone::id`].
+    skin_tone: String,
+}
+
+impl craft_settings::Settings for Prefs {
+    const APP_ID: &'static str = APP_ID;
+    const SCHEMA_VERSION: u32 = 1;
+}
+
 struct Window {
     app: PingCraftApp,
+    settings: SettingsStore<Prefs>,
+}
+
+/// Puts the skin tone the user chose into the settings, which save it a moment later.
+fn keep_skin_tone(tone: SkinTone, settings: &mut SettingsStore<Prefs>) {
+    if SkinTone::from_id(&settings.get().emoji.skin_tone) != tone {
+        settings.update(|p| p.emoji.skin_tone = tone.id().to_owned());
+    }
 }
 
 impl eframe::App for Window {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.app.ui(ui);
+        keep_skin_tone(self.app.skin_tone(), &mut self.settings);
+        self.settings.tick(Instant::now());
+    }
+
+    fn on_exit(&mut self) {
+        if let Err(e) = self.settings.flush() {
+            eprintln!("pingcraft: the settings could not be saved: {e}");
+        }
     }
 }
 
@@ -76,9 +118,11 @@ fn main() -> ExitCode {
             let ctx = cc.egui_ctx.clone();
             let engine = Engine::start(data, secrets, Arc::new(move || ctx.request_repaint()))?;
             let mut app = PingCraftApp::new(Box::new(engine));
+            let (settings, _) = SettingsStore::<Prefs>::open(Location::Auto);
+            app.set_skin_tone(SkinTone::from_id(&settings.get().emoji.skin_tone));
             let ctx = cc.egui_ctx.clone();
             app.set_notifier(pingcraft_notify::desktop(Arc::new(move || ctx.request_repaint())));
-            Ok(Box::new(Window { app }))
+            Ok(Box::new(Window { app, settings }))
         }),
     );
     match result {
@@ -87,5 +131,26 @@ fn main() -> ExitCode {
             eprintln!("pingcraft: could not open the window: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use craft_settings::SettingsStore;
+    use pingcraft_ui_egui::SkinTone;
+
+    use super::{Prefs, keep_skin_tone};
+
+    /// The skin tone chosen in the picker is saved, and comes back on the next start.
+    #[test]
+    fn the_skin_tone_is_saved_and_comes_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut settings, _) = SettingsStore::<Prefs>::open_at(dir.path());
+        assert_eq!(SkinTone::from_id(&settings.get().emoji.skin_tone), SkinTone::Default, "nothing saved yet");
+        keep_skin_tone(SkinTone::MediumDark, &mut settings);
+        settings.flush().unwrap();
+        let (again, _) = SettingsStore::<Prefs>::open_at(dir.path());
+        assert_eq!(again.get().emoji.skin_tone, "medium-dark");
+        assert_eq!(SkinTone::from_id(&again.get().emoji.skin_tone), SkinTone::MediumDark);
     }
 }

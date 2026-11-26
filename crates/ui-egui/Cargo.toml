@@ -28,8 +28,6 @@ emojis = "0.9"
 
 # Colour emoji glyphs (COLR, CBDT, sbix) through vello_cpu, on the desktop and the web.
 epaint = { version = "0.37", features = ["color_fonts"] }
-# Checks a colour emoji font that arrives after start (the web build's) against its pinned hash.
-sha2 = "0.10"
 
 [build-dependencies]
 # Checks the colour emoji font against its pinned hash (build.rs).
@@ -43,8 +41,12 @@ wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 web-sys = { version = "0.3", features = ["Window", "Response"] }
+# Checks the colour emoji font that arrives after start against its pinned hash.
+sha2 = "0.10"
 
 [dev-dependencies]
+# The tests install a colour font after start, as the web build does.
+sha2 = "0.10"
 # egui 0.37 no longer bundles its fallback faces by default; the tests install them.
 egui = { workspace = true, features = ["default_fonts"] }
 egui_kittest = { version = "0.37" }

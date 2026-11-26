@@ -366,7 +366,18 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
      PingCraft closes offline are lost. Typing a whole `:name:` (not picking the suggestion) does not count as a
      use, as before.
    - Emoji names and search are English.
-   - Picking a skin tone in the picker; the picker and suggestions row have no frames in the design yet.
+   - **Skin tone: one saved default** (maintainer, 2026-11-26). A SKIN TONE row in the picker (a raised hand in
+     each of the six tones, radio buttons to a screen reader) sets the tone for every emoji that has skin tones: the
+     picker's grid, the fixed quick reactions and `:name:` shortcodes and their suggestions (emoji of two people
+     take it for both; an emoji that already has a tone, such as a recently used one, keeps its own). Stored in the
+     desktop app's **local settings** (craft-settings' `config.toml`, `[emoji] skin_tone = "medium"`), not with the
+     recent emoji: `m.recent_emoji`'s content has only `recent_emoji` in the specification, and apps that read it
+     into a typed struct (ruma's, for one) would drop an extra key the next time they write. So the tone does not
+     follow the user to another device; a key of PingCraft's own (`io.github.jonasbove.pingcraft.…` account data)
+     could carry it, for the maintainer to decide. The web build has no settings store yet, so there it lasts for
+     the session. Tests: the row's marked tone and the picker in that tone (AccessKit), a saved tone in the quick
+     reactions and shortcodes, the tone names and how a tone applies (unit), and saving and reading it back.
+   - The picker and the suggestions row have no frames in the design yet.
    - Without the colour font (the fallback build, and the web until the font arrives) the picker shows tofu for emoji egui's monochrome
      face lacks; its two tests are ignored in that build.
    - Not tried by hand in the running app; checked through the tests only. A Nix build (no network in its

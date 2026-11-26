@@ -17,5 +17,10 @@ pingcraft-matrix = { path = "../../crates/matrix" }
 pingcraft-keychain = { path = "../../crates/keychain" }
 pingcraft-notify = { path = "../../crates/notify" }
 craft-settings = { workspace = true }
+# PingCraft's settings on this computer (craft-settings' config.toml).
+serde = { version = "1", features = ["derive"] }
 egui = { workspace = true }
 eframe = { workspace = true, features = ["default_fonts", "clipboard", "wgpu", "accesskit", "wayland", "x11"] }
+
+[dev-dependencies]
+tempfile = "3"

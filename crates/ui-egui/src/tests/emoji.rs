@@ -218,3 +218,59 @@ fn recently_used_emoji_come_from_the_account() {
     h.run();
     assert!(crate::picker::recent(&h.ctx).is_empty(), "the next account does not see them");
 }
+
+/// The skin tone chosen in the picker is marked there, applies to the emoji it shows, and is what the app reports
+/// to be remembered.
+#[test]
+#[cfg_attr(not(color_emoji), ignore = "the picker shows emoji egui's monochrome face lacks: cargo xtask fonts")]
+fn a_skin_tone_is_chosen_in_the_picker_and_applies_to_its_emoji() {
+    use egui::accesskit::{Role, Toggled};
+    use egui_kittest::kittest::{NodeT, Queryable};
+    let fake = super::Fake::default();
+    let mut h = super::messages::book_club(&fake);
+    h.get_by_label("Emoji").click();
+    h.run();
+    let toggled = |h: &egui_kittest::Harness<'_, crate::PingCraftApp>, label: &str| {
+        h.get_by_role_and_label(Role::RadioButton, label).accesskit_node().toggled()
+    };
+    assert_eq!(toggled(&h, "Default skin tone"), Some(Toggled::True));
+    assert_eq!(toggled(&h, "Medium skin tone"), Some(Toggled::False));
+    h.get_by_role_and_label(Role::RadioButton, "Medium skin tone").click();
+    h.run();
+    assert_eq!(toggled(&h, "Medium skin tone"), Some(Toggled::True));
+    assert_eq!(toggled(&h, "Default skin tone"), Some(Toggled::False));
+    assert_eq!(h.state().skin_tone(), crate::SkinTone::Medium, "the app hands it over to be saved");
+    super::type_into(&mut h, "Search emoji", "thumbs up");
+    h.get_by_label("thumbs up: medium skin tone").click();
+    h.run();
+    h.get_by_label("SEND").click();
+    h.run();
+    assert_eq!(sent_texts(&fake), ["text 👍🏽"]);
+}
+
+/// A saved skin tone applies to the quick reactions and to `:name:` shortcodes too; emoji without skin tones are
+/// unchanged.
+#[test]
+fn a_saved_skin_tone_applies_to_quick_reactions_and_shortcodes() {
+    use egui_kittest::kittest::Queryable;
+    let fake = super::Fake::default();
+    let mut h = super::messages::book_club(&fake);
+    h.state_mut().set_skin_tone(crate::SkinTone::Dark);
+    h.run();
+    h.get_by_label("Message actions: Lars Holm, Next meeting on Thursday?").click();
+    h.run();
+    h.get_by_label("React with 🙏🏿").click();
+    h.run();
+    assert_eq!(sent_texts(&fake), ["react 🙏🏿"]);
+    h.get_by_label("Message actions: Lars Holm, Next meeting on Thursday?").click();
+    h.run();
+    h.get_by_label("React with 😂");
+    h.key_press(egui::Key::Escape);
+    h.run();
+    super::type_into(&mut h, "Message Book club", "ok :+1");
+    h.get_by_label("Insert 👍🏿 :+1:");
+    super::type_into(&mut h, "Message Book club", ": :wave: :smile:");
+    h.get_by_label("SEND").click();
+    h.run();
+    assert_eq!(sent_texts(&fake), ["text ok 👍🏿 👋🏿 😄"]);
+}
