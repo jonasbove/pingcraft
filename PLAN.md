@@ -857,8 +857,11 @@ Decided here the conservative way, each easy to change:
   with the other Craft apps) is not written. Share it with the suite, as the colour themes will (M6 ticket 7)?
 - **Each network's sound and colour moved** from the ACCOUNTS tab to Settings (the ACCOUNTS tab points there). Keep a
   copy on ACCOUNTS?
-- **A new recovery key** is offered only when this device can open the key backup, or there is none. Resetting it
-  from a device that cannot (a lost key) is not offered; the page offers entering the key or verifying instead.
+- **A new recovery key** — answered (maintainer, 2026-11-26): a device that cannot open the backup offers "Reset: make
+  a new recovery key…", with a warning and the account password (matrix-rust-sdk's `Recovery::reset_identity`, then
+  `enable`). A first key on an account without cross-signing sets cross-signing up first (a live run found that a
+  key made without it left the device unable to use it: the SDK counts recovery as on only when the key holds the
+  cross-signing secrets), and a key is reported only once the device can use it.
 - **Signing another device out** asks for the account password; a server that wants something else (single sign-on)
   gets "PingCraft cannot do that yet".
 - **Shortcuts:** only Settings has one (⌘, / Ctrl+,). The tabs, Refresh and the rest have none until the design

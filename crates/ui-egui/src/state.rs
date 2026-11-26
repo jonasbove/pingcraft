@@ -494,7 +494,7 @@ impl State {
                 }
             }
             Event::Passphrase(on) => self.passphrase = Some(on),
-            Event::PassphraseChanged(_) | Event::Devices(_) | Event::SignOutRefused { .. } => {}
+            Event::PassphraseChanged(_) | Event::Devices(_) | Event::SignOutRefused { .. } | Event::RecoveryKeyRefused(_) => {}
             Event::NewRecoveryKey(key) => {
                 self.recovery_forms.new_key = Some(key);
                 self.recovery_forms.saved_ticked = false;

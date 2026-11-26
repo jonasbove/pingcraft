@@ -131,7 +131,8 @@ impl PingCraftApp {
             AppCommand::Refresh => out.push(Command::Refresh),
             AppCommand::Appearance(appearance) => state.prefs.appearance = appearance,
             AppCommand::ChangePassphrase => state.settings.passphrase = Some(settings::PassphraseForm::default()),
-            AppCommand::NewRecoveryKey => state.settings.new_key = Some(false),
+            AppCommand::NewRecoveryKey => state.settings.new_key = Some(settings::KeyForm::default()),
+            AppCommand::ResetRecovery => state.settings.new_key = Some(settings::KeyForm { reset: true, ..Default::default() }),
             AppCommand::EnterRecoveryKey => state.recovery_forms.entering = true,
             AppCommand::VerifyThisDevice => {
                 if state.verification.is_none() {

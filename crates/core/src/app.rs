@@ -6,7 +6,7 @@ use zeroize::Zeroizing;
 
 use crate::bridge::{Answers, BridgeError, BridgedNetwork, LoginStep, StepRef};
 use crate::devices::{Device, DeviceId, SignOutProblem};
-use crate::encryption::{RecoveryKey, RecoveryStatus, Verification};
+use crate::encryption::{RecoveryKey, RecoveryRefusal, RecoveryStatus, Verification};
 use crate::{AccountId, Alerts, ChatId, ConnectionState, DraftFor, InboxChange, Message, MessageDetails, MessageId, Mute, Network, Quote};
 
 /// Something the user asked for. `Debug` never shows a password, passphrase or message text.
@@ -125,8 +125,16 @@ pub enum Command {
     Recover(RecoveryKey),
     /// Makes a new recovery key in place of the account's, or the first one when it has none; [`Event::NewRecoveryKey`]
     /// shows it. Only when this device can open the key backup ([`RecoveryStatus::On`]) or there is none
-    /// ([`RecoveryStatus::Off`]): a backup this device cannot open is never replaced.
-    NewRecoveryKey,
+    /// ([`RecoveryStatus::Off`]): a backup this device cannot open is never replaced. A first key may need the
+    /// account password (the server asks for it to set up cross-signing).
+    NewRecoveryKey {
+        password: Option<Zeroizing<String>>,
+    },
+    /// Starts over when the recovery key is lost: a new cross-signing identity and a new recovery key, proven with
+    /// the account password. Messages encrypted before can no longer be read on new devices.
+    ResetRecovery {
+        password: Zeroizing<String>,
+    },
     /// Ask the user's other devices to verify this one.
     VerifyThisDevice,
     /// Changes the passphrase that unlocks PingCraft on this computer (only where there is no keychain).
@@ -217,7 +225,8 @@ impl std::fmt::Debug for Command {
             Self::SaveSkinTone(_) => f.write_str("SaveSkinTone(..)"),
             Self::RecoveryKeySaved => f.write_str("RecoveryKeySaved"),
             Self::Recover(key) => f.debug_tuple("Recover").field(key).finish(),
-            Self::NewRecoveryKey => f.write_str("NewRecoveryKey"),
+            Self::NewRecoveryKey { .. } => f.write_str("NewRecoveryKey { .. }"),
+            Self::ResetRecovery { .. } => f.write_str("ResetRecovery { .. }"),
             Self::VerifyThisDevice => f.write_str("VerifyThisDevice"),
             Self::ChangePassphrase { .. } => f.write_str("ChangePassphrase { .. }"),
             Self::LoadDevices => f.write_str("LoadDevices"),
@@ -311,6 +320,8 @@ pub enum Event {
     NetworkAlerts(std::collections::BTreeMap<Network, Alerts>),
     /// A new recovery key (the first sign-in's, or one asked for in Settings): show it until the user has saved it.
     NewRecoveryKey(RecoveryKey),
+    /// A new recovery key was not made, for a reason the user can act on.
+    RecoveryKeyRefused(RecoveryRefusal),
     /// Whether PingCraft is unlocked with a passphrase on this computer (`true`), or keeps its secrets in the system
     /// keychain. Sent once the secrets are open.
     Passphrase(bool),
@@ -376,6 +387,8 @@ mod tests {
             Command::ChangePassphrase { current: Zeroizing::new("old horse".into()), new: Zeroizing::new("new battery".into()) },
             Command::SignOutDevice { device: crate::devices::DeviceId("PHONE".into()), password: Zeroizing::new("acct pass".into()) },
             Command::RenameDevice("Ana's laptop".into()),
+            Command::NewRecoveryKey { password: Some(Zeroizing::new("first key pw".into())) },
+            Command::ResetRecovery { password: Zeroizing::new("reset pw".into()) },
             Command::Recover(RecoveryKey::new("EsTc 8Jq2")),
             Command::SendText { chat: crate::ChatId("!a".into()), text: "private words".into() },
             Command::Reply { chat: crate::ChatId("!a".into()), to: crate::MessageId("m".into()), text: "private reply".into() },
@@ -406,6 +419,8 @@ mod tests {
             "old horse",
             "new battery",
             "acct pass",
+            "first key pw",
+            "reset pw",
             "Ana's laptop",
             "EsTc",
             "private words",

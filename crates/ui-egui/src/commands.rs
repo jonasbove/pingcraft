@@ -30,6 +30,8 @@ pub enum AppCommand {
     ChangePassphrase,
     /// Opens the sheet that makes a new recovery key.
     NewRecoveryKey,
+    /// Opens the sheet that resets a lost recovery key.
+    ResetRecovery,
     /// Opens the sheet that types in the account's recovery key.
     EnterRecoveryKey,
     /// Asks the user's other devices to verify this one.
@@ -40,7 +42,7 @@ pub enum AppCommand {
 
 impl AppCommand {
     /// Every command, in the catalog's order.
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::Inbox,
         Self::Accounts,
         Self::Settings,
@@ -50,6 +52,7 @@ impl AppCommand {
         Self::Appearance(Appearance::System),
         Self::ChangePassphrase,
         Self::NewRecoveryKey,
+        Self::ResetRecovery,
         Self::EnterRecoveryKey,
         Self::VerifyThisDevice,
         Self::SignOut,
@@ -67,6 +70,7 @@ impl AppCommand {
             Self::Appearance(Appearance::System) => "appearance.system",
             Self::ChangePassphrase => "security.change_passphrase",
             Self::NewRecoveryKey => "security.new_recovery_key",
+            Self::ResetRecovery => "security.reset_recovery",
             Self::EnterRecoveryKey => "security.enter_recovery_key",
             Self::VerifyThisDevice => "security.verify_this_device",
             Self::SignOut => "security.sign_out",
@@ -90,6 +94,7 @@ impl AppCommand {
             Self::Appearance(Appearance::System) => tl!("Sync with system"),
             Self::ChangePassphrase => tl!("Change passphrase…"),
             Self::NewRecoveryKey => tl!("Create a new recovery key…"),
+            Self::ResetRecovery => tl!("Reset: make a new recovery key…"),
             Self::EnterRecoveryKey => tl!("Enter recovery key…"),
             Self::VerifyThisDevice => tl!("Verify this device"),
             Self::SignOut => tl!("Sign out…"),
@@ -114,7 +119,7 @@ impl AppCommand {
             Self::ChangePassphrase => signed_in && state.passphrase == Some(true),
             // A new key only replaces one this device can open, or makes the first (encryption.rs).
             Self::NewRecoveryKey => signed_in && matches!(state.recovery, RecoveryStatus::On | RecoveryStatus::Off),
-            Self::EnterRecoveryKey => signed_in && state.recovery == RecoveryStatus::NeedsKey,
+            Self::EnterRecoveryKey | Self::ResetRecovery => signed_in && state.recovery == RecoveryStatus::NeedsKey,
         }
     }
 

@@ -74,7 +74,7 @@ async fn a_new_recovery_key_replaces_the_old_one_and_another_device_is_asked_to_
     let first = sign_in_as(&server.homeserver, &user).await;
     let first_sync = connect(&first).await;
     let old = within("encryption to be set up", first_sync.set_up_encryption(Some(&user.1))).await.unwrap().expect("a first recovery key");
-    let new = within("a new recovery key", first_sync.new_recovery_key()).await.unwrap();
+    let new = within("a new recovery key", first_sync.new_recovery_key(None)).await.unwrap();
     assert_ne!(new.expose(), old.expose());
     assert_eq!(new.groups().len(), 12);
     assert_eq!(first_sync.recovery_status(), RecoveryStatus::On, "the backup stays");
@@ -83,7 +83,7 @@ async fn a_new_recovery_key_replaces_the_old_one_and_another_device_is_asked_to_
     let second = sign_in_as(&server.homeserver, &user).await;
     let second_sync = connect(&second).await;
     assert_eq!(within("the recovery state", second_sync.known_recovery_status()).await, RecoveryStatus::NeedsKey);
-    assert!(matches!(second_sync.new_recovery_key().await, Err(EncryptionError::BackupExists)), "a backup it cannot open is never replaced");
+    assert!(matches!(second_sync.new_recovery_key(None).await, Err(EncryptionError::BackupExists)), "a backup it cannot open is never replaced");
     assert!(second_sync.recover(&RecoveryKey::new(old.expose())).await.is_err(), "the old key stopped working");
     within("recovering with the new key", second_sync.recover(&new)).await.unwrap();
 
@@ -129,9 +129,43 @@ async fn the_first_recovery_key_can_be_made_from_settings() {
     let device = sign_in_as(&server.homeserver, &user).await;
     let sync = connect(&device).await;
     assert_eq!(within("the recovery state", sync.known_recovery_status()).await, RecoveryStatus::Off);
-    let key = within("the first recovery key", sync.new_recovery_key()).await.unwrap();
+    // The account has no cross-signing yet: the key sets it up, and the server asks for the password for that.
+    assert!(matches!(sync.new_recovery_key(Some("not the password")).await, Err(EncryptionError::WrongPassword)));
+    let key = within("the first recovery key", sync.new_recovery_key(Some(&user.1))).await.unwrap();
     assert_eq!(key.groups().len(), 12);
-    assert_eq!(sync.recovery_status(), RecoveryStatus::On);
+    assert_eq!(sync.recovery_status(), RecoveryStatus::On, "this device can use the key it made");
     sync.stop().await;
     device.sign_out().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_lost_recovery_key_is_reset_with_the_account_password() {
+    let server = server_or_skip!();
+    let Some(user) = register_fresh_user(&server.homeserver).await else {
+        eprintln!("skipped: PINGCRAFT_TEST_REGISTRATION_TOKEN is not set");
+        return;
+    };
+    // The first device sets everything up; its key is then "lost".
+    let first = sign_in_as(&server.homeserver, &user).await;
+    let first_sync = connect(&first).await;
+    let lost = within("encryption to be set up", first_sync.set_up_encryption(Some(&user.1))).await.unwrap().expect("a first key");
+    first_sync.stop().await;
+    first.sign_out().await;
+    // A new device cannot open the backup, and resets.
+    let second = sign_in_as(&server.homeserver, &user).await;
+    let second_sync = connect(&second).await;
+    assert_eq!(within("the recovery state", second_sync.known_recovery_status()).await, RecoveryStatus::NeedsKey);
+    assert!(matches!(second_sync.reset_recovery("not the password").await, Err(EncryptionError::WrongPassword)));
+    let fresh = within("resetting", second_sync.reset_recovery(&user.1)).await.unwrap();
+    assert_eq!(second_sync.recovery_status(), RecoveryStatus::On, "the resetting device can use the new key");
+    // A third device opens the new backup with the new key, and not with the lost one.
+    let third = sign_in_as(&server.homeserver, &user).await;
+    let third_sync = connect(&third).await;
+    assert_eq!(within("the recovery state", third_sync.known_recovery_status()).await, RecoveryStatus::NeedsKey);
+    assert!(third_sync.recover(&RecoveryKey::new(lost.expose())).await.is_err(), "the lost key opens nothing now");
+    within("recovering with the new key", third_sync.recover(&fresh)).await.unwrap();
+    for (sync, device) in [(second_sync, second), (third_sync, third)] {
+        sync.stop().await;
+        device.sign_out().await;
+    }
 }

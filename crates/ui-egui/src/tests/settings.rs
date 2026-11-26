@@ -293,7 +293,7 @@ fn a_new_recovery_key_is_asked_for_and_shown_once() {
     h.get_by_label_contains("Your current recovery key stops working");
     click_in_footer(&mut h, "Create a new key");
     h.run();
-    assert!(matches!(&fake.take()[..], [Command::NewRecoveryKey]));
+    assert!(matches!(&fake.take()[..], [Command::NewRecoveryKey { password: None }]), "rotating a key this device holds needs no password");
     fake.tell([Event::NewRecoveryKey(RecoveryKey::new("EsTc 8Jq2 aaaa bbbb cccc dddd eeee ffff gggg hhhh iiii jjjj"))]);
     h.run();
     h.run();
@@ -305,6 +305,46 @@ fn a_new_recovery_key_is_asked_for_and_shown_once() {
     h.run();
     assert!(h.query_by_role_and_label(Role::Button, "Create a new recovery key…").is_none());
     h.get_by_role_and_label(Role::Button, "Enter recovery key…");
+}
+
+#[test]
+fn a_lost_recovery_key_is_reset_after_a_warning_and_the_account_password() {
+    let fake = Fake::default();
+    let mut h = on_page(&fake, "Security");
+    fake.tell([Event::Recovery(RecoveryStatus::NeedsKey)]);
+    h.run();
+    h.run();
+    h.get_by_role_and_label(Role::Button, "Reset: make a new recovery key…").click();
+    h.run();
+    h.run();
+    h.get_by_role_and_label(Role::Dialog, "Reset your recovery key?");
+    h.get_by_label_contains("can no longer be read on a new device");
+    assert!(h.get_by_role_and_label(Role::Button, "Reset and make a new key").accesskit_node().is_disabled(), "not without the password");
+    type_into(&mut h, "Account password", "hunter2");
+    click_in_footer(&mut h, "Reset and make a new key");
+    h.run();
+    let sent = fake.take();
+    assert!(matches!(&sent[..], [Command::ResetRecovery { password }] if **password == "hunter2"), "{sent:?}");
+    fake.tell([Event::RecoveryKeyRefused(pingcraft_core::encryption::RecoveryRefusal::WrongPassword)]);
+    h.run();
+    h.get_by_label("That password was not accepted.");
+}
+
+#[test]
+fn a_first_recovery_key_takes_the_account_password_when_given() {
+    let fake = Fake::default();
+    let mut h = on_page(&fake, "Security");
+    fake.tell([Event::Recovery(RecoveryStatus::Off)]);
+    h.run();
+    h.run();
+    h.get_by_role_and_label(Role::Button, "Create a new recovery key…").click();
+    h.run();
+    h.run();
+    type_into(&mut h, "Account password", "hunter2");
+    click_in_footer(&mut h, "Create a new key");
+    h.run();
+    let sent = fake.take();
+    assert!(matches!(&sent[..], [Command::NewRecoveryKey { password: Some(p) }] if **p == "hunter2"), "{sent:?}");
 }
 
 #[test]

@@ -654,7 +654,8 @@ impl Worker {
                 }
                 Err(e) => Err(e.to_string()),
             },
-            command @ (Command::NewRecoveryKey
+            command @ (Command::NewRecoveryKey { .. }
+            | Command::ResetRecovery { .. }
             | Command::LoadDevices
             | Command::RenameDevice(_)
             | Command::VerifyDevice(_)
@@ -801,14 +802,14 @@ async fn chat_setting(s: &SignedIn, command: Command) -> Result<Option<pingcraft
 /// Settings' Security commands: a new recovery key, and the user's devices.
 async fn security(s: &mut SignedIn, emit: &Emitter, command: Command) -> Result<(), String> {
     match command {
-        Command::NewRecoveryKey => match s.connection.new_recovery_key().await {
-            Ok(key) => {
-                s.shown_recovery = None;
-                emit.send(Event::NewRecoveryKey(key));
-                Ok(())
-            }
-            Err(e) => Err(e.to_string()),
-        },
+        Command::NewRecoveryKey { password } => {
+            let made = s.connection.new_recovery_key(password.as_deref().map(String::as_str)).await;
+            recovery_key_made(s, emit, made)
+        }
+        Command::ResetRecovery { password } => {
+            let made = s.connection.reset_recovery(&password).await;
+            recovery_key_made(s, emit, made)
+        }
         Command::LoadDevices => devices(s, emit).await,
         Command::RenameDevice(name) => match s.connection.rename_this_device(&name).await {
             Ok(()) => devices(s, emit).await,
@@ -830,6 +831,26 @@ async fn security(s: &mut SignedIn, emit: &Emitter, command: Command) -> Result<
             }
         },
         _ => Ok(()),
+    }
+}
+
+/// Shows a recovery key just made, or says why none was, in words the user can act on where there are some.
+fn recovery_key_made(s: &mut SignedIn, emit: &Emitter, made: Result<pingcraft_core::encryption::RecoveryKey, EncryptionError>) -> Result<(), String> {
+    use pingcraft_core::encryption::RecoveryRefusal;
+    let refused = |why| {
+        emit.send(Event::RecoveryKeyRefused(why));
+        Ok(())
+    };
+    match made {
+        Ok(key) => {
+            s.shown_recovery = None;
+            emit.send(Event::NewRecoveryKey(key));
+            Ok(())
+        }
+        Err(EncryptionError::NeedsPassword) => refused(RecoveryRefusal::NeedsPassword),
+        Err(EncryptionError::WrongPassword) => refused(RecoveryRefusal::WrongPassword),
+        Err(EncryptionError::NotSupported) => refused(RecoveryRefusal::NotSupported),
+        Err(e) => Err(e.to_string()),
     }
 }
 

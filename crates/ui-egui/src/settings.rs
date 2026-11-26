@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 use egui::Ui;
 use pingcraft_core::app::{Command, Event};
 use pingcraft_core::devices::{Device, DeviceId, SignOutProblem, clean_name};
-use pingcraft_core::encryption::RecoveryStatus;
+use pingcraft_core::encryption::{RecoveryRefusal, RecoveryStatus};
 use pingcraft_core::{Accent, Alerts, Network};
 use zeroize::Zeroizing;
 
@@ -51,8 +51,8 @@ pub struct SettingsState {
     pub devices: Option<Vec<Device>>,
     /// The sheet that changes the unlock passphrase.
     pub passphrase: Option<PassphraseForm>,
-    /// The sheet that asks before making a new recovery key; `true` once asked for.
-    pub new_key: Option<bool>,
+    /// The sheet that asks before making a new recovery key, or resetting a lost one.
+    pub new_key: Option<KeyForm>,
     /// The sheet that asks before signing this device out.
     pub sign_out: bool,
     /// The sheet that signs another device out.
@@ -73,6 +73,16 @@ pub struct PassphraseForm {
     pub sent: bool,
     /// The current passphrase typed was wrong.
     pub wrong: bool,
+}
+
+/// The new recovery key sheet: whether it resets a lost key, the account password (wiped when dropped), and how it
+/// went.
+#[derive(Default)]
+pub struct KeyForm {
+    pub reset: bool,
+    pub password: Zeroizing<String>,
+    pub sent: bool,
+    pub refused: Option<RecoveryRefusal>,
 }
 
 /// Signing another device out: which one, and the account password the server asks for (wiped when dropped).
@@ -116,10 +126,17 @@ impl SettingsState {
                 }
             }
             Event::NewRecoveryKey(_) => self.new_key = None,
+            Event::RecoveryKeyRefused(why) => {
+                if let Some(form) = self.new_key.as_mut() {
+                    form.sent = false;
+                    form.password = Zeroizing::default();
+                    form.refused = Some(*why);
+                }
+            }
             // Whatever was waiting failed (the problem bar says why): its sheet can be used again.
             Event::Problem(_) => {
-                if self.new_key == Some(true) {
-                    self.new_key = Some(false);
+                if let Some(form) = self.new_key.as_mut() {
+                    form.sent = false;
                 }
                 if let Some(form) = self.passphrase.as_mut() {
                     form.sent = false;
@@ -368,7 +385,9 @@ fn recovery_row(ui: &mut Ui, status: RecoveryStatus) {
             (tl!("Not set up. If you lose this device, your encrypted history is lost with it."), Some(AppCommand::NewRecoveryKey))
         }
         RecoveryStatus::NeedsKey => (
-            tl!("Set up, but this device does not have it yet. Enter it, or verify this device from another one."),
+            tl!(
+                "Set up, but this device does not have it yet. Enter it, or verify this device from another one. If the key is lost, you can reset it."
+            ),
             Some(AppCommand::EnterRecoveryKey),
         ),
         RecoveryStatus::Unknown => (tl!("Asking your server…"), None),
@@ -379,6 +398,7 @@ fn recovery_row(ui: &mut Ui, status: RecoveryStatus) {
             command_button(ui, command, Variant::SECONDARY);
             if status == RecoveryStatus::NeedsKey {
                 command_button(ui, AppCommand::VerifyThisDevice, Variant::SECONDARY);
+                command_button(ui, AppCommand::ResetRecovery, Variant::DANGER);
             }
         });
     }
@@ -532,41 +552,87 @@ fn passphrase_sheet(ctx: &egui::Context, state: &mut State, out: &mut Out) {
 }
 
 fn new_key_sheet(ctx: &egui::Context, state: &mut State, out: &mut Out) {
-    let Some(sent) = state.settings.new_key else { return };
-    let replacing = state.recovery == RecoveryStatus::On;
+    let status = state.recovery;
+    let Some(form) = state.settings.new_key.as_mut() else { return };
+    // Rotating a key this device holds needs no password; a first key may (cross-signing), a reset always does.
+    let asks_password = form.reset || status != RecoveryStatus::On;
+    let ready = !form.sent && (!form.reset || !form.password.is_empty());
+    let (title, action) = if form.reset {
+        (tl!("Reset your recovery key?"), tl!("Reset and make a new key"))
+    } else {
+        (tl!("Create a new recovery key?"), tl!("Create a new key"))
+    };
     let mut cancel = false;
     let mut create = false;
+    let mut entered = false;
     let dismissed = crate::widgets::sheet(
         ctx,
         "new-recovery-key",
         560.0,
-        (tl!("Create a new recovery key?"), tl!("Your account")),
+        (title, tl!("Your account")),
         |ui| {
-            if replacing {
+            if form.reset {
+                problem(
+                    ui,
+                    tl!(
+                        "Only do this if the recovery key is lost. Messages encrypted until now can no longer be read on a new device, and your other devices need verifying again. Devices that already have their keys keep them."
+                    ),
+                );
+                note(
+                    ui,
+                    tl!(
+                        "PingCraft makes a new encryption identity and a new recovery key for your account. Your server asks for your account password first."
+                    ),
+                );
+            } else if status == RecoveryStatus::On {
                 note(
                     ui,
                     tl!("Your current recovery key stops working, and the new one opens your encrypted history in its place. Your history stays."),
                 );
             } else {
                 note(ui, tl!("Your account has no recovery key yet. With one, a new device can read your encrypted history."));
+                note(ui, tl!("Your server may ask for your account password to set up encryption first."));
             }
-            if sent {
+            if asks_password {
+                entered |= field(ui, tl!("Account password"), &mut form.password, true, "").submitted;
+            }
+            match form.refused {
+                Some(RecoveryRefusal::NeedsPassword) => {
+                    problem(ui, tl!("Your server asks for your account password for this."));
+                }
+                Some(RecoveryRefusal::WrongPassword) => {
+                    problem(ui, tl!("That password was not accepted."));
+                }
+                Some(RecoveryRefusal::NotSupported) => {
+                    problem(ui, tl!("Your server wants another way of signing in for this, which PingCraft cannot do yet."));
+                }
+                None => {}
+            }
+            if form.sent {
                 note(ui, tl!("Creating…"));
             }
         },
         |ui| {
             cancel = button(ui, tl!("Cancel"), Kind::Secondary, true).clicked();
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                create = button(ui, tl!("Create a new key"), Kind::Primary, !sent).clicked();
+                let kind = if form.reset { Kind::Danger } else { Kind::Primary };
+                create = button(ui, action, kind, ready).clicked();
             });
         },
     );
     if cancel || dismissed {
         state.settings.new_key = None;
-    } else if create && !sent {
-        state.settings.new_key = Some(true);
+    } else if (create || entered) && ready {
+        form.sent = true;
+        form.refused = None;
+        let password = std::mem::take(&mut form.password);
+        let command = if form.reset {
+            Command::ResetRecovery { password }
+        } else {
+            Command::NewRecoveryKey { password: (!password.is_empty()).then_some(password) }
+        };
         state.recovery_forms.replacing = true;
-        out.push(Command::NewRecoveryKey);
+        out.push(command);
     }
 }
 
