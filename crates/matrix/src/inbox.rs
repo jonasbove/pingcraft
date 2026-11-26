@@ -6,7 +6,7 @@
 //! (`content.bridgebot`) and that bot is on the user's own server, where the admin runs the bridges. A room without
 //! one is a Matrix chat. [`crate::bridge_info`] gets that state into the local store and says which rooms changed.
 //!
-//! A chat's archive, sound and colour, and mute end are PingCraft's own room account data ([`crate::chat_settings`]).
+//! A chat's archive, and its sound and colour, are PingCraft's own room account data ([`crate::chat_settings`]).
 //! The room list does not notice a change to those, so the inbox also watches the sync's room updates for them and
 //! sends such a chat again, whether the change was made here or on another device.
 
@@ -78,13 +78,15 @@ enum Wake {
     Settings(Option<Vec<OwnedRoomId>>),
 }
 
-/// The joined rooms in a sync's room updates that bring some of PingCraft's own room account data.
+/// PingCraft's room account data that sends a chat again when the sync brings it. Not a mute's end
+/// ([`crate::chat_settings::MUTE_UNTIL`]): it is saved before the mute's push rule, and whether a chat is muted is
+/// read from that rule, which may not have synced yet; a chat sent again then would show as not muted.
+const WAKING_SETTINGS: &[&str] = &[crate::chat_settings::ARCHIVED, crate::chat_settings::ALERTS];
+
+/// The joined rooms in a sync's room updates that bring some of [`WAKING_SETTINGS`].
 fn rooms_with_own_settings(updates: &RoomUpdates) -> Vec<OwnedRoomId> {
     let own = |raw: &Raw<AnyRoomAccountDataEvent>| {
-        raw.get_field::<String>("type")
-            .ok()
-            .flatten()
-            .is_some_and(|kind| kind.strip_prefix(crate::NAMESPACE).is_some_and(|rest| rest.starts_with('.')))
+        raw.get_field::<String>("type").ok().flatten().is_some_and(|kind| WAKING_SETTINGS.contains(&kind.as_str()))
     };
     updates.joined.iter().filter(|(_, update)| update.account_data.iter().any(own)).map(|(id, _)| id.clone()).collect()
 }
@@ -449,9 +451,9 @@ mod tests {
         JoinedRoomUpdate { account_data: account_data(types), ..Default::default() }
     }
 
-    /// Archiving, a chat's sound and colour, and a mute's end are PingCraft's own room account data, which changes
-    /// nothing the room list watches: the inbox must hear of them from the sync itself. Other apps' account data,
-    /// and rooms the user left, wake nothing.
+    /// Archiving and a chat's sound and colour are PingCraft's own room account data, which changes nothing the room
+    /// list watches: the inbox must hear of them from the sync itself. A mute's end does not wake it (see
+    /// [`super::WAKING_SETTINGS`]); nor do other apps' account data, or rooms the user left.
     #[test]
     fn only_pingcraft_settings_in_joined_rooms_wake_the_inbox() {
         let (archived, alerts, muted, tagged, left): (OwnedRoomId, OwnedRoomId, OwnedRoomId, OwnedRoomId, OwnedRoomId) = (
@@ -464,12 +466,12 @@ mod tests {
         let mut updates = RoomUpdates::default();
         updates.joined.insert(archived.clone(), joined(&[crate::chat_settings::ARCHIVED]));
         updates.joined.insert(alerts.clone(), joined(&["m.tag", crate::chat_settings::ALERTS]));
-        updates.joined.insert(muted.clone(), joined(&[crate::chat_settings::MUTE_UNTIL]));
+        updates.joined.insert(muted, joined(&[crate::chat_settings::MUTE_UNTIL]));
         updates.joined.insert(tagged, joined(&["m.tag", "m.fully_read", "io.github.jonasbove.pingcraftish.archived", "com.example.archived"]));
         updates.left.insert(left, LeftRoomUpdate { account_data: account_data(&[crate::chat_settings::ARCHIVED]), ..Default::default() });
         let mut woken = rooms_with_own_settings(&updates);
         woken.sort();
-        let mut expected = vec![archived, alerts, muted];
+        let mut expected = vec![archived, alerts];
         expected.sort();
         assert_eq!(woken, expected);
         assert!(rooms_with_own_settings(&RoomUpdates::default()).is_empty());
