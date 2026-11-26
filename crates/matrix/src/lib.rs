@@ -26,6 +26,7 @@ mod chat_settings;
 #[cfg(not(target_arch = "wasm32"))]
 mod connect;
 pub mod connection;
+pub mod devices;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod emoji_settings;
 pub mod encryption;

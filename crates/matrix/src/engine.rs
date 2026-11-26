@@ -111,6 +111,23 @@ impl Emitter {
 
 type Store = Box<dyn SecretStore + Send + Sync>;
 
+/// The open vault, shared between the secrets the engine reads and writes and the passphrase change.
+struct SharedVault(Arc<PassphraseVault>);
+
+impl SecretStore for SharedVault {
+    fn get(&self, name: &str) -> Result<Option<Zeroizing<Vec<u8>>>, pingcraft_keychain::KeychainError> {
+        self.0.get(name)
+    }
+
+    fn set(&self, name: &str, secret: &[u8]) -> Result<(), pingcraft_keychain::KeychainError> {
+        self.0.set(name, secret)
+    }
+
+    fn delete(&self, name: &str) -> Result<(), pingcraft_keychain::KeychainError> {
+        self.0.delete(name)
+    }
+}
+
 /// Everything that exists while someone is signed in.
 struct SignedIn {
     session: Session,
@@ -141,6 +158,8 @@ struct Worker {
     lock: Option<InstanceLock>,
     secrets_choice: Secrets,
     secrets: Option<Store>,
+    /// The vault behind `secrets`, when PingCraft is unlocked with a passphrase.
+    vault: Option<Arc<PassphraseVault>>,
     emit: Emitter,
     signed_in: Option<SignedIn>,
 }
@@ -174,7 +193,7 @@ fn vault_file(data_dir: &Path) -> PathBuf {
 
 impl Worker {
     fn new(data_dir: PathBuf, secrets_choice: Secrets, emit: Emitter) -> Self {
-        Self { data_dir, lock: None, secrets_choice, secrets: None, emit, signed_in: None }
+        Self { data_dir, lock: None, secrets_choice, secrets: None, vault: None, emit, signed_in: None }
     }
 
     async fn run(mut self, mut commands: UnboundedReceiver<Command>) {
@@ -246,6 +265,7 @@ impl Worker {
         }
         if self.secrets_choice == Secrets::System && OsKeychain.probe().is_ok() {
             self.secrets = Some(Box::new(OsKeychain));
+            self.emit.send(Event::Passphrase(false));
             return self.resume().await;
         }
         let has_vault = PassphraseVault::exists(&vault_file(&self.data_dir));
@@ -281,7 +301,10 @@ impl Worker {
         };
         match opened {
             Ok(vault) => {
-                self.secrets = Some(Box::new(vault));
+                let vault = Arc::new(vault);
+                self.secrets = Some(Box::new(SharedVault(Arc::clone(&vault))));
+                self.vault = Some(vault);
+                self.emit.send(Event::Passphrase(true));
                 self.resume().await;
             }
             Err(VaultError::WrongPassphrase | VaultError::EmptyPassphrase) => self.emit.send(Event::WrongPassphrase),
@@ -562,6 +585,19 @@ impl Worker {
         self.emit.send(Event::SignedOut);
     }
 
+    /// Changes the unlock passphrase of the open vault. Without one (the keychain keeps the secrets) there is nothing
+    /// to change.
+    fn change_passphrase(&mut self, current: &str, new: &str) {
+        let Some(vault) = self.vault.as_ref() else {
+            return self.emit.send(Event::Problem("PingCraft keeps its secrets in the system keychain here, so it has no passphrase".into()));
+        };
+        match vault.change_passphrase(current, new) {
+            Ok(()) => self.emit.send(Event::PassphraseChanged(true)),
+            Err(VaultError::WrongPassphrase) => self.emit.send(Event::PassphraseChanged(false)),
+            Err(e) => self.emit.send(Event::Problem(e.to_string())),
+        }
+    }
+
     async fn handle(&mut self, command: Command) {
         if self.lock.is_none() {
             // Another PingCraft has the data folder: touch nothing in it.
@@ -571,6 +607,7 @@ impl Worker {
             Command::Unlock { passphrase } => self.unlock(&passphrase).await,
             Command::SignIn { server, username, password } => self.sign_in(server, username, password).await,
             Command::SignOut => self.sign_out().await,
+            Command::ChangePassphrase { current, new } => self.change_passphrase(&current, &new),
             other => self.handle_signed_in(other).await,
         }
     }
@@ -617,6 +654,11 @@ impl Worker {
                 }
                 Err(e) => Err(e.to_string()),
             },
+            command @ (Command::NewRecoveryKey
+            | Command::LoadDevices
+            | Command::RenameDevice(_)
+            | Command::VerifyDevice(_)
+            | Command::SignOutDevice { .. }) => security(s, &self.emit, command).await,
             Command::VerifyThisDevice => match s.connection.verify_this_device().await {
                 Ok(flow) => {
                     s.flow = Some(flow);
@@ -682,7 +724,7 @@ impl Worker {
                 Ok(())
             }
             // Handled before.
-            Command::Unlock { .. } | Command::SignIn { .. } | Command::SignOut => Ok(()),
+            Command::Unlock { .. } | Command::SignIn { .. } | Command::SignOut | Command::ChangePassphrase { .. } => Ok(()),
         };
         if let Some(chat) = upsert {
             self.inbox(InboxChange::Upsert(Box::new(chat)));
@@ -754,6 +796,47 @@ async fn chat_setting(s: &SignedIn, command: Command) -> Result<Option<pingcraft
         _ => return Ok(None),
     };
     chat.map(Some)
+}
+
+/// Settings' Security commands: a new recovery key, and the user's devices.
+async fn security(s: &mut SignedIn, emit: &Emitter, command: Command) -> Result<(), String> {
+    match command {
+        Command::NewRecoveryKey => match s.connection.new_recovery_key().await {
+            Ok(key) => {
+                s.shown_recovery = None;
+                emit.send(Event::NewRecoveryKey(key));
+                Ok(())
+            }
+            Err(e) => Err(e.to_string()),
+        },
+        Command::LoadDevices => devices(s, emit).await,
+        Command::RenameDevice(name) => match s.connection.rename_this_device(&name).await {
+            Ok(()) => devices(s, emit).await,
+            Err(e) => Err(e),
+        },
+        Command::VerifyDevice(device) => match s.connection.verify_device(&device).await {
+            Ok(flow) => {
+                s.flow = Some(flow);
+                emit.send(Event::Verification(Some(Verification::Waiting)));
+                Ok(())
+            }
+            Err(e) => Err(e.to_string()),
+        },
+        Command::SignOutDevice { device, password } => match s.connection.sign_out_device(&device, &password).await {
+            Ok(()) => devices(s, emit).await,
+            Err(problem) => {
+                emit.send(Event::SignOutRefused { device, problem });
+                Ok(())
+            }
+        },
+        _ => Ok(()),
+    }
+}
+
+/// Tells the interface which devices the user is signed in on.
+async fn devices(s: &SignedIn, emit: &Emitter) -> Result<(), String> {
+    emit.send(Event::Devices(s.connection.devices().await?));
+    Ok(())
 }
 
 /// Sets a network's alerts, and tells the interface at once; the sync brings the server's copy a moment later.

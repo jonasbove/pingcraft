@@ -439,6 +439,8 @@ impl State {
                     open.at_start = true;
                 }
             }
+            // For the Settings screen, which comes next.
+            Event::Passphrase(_) | Event::PassphraseChanged(_) | Event::Devices(_) | Event::SignOutRefused { .. } => {}
             Event::NewRecoveryKey(key) => {
                 self.recovery_forms.new_key = Some(key);
                 self.recovery_forms.saved_ticked = false;

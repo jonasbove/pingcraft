@@ -7,6 +7,7 @@
 
 pub mod app;
 pub mod bridge;
+pub mod devices;
 pub mod encryption;
 mod inbox;
 pub mod notify;

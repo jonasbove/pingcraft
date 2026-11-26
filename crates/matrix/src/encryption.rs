@@ -1,10 +1,11 @@
 //! End-to-end encryption: cross-signing, the key backup with its recovery key, and verifying this device from
 //! another one by comparing symbols (SAS). Mapped onto `pingcraft_core::encryption`.
 //!
-//! The first sign-in sets up cross-signing and a recovery key (ADR 0004). A recovery key is only ever created when
+//! The first sign-in sets up cross-signing and a recovery key (ADR 0004). At sign-in, a recovery key is only created when
 //! the account has none: if the server already holds a key backup, PingCraft asks for the existing recovery key and
-//! never replaces it, since that would cut the user off from their encrypted history. Resetting a lost recovery key
-//! is not offered yet.
+//! never replaces it, since that would cut the user off from their encrypted history. Settings can make a new key in
+//! place of one this device can open ([`Connection::new_recovery_key`]); resetting a lost recovery key is not offered
+//! yet.
 
 use std::pin::pin;
 use std::time::Duration;
@@ -126,6 +127,25 @@ impl Connection {
         }
     }
 
+    /// Makes a new recovery key, for Settings: in place of the account's when this device can open the key backup
+    /// (the backup stays, and the old key stops working), or the first one when the account has none. Refused when
+    /// the account has a backup this device cannot open, which a new key would cut the user off from
+    /// ([`EncryptionError::BackupExists`]), and while the state is not known yet.
+    pub async fn new_recovery_key(&self) -> Result<RecoveryKey, EncryptionError> {
+        let encryption = self.client().encryption();
+        match self.recovery_status() {
+            RecoveryStatus::On => encryption.recovery().reset_key().await.map(RecoveryKey::new).map_err(sdk),
+            RecoveryStatus::Off => {
+                if encryption.backups().fetch_exists_on_server().await.map_err(sdk)? {
+                    return Err(EncryptionError::BackupExists);
+                }
+                encryption.recovery().enable().wait_for_backups_to_upload().await.map(RecoveryKey::new).map_err(sdk)
+            }
+            RecoveryStatus::NeedsKey => Err(EncryptionError::BackupExists),
+            RecoveryStatus::Unknown => Err(EncryptionError::Sdk("the server has not said yet whether a recovery key exists".into())),
+        }
+    }
+
     /// Gives this device the account's secrets from the key backup, with the recovery key the user typed.
     pub async fn recover(&self, key: &RecoveryKey) -> Result<(), EncryptionError> {
         self.client().encryption().recovery().recover(key.expose().trim()).await.map_err(|e| match e {
@@ -214,7 +234,7 @@ pub struct VerificationFlow {
 }
 
 impl VerificationFlow {
-    fn new(request: VerificationRequest) -> Self {
+    pub(crate) fn new(request: VerificationRequest) -> Self {
         let (sas_tx, sas_rx) = unbounded_channel();
         let (tx, states) = unbounded_channel();
         let task = spawn(follow(request.clone(), sas_tx, tx));
