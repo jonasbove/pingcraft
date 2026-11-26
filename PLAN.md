@@ -32,6 +32,11 @@ These apply from milestone 2 on (ADR 0009):
 - Every crate root carries the never-crash `deny` attribute.
 - UI changes get `egui_kittest` tests of the AccessKit tree.
 - CI calls `storytold/craft-common-actions` and builds every target CraftCloud ships.
+- **Git dependencies** (maintainer, 2026-11-26): any `github.com/storytold` repository may be a cargo git source
+  (for example `storytold/vectorcraft`, which craft-libs' `craft-svg` pulls in through `craft-ui`), always pinned
+  by `rev`. The change that first needs a storytold source not yet in `deny.toml` replaces the per-repository
+  `allow-git` entries with `[sources.allow-org] github = ["storytold"]`, with a comment saying why. Git sources
+  outside storytold stay denied.
 
 Milestone 1 has no Rust code. Its gate is the end-to-end check below, written up with what ran and what did not.
 
@@ -301,9 +306,12 @@ Starts when mautrix-discord releases its bridgev2 rewrite (ADR 0008).
    craft-libs update moves PingCraft onto craft-ui:
    - **PingCraft's own look becomes a theme** ("PingCraft", the orchid accent) and stays the default. Network
      colours stay the networks' own in every theme.
-   - **Built in, in PingCraft only** (not craft-libs built-ins): Tokyo Night, Catppuccin (Latte, Frappé, Macchiato,
-     Mocha) and Gruvbox (light and dark), as `craft-design-theme` files from their MIT-licensed palettes, each in
-     `ATTRIBUTION.md`; alongside craft-libs' own built-ins.
+   - **Built in, in PingCraft only** (not craft-libs built-ins): Tokyo Night and Catppuccin (Latte, Frappé,
+     Macchiato, Mocha), as `craft-design-theme` files from their MIT-licensed palettes, each in `ATTRIBUTION.md`;
+     alongside craft-libs' own built-ins.
+   - **Gruvbox goes to craft-libs** (maintainer, 2026-11-26): proposed as the built-in `craft.gruvbox` (light and
+     dark) in storytold/craft-libs#3701. PingCraft carries it itself only if #3701 is not merged by the time the
+     themes are built.
    - **Import:** craft theme JSON (craft-theme-store already does this), base16 and base24 schemes (one converter
      onto the theme's seeds), and VS Code colour themes (a best-effort mapping; the result is checked by craft-theme's
      contrast pass and the user sees what could not be mapped).
