@@ -135,12 +135,15 @@ pub fn wash(c: Color32) -> Color32 {
     Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), 0x1f)
 }
 
-/// Installs the look on both of egui's appearances, and the fonts (colour emoji where the build has them; the web
-/// build starts in monochrome and fetches the colour font in the background).
+/// Installs the look on both of egui's appearances, and the fonts (craft-ui's font stack, with colour emoji where the
+/// build has them; the web build starts in monochrome and fetches the colour font in the background).
 pub fn install(ctx: &egui::Context) {
-    ctx.set_fonts(crate::emoji::definitions());
-    #[cfg(target_arch = "wasm32")]
-    crate::emoji::web::fetch_color_font(ctx);
+    crate::emoji::install(ctx);
+    install_style(ctx);
+}
+
+/// Installs the look on both of egui's appearances.
+pub fn install_style(ctx: &egui::Context) {
     ctx.style_mut_of(egui::Theme::Dark, |style| apply(style, &Tokens::DARK));
     ctx.style_mut_of(egui::Theme::Light, |style| apply(style, &Tokens::LIGHT));
 }

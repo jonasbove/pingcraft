@@ -39,7 +39,6 @@ pub const ICON_PNG: &[u8] = include_bytes!("../../../design/assets/logo/pingcraf
 pub struct PingCraftApp {
     backend: Box<dyn Backend>,
     pub state: State,
-    styled: bool,
     /// Shows desktop notifications; without one, none are shown.
     notifier: Option<Box<dyn Notifier>>,
     /// The skin tone for emoji, as the user last chose it in the picker or the account last said.
@@ -51,7 +50,13 @@ pub struct PingCraftApp {
 
 impl PingCraftApp {
     pub fn new(backend: Box<dyn Backend>) -> Self {
-        Self { backend, state: State::default(), styled: false, notifier: None, skin_tone: SkinTone::default(), skin_tone_migrated: false }
+        Self { backend, state: State::default(), notifier: None, skin_tone: SkinTone::default(), skin_tone_migrated: false }
+    }
+
+    /// Installs the interface's look and fonts on the window's context. Call it once, when the window is created,
+    /// before the first frame.
+    pub fn install(ctx: &egui::Context) {
+        theme::install(ctx);
     }
 
     /// The skin tone for emoji in use, for the app to keep a local copy of. The account keeps the real one.
@@ -123,10 +128,6 @@ impl PingCraftApp {
 
     /// Draws one frame: applies what the backend said since the last one, then sends what the user did.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
-        if !self.styled {
-            theme::install(ui.ctx());
-            self.styled = true;
-        }
         let ctx = ui.ctx().clone();
         picker::set_tone(&ctx, self.skin_tone);
         self.state.focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));

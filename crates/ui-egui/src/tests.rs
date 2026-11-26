@@ -64,7 +64,21 @@ impl pingcraft_core::notify::Notifier for FakeNotifier {
 
 fn harness(fake: &Fake) -> Harness<'static, PingCraftApp> {
     let app = PingCraftApp::new(Box::new(fake.clone()));
-    Harness::builder().with_size(egui::vec2(1200.0, 760.0)).build_ui_state(|ui, app: &mut PingCraftApp| app.ui(ui), app)
+    builder().build_ui_state(|ui, app: &mut PingCraftApp| app.ui(ui), app)
+}
+
+/// A context with the interface installed as the app installs it on its window, but with no installed system fonts,
+/// so the tests draw the same on every machine.
+pub(super) fn context() -> egui::Context {
+    let ctx = egui::Context::default();
+    crate::theme::install_style(&ctx);
+    crate::emoji::stack(crate::emoji::EMBEDDED.map(egui::FontData::from_static), craft_ui::fonts::SystemFonts::Off).install(&ctx);
+    ctx
+}
+
+/// A harness builder over [`context`], at the window's size.
+pub(super) fn builder() -> egui_kittest::HarnessBuilder<PingCraftApp> {
+    Harness::builder().with_context(context()).with_size(egui::vec2(1200.0, 760.0))
 }
 
 /// Focuses the text field with this accessible name and types into it, as a user would.
@@ -327,7 +341,7 @@ fn verifying_compares_seven_named_symbols() {
     // Every symbol has a glyph in the colour emoji font. Built without it, egui's monochrome emoji face lacks some
     // of the spec's symbols, so missing glyphs are allowed only then.
     let app = PingCraftApp::new(Box::new(fake.clone()));
-    let builder = Harness::builder().with_size(egui::vec2(1200.0, 760.0));
+    let builder = builder();
     #[cfg(not(color_emoji))]
     let builder = builder.allow_missing_glyphs();
     let mut h = builder.build_ui_state(|ui, app: &mut PingCraftApp| app.ui(ui), app);

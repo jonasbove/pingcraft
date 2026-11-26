@@ -1,12 +1,12 @@
 //! Colour emoji: what the fonts draw, the picker and `:name:` shortcodes.
 
+use craft_ui::fonts::SystemFonts;
 use egui::epaint::text::Glyph;
 
 /// The glyphs `text` is drawn with in the app's fonts, laid out as the app lays it out (`colour_family`) or as plain
 /// text, and the font atlas they were drawn into.
 fn glyphs(text: &str, colour_family: bool) -> (Vec<Glyph>, egui::ColorImage) {
-    let ctx = egui::Context::default();
-    crate::theme::install(&ctx);
+    let ctx = super::context();
     let mut out = ctx.run_ui(egui::RawInput::default(), |_| {});
     out.textures_delta.clear();
     let job = if colour_family {
@@ -160,10 +160,10 @@ fn glyphs_in(ctx: &egui::Context, text: &str) -> Vec<Glyph> {
 #[cfg_attr(not(color_emoji), ignore = "built without the colour emoji font: cargo xtask fonts")]
 fn the_colour_font_can_arrive_after_the_first_frame() {
     let ctx = egui::Context::default();
-    ctx.set_fonts(crate::emoji::monochrome_definitions());
+    crate::emoji::stack(None, SystemFonts::Off).install(&ctx);
     assert!(glyphs_in(&ctx, "👍").iter().all(|g| !g.is_color), "monochrome before the font arrives");
     let bytes = crate::emoji::EMBEDDED.map(<[u8]>::to_vec).unwrap_or_default();
-    assert_eq!(crate::emoji::install_color_font(&ctx, bytes), Ok(()));
+    assert_eq!(crate::emoji::install_color_font(&ctx, bytes, SystemFonts::Off), Ok(()));
     assert!(glyphs_in(&ctx, "👍").iter().any(|g| g.is_color), "colour once it is installed");
 }
 
@@ -173,9 +173,9 @@ fn the_colour_font_can_arrive_after_the_first_frame() {
 fn a_font_that_is_not_the_pinned_one_is_refused() {
     use crate::emoji::FontRefused;
     let ctx = egui::Context::default();
-    ctx.set_fonts(crate::emoji::monochrome_definitions());
-    assert_eq!(crate::emoji::install_color_font(&ctx, b"<html>not found</html>".to_vec()), Err(FontRefused::NotPinned));
-    assert_eq!(crate::emoji::install_color_font(&ctx, vec![0; 6_000_000]), Err(FontRefused::TooBig));
+    crate::emoji::stack(None, SystemFonts::Off).install(&ctx);
+    assert_eq!(crate::emoji::install_color_font(&ctx, b"<html>not found</html>".to_vec(), SystemFonts::Off), Err(FontRefused::NotPinned));
+    assert_eq!(crate::emoji::install_color_font(&ctx, vec![0; 6_000_000], SystemFonts::Off), Err(FontRefused::TooBig));
     assert!(glyphs_in(&ctx, "👍").iter().all(|g| !g.is_color), "still monochrome");
 }
 
@@ -360,8 +360,7 @@ fn the_account_tone_decides_over_the_local_one() {
 #[test]
 #[cfg_attr(not(color_emoji), ignore = "built without the colour emoji font: cargo xtask fonts")]
 fn emoji_a_size_up_fit_even_lines() {
-    let ctx = egui::Context::default();
-    crate::theme::install(&ctx);
+    let ctx = super::context();
     ctx.run_ui(egui::RawInput::default(), |_| {}).textures_delta.clear();
     for size in [12.5, 14.0, 16.0] {
         let galley = ctx.fonts_mut(|f| {
@@ -425,8 +424,7 @@ fn an_emoji_only_message_is_large_and_keeps_its_text() {
 #[test]
 #[cfg_attr(not(color_emoji), ignore = "built without the colour emoji font: cargo xtask fonts")]
 fn emoji_a_size_up_keep_one_line_as_tall() {
-    let ctx = egui::Context::default();
-    crate::theme::install(&ctx);
+    let ctx = super::context();
     ctx.run_ui(egui::RawInput::default(), |_| {}).textures_delta.clear();
     let unicode = pingcraft_core::EmojiPresentation::Unicode;
     for size in [12.5, 13.0, 14.0, 16.0] {

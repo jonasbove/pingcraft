@@ -149,8 +149,13 @@ desktop target.
      `trn`) and no catalogs. The swap is its own change, not a drop-in: craft-i18n's `trn` writes numbers grouped
      for the region ("1,234 chats"), `fmt` wraps inserted values in bidi isolates when there is right-to-left
      text, and catalogs need a `build.rs` (`craft-i18n-build`) and an `I18n` with the language setting.
-   - **Fonts:** Archivo, Inter and Geist Mono are not bundled (house rule 3 puts fonts in craft-fonts, and
-     PingCraft does not use it yet); egui's own faces stand in. egui's emoji face lacks some of the SAS symbols.
+   - **Fonts: craft-ui's font stack** (craft-libs update, part 1, 2026-11-26; maintainer: craft-libs dictates the
+     look). The interface draws with `craft_ui::fonts::UiFonts`: craft-ui's Inter (it ships the face itself) ahead
+     of egui's faces, installed system fonts on the desktop for scripts those lack (`system_fonts`; the tests turn
+     them off so they draw the same everywhere), and egui's monochrome emoji as the last resort. The design's
+     Archivo and Geist Mono are gone with PingCraft's own look. No craft-fonts faces are embedded yet
+     (`craft-fonts-build`'s `Embed`, a craft-fonts checkout in `CRAFT_FONTS_DIR`): the web build will need them for
+     other scripts, since it has no system fonts.
    - **Design gaps** (built in the design's language, for the maintainer to review): choosing a passphrase, the
      "this device can't read earlier messages" notice, entering the recovery key, and a confirmation before
      signing out from the unlock sheet clears this computer. White on the orchid (unread counts) is 4.47:1, a
@@ -380,10 +385,12 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
    (+6.7 MB; the font is 5.0 MB). Follow-ups (2026-11-26) and what is still open:
    - **The web build loads the colour font after the page opens** (maintainer, 2026-11-26). `color_fonts` builds
      for wasm32 (clippy `-D warnings`, as `cargo xtask ci` checks it), so it is no longer target-gated. The web build
-     starts with egui's monochrome emoji, and `theme::install` starts fetching `noto-color-emoji/Noto-COLRv1.ttf`
+     starts with egui's monochrome emoji, and `emoji::install` starts fetching `noto-color-emoji/Noto-COLRv1.ttf`
      next to the app (through `web-sys`, no JavaScript) without holding up the first frame; once it arrives,
-     `emoji::install_color_font` checks it is the pinned file (size, then SHA-256, from `font_pin.rs`) and switches
-     faces. A failed fetch or any other file leaves emoji monochrome and says nothing. Tested natively: a context
+     `emoji::install_color_font` checks it is the pinned file (size, then SHA-256, from `font_pin.rs`) and installs
+     the font stack again with it (since the craft-libs update: craft-ui's `UiFonts` with the font as
+     `Emoji::color` and at the head of the `emoji` family; `Emoji::served` cannot do this, see "craft-libs: what
+     PingCraft lacks"). A failed fetch or any other file leaves emoji monochrome and says nothing. Tested natively: a context
      that starts monochrome draws 👍 in colour once the font is installed, and a wrong or too big file is refused.
      **Not run in a browser:** `pingcraft-web` is still the stub that exports nothing (no eframe app, no
      `index.html`, no Trunk), so the fetch has never run and the wasm size with the interface is still unknown.
@@ -650,6 +657,28 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
     (page "Components", where the draft frames' icons are placeholders), then drawn in egui in place of the text
     marks used today (📌, 🔕, "…", "×", "›"). Each recorded in `ATTRIBUTION.md`; checked with craft-libs `ui`
     first (house rule 16).
+
+## craft-libs: what PingCraft lacks
+
+The maintainer's rule (2026-11-26): craft-libs dictates how PingCraft looks and feels. PingCraft adopts craft-ui as
+it is, never changes craft-libs to suit itself, and where something it needs is missing keeps a small stopgap built
+from craft-libs' own pieces and writes the gap down here, for a craft-libs change someone else makes.
+
+- **Colour emoji that lead a family, and a served emoji face fetched at start** (`craft_ui::fonts`). The stack puts
+  `Emoji` faces after the system fonts, as a fallback: a keycap (`1️⃣`) or `❤️` starts in the text face, because
+  egui picks a face by a cluster's first character and Inter has the digits. Stopgap: `emoji::stack` names an
+  `emoji` family (`UiFonts::family`) and puts the colour face at its head with `Stack::insert`. On the web,
+  `Emoji::served` is fetched only when no installed face has a character, and `Emoji::monochrome` always has it
+  first (`FaceList` answers before the loader), so a served colour face behind a monochrome one is never fetched;
+  and a served face cannot be put at a family's head before it arrives. Stopgap: PingCraft fetches the pinned file
+  itself (`emoji::web`, as before) and installs the stack again with it as `Emoji::color`. Missing in craft-libs: a
+  way to fetch a served face at install (as `ui_downloads` does for the interface language's scripts) and to name a
+  served face as a family's first face.
+- **A browser `FontFetcher`.** craft-ui defines the trait but ships no implementation; vectorcraft-web carries its
+  own (`BrowserFetcher`). PingCraft does not need one while the stopgap above stands.
+- **Emoji layout** (`emoji.rs`): craft-ui's text has no equivalent of PingCraft's emoji a size up among text, large
+  emoji-only messages, or a network's own emoji presentation (`pingcraft_core::EmojiPresentation`), so these stay
+  PingCraft's.
 
 ## Later, not yet planned
 

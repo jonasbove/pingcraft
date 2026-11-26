@@ -146,8 +146,7 @@ fn deleting_asks_first() {
 /// Every quick reaction has a glyph in the fonts the app ships (the colour emoji font, or egui's own without it).
 #[test]
 fn the_quick_reactions_are_drawn_by_the_shipped_fonts() {
-    let ctx = egui::Context::default();
-    crate::theme::install(&ctx);
+    let ctx = super::context();
     let mut out = ctx.run_ui(egui::RawInput::default(), |_| {});
     out.textures_delta.clear();
     for key in crate::message::QUICK_REACTIONS.iter().chain(&[crate::view::PINNED_MARK, crate::view::MUTED_MARK]) {

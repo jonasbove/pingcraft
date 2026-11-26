@@ -127,6 +127,7 @@ fn main() -> ExitCode {
         "PingCraft",
         options(),
         Box::new(move |cc| {
+            PingCraftApp::install(&cc.egui_ctx);
             let ctx = cc.egui_ctx.clone();
             let engine = Engine::start(data, secrets, Arc::new(move || ctx.request_repaint()))?;
             let mut app = PingCraftApp::new(Box::new(engine));
