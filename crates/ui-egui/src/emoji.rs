@@ -186,10 +186,10 @@ pub const LARGE_MAX: usize = 3;
 pub const EMOJI_LINE: f32 = 1.5;
 
 /// The line an emoji takes in one line of text (a name, a preview, the composer), in the text's size: a little less
-/// than the text's own line (about 1.2 in craft-ui's Inter), so the line is exactly as tall as without the emoji
-/// and the layout around it (the inbox rows, the header, the composer) does not move. The emoji is centred on the line
+/// than the text's own line (craft-ui's Inter, about 1.21), so the line is exactly as tall as without the emoji and
+/// the layout around it (the inbox rows, the header, the composer) does not move. The emoji is centred on the line
 /// and reaches about a seventh of the text's size above and below it, into the padding.
-const SINGLE_LINE: f32 = 1.1;
+const SINGLE_LINE: f32 = 1.2;
 
 /// How big a job's emoji are.
 #[derive(Debug, Clone, Copy, PartialEq)]

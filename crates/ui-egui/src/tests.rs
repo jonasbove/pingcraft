@@ -384,8 +384,6 @@ fn verifying_compares_seven_named_symbols() {
     fake.tell([Event::Verification(Some(Verification::Cancelled(CancelReason::Mismatch)))]);
     h.run();
     h.get_by_label("Stopped: the symbols didn't match. Nothing was shared.");
-    // The sheet re-centres a frame after it changes size (see verifying_compares_seven_named_symbols).
-    h.step();
     click_in_footer(&mut h, "Close");
     h.run();
     assert!(matches!(&fake.take()[..], [Command::CancelVerification]));
@@ -537,4 +535,25 @@ fn enter_in_the_password_signs_in() {
     h.run();
     let sent = fake.take();
     assert!(matches!(&sent[..], [Command::SignIn { password, .. }] if **password == "hunter2"), "{sent:?}");
+}
+
+/// Escape on the sign-in sheet, which has nothing to cancel, leaves the sheet open; in a field it takes back that
+/// field's edit (craft-ui's text field), and signing in still works afterwards.
+#[test]
+fn escape_leaves_the_sign_in_sheet_open() {
+    let fake = Fake::default();
+    let mut h = harness(&fake);
+    fake.tell([Event::SignedOut]);
+    h.run();
+    type_into(&mut h, "Server address", "example.org");
+    h.key_press(egui::Key::Escape);
+    h.run();
+    h.get_by_role_and_label(egui::accesskit::Role::Dialog, "Sign in");
+    type_into(&mut h, "Server address", "example.org");
+    type_into(&mut h, "Username", "ana");
+    type_into(&mut h, "Password", "hunter2");
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Sign in").click();
+    h.run();
+    let sent = fake.take();
+    assert!(matches!(&sent[..], [Command::SignIn { server, .. }] if server.ends_with("example.org")), "{sent:?}");
 }

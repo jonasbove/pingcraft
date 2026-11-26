@@ -215,7 +215,7 @@ pub fn avatar(ui: &mut Ui, name: &str, size: f32) {
     let t = Tokens::get(ui.ctx());
     let (rect, _) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
     ui.painter().circle_filled(rect.center(), size / 2.0, t.accent_tint);
-    ui.painter().text(rect.center(), Align2::CENTER_CENTER, initials(name), FontId::proportional(size * 0.36), t.accent_ink);
+    ui.painter().text(rect.center(), Align2::CENTER_CENTER, initials(name), FontId::proportional(size * 0.36), t.on_tint);
 }
 
 /// The unread count on a chat row: craft-ui's count badge, solid in the accent; `quiet` for a muted chat (the neutral

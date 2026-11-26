@@ -42,6 +42,8 @@ pub struct Tokens {
     pub accent_ink: Color32,
     pub on_accent: Color32,
     pub accent_tint: Color32,
+    /// Text and marks on `accent_tint`.
+    pub on_tint: Color32,
     pub good: Color32,
     pub warn: Color32,
     pub bad: Color32,
@@ -100,6 +102,7 @@ impl Tokens {
             accent_ink: colour(c.accent.text),
             on_accent: colour(c.text.on_strong),
             accent_tint: colour(c.accent.soft),
+            on_tint: colour(c.accent.on_soft),
             good: colour(c.status.good.fg),
             warn: colour(c.status.warn.fg),
             bad: colour(c.status.bad.fg),

@@ -325,3 +325,56 @@ fn right_clicking_a_message_opens_its_menu() {
     h.run();
     h.get_by_label("Replying to Lars Holm");
 }
+
+/// The message's menu works by keyboard: Enter on its button opens it, the arrows move among its rows, Enter runs one,
+/// and Escape closes it.
+#[test]
+fn the_message_menu_works_by_keyboard() {
+    let fake = Fake::default();
+    let mut h = book_club(&fake);
+    let label = "Message actions: Lars Holm, Next meeting on Thursday?";
+    h.get_by_label(label).focus();
+    h.run();
+    h.key_press(egui::Key::Enter);
+    h.run();
+    h.get_by_label("Reply");
+    h.key_press(egui::Key::Escape);
+    h.run();
+    assert!(h.query_by_label("Reply").is_none(), "Escape closes the menu");
+    h.get_by_label(label).focus();
+    h.run();
+    h.key_press(egui::Key::Enter);
+    h.run();
+    for _ in 0..2 {
+        h.key_press(egui::Key::ArrowDown);
+        h.run();
+    }
+    h.key_press(egui::Key::Enter);
+    h.run();
+    assert!(h.query_by_label("Reply").is_none(), "a row ran and closed the menu");
+}
+
+/// With a message's menu open, a row's letter runs it: R starts a reply. Typed in the composer, the same letter is
+/// just text.
+#[test]
+fn a_letter_runs_a_row_of_the_open_menu() {
+    let fake = Fake::default();
+    let mut h = book_club(&fake);
+    h.get_by_label("Message actions: Lars Holm, Next meeting on Thursday?").focus();
+    h.run();
+    h.key_press(egui::Key::Enter);
+    h.run();
+    h.get_by_label("Reply");
+    // As a keyboard types it: the press with its text in one frame, the release in the next.
+    let key =
+        |pressed| egui::Event::Key { key: egui::Key::R, physical_key: Some(egui::Key::R), pressed, repeat: false, modifiers: egui::Modifiers::NONE };
+    h.event(key(true));
+    h.event(egui::Event::Text("r".into()));
+    h.step();
+    h.event(key(false));
+    h.run();
+    assert!(h.query_by_label("Reply").is_none(), "the menu closed");
+    h.get_by_label_contains("Replying to Lars Holm");
+    super::type_into(&mut h, "Message Book club", "r");
+    assert!(h.query_by_label_contains("Replying to Lars Holm").is_some(), "typing r is text, not a menu key");
+}

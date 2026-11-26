@@ -232,9 +232,8 @@ fn more_button(ui: &Ui, message: &Message) -> Option<egui::Response> {
 
 /// The message's menu, craft-ui's `Menu`: it opens from the "more" button (click), or a right-click on the message or
 /// its text. Quick reactions (recently used first) and the picker, then what the user may do with it. Each row's `&`
-/// marks the letter craft-ui's menu runs it from while it is open (R reply, E more reactions, C copy text, F forward,
-/// P pin, S select, I details, T edit, D delete); not shown to work yet, so no row shows it as a shortcut (PLAN.md,
-/// "Messages and chats" 12).
+/// marks the letter craft-ui's open menu runs it from, shown as its shortcut: R reply, E more reactions, C copy
+/// text, F forward, P pin, S select, I details, T edit, D delete.
 fn menu(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out, more: &egui::Response, text_response: &egui::Response) -> Option<Act> {
     let mut act = None;
     let text = match &message.body {
@@ -247,27 +246,18 @@ fn menu(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out, more: &egui:
     if let Some(area) = &area {
         menu = menu.opened_by(area, Trigger::Context);
     }
-    menu.show(ui, |ui, menu_cx| {
-        let mut close = false;
+    menu.show(ui, |ui, _| {
         if message.can.react {
-            ui.horizontal(|ui| {
-                for key in crate::picker::quick_reactions(ui.ctx()) {
-                    let key = key.as_str();
-                    let shown = shown_key(key);
-                    let mut chip = egui::Button::new(emoji::symbol(&drawn_key(key), 18.0, Color32::PLACEHOLDER)).frame(false);
-                    if message.my_reaction(key) {
-                        chip = chip.selected(true);
-                    }
-                    let response = ui.add(chip);
-                    response
-                        .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, fmt(tl!("React with {emoji}"), &[("emoji", &shown)])));
-                    if response.clicked() {
-                        crate::picker::remember(ui.ctx(), key);
-                        out.push(Command::React { chat: cx.chat.clone(), message: message.id.clone(), key: key.to_owned() });
-                        close = true;
-                    }
+            // Quick reactions are rows too, so the menu works by keyboard (egui buttons in its body kept the focus
+            // out of it); craft-ui's text draws their emoji through the font stack's colour emoji face.
+            for key in crate::picker::quick_reactions(ui.ctx()) {
+                let key = key.as_str();
+                let label = fmt(tl!("React with {emoji}"), &[("emoji", &shown_key(key))]);
+                if MenuItem::new(label).check(message.my_reaction(key)).show(ui).ran {
+                    crate::picker::remember(ui.ctx(), key);
+                    out.push(Command::React { chat: cx.chat.clone(), message: message.id.clone(), key: key.to_owned() });
                 }
-            });
+            }
             if row(ui, tl!("Mor&e reactions…"), true) {
                 act = Some(Act::ChooseReaction(message.id.clone()));
             }
@@ -299,18 +289,19 @@ fn menu(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out, more: &egui:
         if message.can.delete && row(ui, tl!("&Delete"), true) {
             act = Some(Act::Delete(message.id.clone()));
         }
-        // A quick reaction is an egui button, not a row, so it closes the menu itself.
-        if close {
-            menu_cx.request_close();
-        }
     });
     act
 }
 
-/// One row of the message's menu: `label` with its `&` mnemonic; left out when the message does not allow it. Whether
-/// it ran.
+/// One row of the message's menu: `label` with its `&` mnemonic, the letter it marks shown as the row's shortcut; left
+/// out when the message does not allow it. Whether it ran.
 fn row(ui: &mut Ui, label: &str, allowed: bool) -> bool {
-    allowed && MenuItem::new(label.to_owned()).show(ui).ran
+    let letter = label.split('&').nth(1).and_then(|rest| rest.chars().next()).map(|c| c.to_uppercase().to_string());
+    let mut item = MenuItem::new(label.to_owned());
+    if let Some(letter) = letter {
+        item = item.shortcut(letter);
+    }
+    allowed && item.show(ui).ran
 }
 
 /// The quoted original above a reply. Clicking it goes to the original.
@@ -352,7 +343,7 @@ fn chip(ui: &mut Ui, reaction: &Reaction, enabled: bool, presentation: EmojiPres
     let t = Tokens::get(ui.ctx());
     let shown = shown_key(&reaction.key);
     let count = reaction.by.len().max(1);
-    let text = emoji::text(&format!("{} {count}", drawn_key(&reaction.key)), t.body, if reaction.mine { t.accent_ink } else { t.ink }, presentation);
+    let text = emoji::text(&format!("{} {count}", drawn_key(&reaction.key)), t.body, if reaction.mine { t.on_tint } else { t.ink }, presentation);
     let stroke = Stroke::new(1.0, if reaction.mine { t.accent_ink } else { t.line_strong });
     let fill = if reaction.mine { t.accent_tint } else { Color32::TRANSPARENT };
     let response = ui.add_enabled(enabled, egui::Button::new(text).fill(fill).stroke(stroke).corner_radius(egui::CornerRadius::ZERO));

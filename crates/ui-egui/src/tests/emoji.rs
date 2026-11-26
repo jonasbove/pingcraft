@@ -362,7 +362,7 @@ fn the_account_tone_decides_over_the_local_one() {
 fn emoji_a_size_up_fit_even_lines() {
     let ctx = super::context();
     ctx.run_ui(egui::RawInput::default(), |_| {}).textures_delta.clear();
-    for size in [12.5, 14.0, 16.0] {
+    for size in theme_sizes() {
         let galley = ctx.fonts_mut(|f| {
             f.layout_job(crate::emoji::body(
                 "Hg 😀 ❤\u{fe0f}\nHg only text\n👍🏽 Hg",
@@ -427,7 +427,7 @@ fn emoji_a_size_up_keep_one_line_as_tall() {
     let ctx = super::context();
     ctx.run_ui(egui::RawInput::default(), |_| {}).textures_delta.clear();
     let unicode = pingcraft_core::EmojiPresentation::Unicode;
-    for size in [12.5, 13.0, 14.0, 16.0] {
+    for size in theme_sizes() {
         let with = ctx.fonts_mut(|f| f.layout_job(crate::emoji::text("Hg 😀 👍🏽", size, egui::Color32::WHITE, unicode)));
         let without = ctx.fonts_mut(|f| f.layout_job(crate::emoji::text("Hg é", size, egui::Color32::WHITE, unicode)));
         assert_eq!(with.size().y, without.size().y, "a line with an emoji is as tall as one without at {size}");
@@ -485,4 +485,11 @@ fn the_reaction_picker_keeps_tab_inside_and_closes_on_escape() {
     h.key_press(egui::Key::Escape);
     h.run();
     assert!(h.query_by_role_and_label(egui::accesskit::Role::TextInput, "Search emoji").is_none(), "Escape closes the sheet");
+}
+
+/// The text sizes the app lays emoji out at: craft-ui's default theme's caption, label, body and title roles.
+fn theme_sizes() -> [f32; 4] {
+    let resolved = craft_ui::testing::style::tokens(craft_theme::Mode::Dark, craft_theme::Contrast::Standard);
+    let t = crate::theme::Tokens::from_resolved(resolved.tokens(), craft_theme::Mode::Dark);
+    [t.caption, t.label, t.body, t.title]
 }

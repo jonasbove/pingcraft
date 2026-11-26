@@ -741,7 +741,7 @@ pub fn verification(ctx: &egui::Context, state: &State, out: &mut Out) {
         Verification::Incoming { device } => device.clone(),
         _ => tl!("Your devices").to_owned(),
     };
-    crate::widgets::sheet(
+    let dismissed = crate::widgets::sheet(
         ctx,
         "verify",
         720.0,
@@ -806,6 +806,10 @@ pub fn verification(ctx: &egui::Context, state: &State, out: &mut Out) {
             });
         },
     );
+    // Escape or the close action stops the verification, as Not now, Cancel and Close do.
+    if dismissed {
+        out.push(Command::CancelVerification);
+    }
 }
 
 fn symbol_tiles(ui: &mut Ui, symbols: &[SasSymbol]) {

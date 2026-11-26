@@ -134,8 +134,6 @@ fn a_qr_code_is_shown_until_cancelled() {
     let code = h.get_by_label("QR code to scan with Signal");
     assert_eq!(code.accesskit_node().role(), egui::accesskit::Role::Image);
     h.get_by_label("Scan the QR code on your other device");
-    // The sheet re-centres a frame after it changes size (see verifying_compares_seven_named_symbols).
-    h.step();
     h.get_by_label("Cancel").click();
     h.run();
     let sent = fake.take();
@@ -189,8 +187,6 @@ fn a_failed_login_says_why() {
     fake.tell([Event::LoginFailed { network: Network::from_id("signal"), error: BridgeError::NotAuthorized }]);
     h.run();
     h.get_by_label_contains("could not confirm who you are");
-    // The sheet re-centres a frame after it changes size (see verifying_compares_seven_named_symbols).
-    h.step();
     super::click_in_footer(&mut h, "Close");
     h.run();
     assert!(h.query_by_label_contains("could not confirm who you are").is_none());
