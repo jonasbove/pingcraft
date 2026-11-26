@@ -256,7 +256,7 @@ impl<'a> Model<'a> {
             None,
             vec![
                 RowSpec::new("notifications.previews", tl!("Show message text in notifications"), RowKind::Bool(self.state.prefs.previews))
-                    .help(tl!("Off: a notification says only who wrote. Kept on this computer."))
+                    .help(tl!("Off: a notification says only who wrote. Kept with your account."))
                     .keywords("preview privacy"),
             ],
         )];
@@ -412,7 +412,10 @@ impl PreferencesModel for Model<'_> {
     fn set(&mut self, key: &str, value: PrefValue) {
         match (key, value) {
             ("appearance.mode", PrefValue::Choice(id)) => self.state.requested.push(AppCommand::Appearance(Appearance::from_id(&id))),
-            ("notifications.previews", PrefValue::Bool(on)) => self.state.prefs.previews = on,
+            ("notifications.previews", PrefValue::Bool(on)) => {
+                self.state.prefs.previews = on;
+                self.out.push(Command::SavePreviews(on));
+            }
             ("emoji.skin_tone", PrefValue::Choice(id)) => self.chosen_tone = Some(SkinTone::from_id(&id)),
             ("security.device_name", PrefValue::Text(typed)) => {
                 let sent = &mut self.state.settings.renamed;
@@ -458,7 +461,10 @@ impl PreferencesModel for Model<'_> {
         match page {
             "appearance" => self.state.requested.push(AppCommand::Appearance(Appearance::default())),
             "notifications" => {
-                self.state.prefs.previews = true;
+                if !self.state.prefs.previews {
+                    self.state.prefs.previews = true;
+                    self.out.push(Command::SavePreviews(true));
+                }
                 for (_, _, _, network) in self.words.networks.clone() {
                     if self.state.network_alerts.get(&network).is_some_and(|a| *a != Alerts::default()) {
                         self.set_network(&network, Alerts::default());

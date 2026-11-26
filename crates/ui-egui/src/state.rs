@@ -494,6 +494,9 @@ impl State {
                 }
             }
             Event::Passphrase(on) => self.passphrase = Some(on),
+            Event::Previews(Some(on)) => self.prefs.previews = on,
+            // An account that keeps nothing yet: the app moves this computer's setting up to it.
+            Event::Previews(None) => {}
             Event::PassphraseChanged(_) | Event::Devices(_) | Event::SignOutRefused { .. } | Event::RecoveryKeyRefused(_) => {}
             Event::NewRecoveryKey(key) => {
                 self.recovery_forms.new_key = Some(key);

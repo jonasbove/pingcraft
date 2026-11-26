@@ -5,8 +5,8 @@
 //! where a keychain works, to try that path.
 //!
 //! Its settings on this computer are craft-settings' `config.toml` in the platform's configuration folder, or in
-//! `PINGCRAFT_CONFIG_DIR`: the appearance (light, dark or the system's), whether notifications show message text, and
-//! a copy of the emoji skin tone, which the account keeps: the copy is what PingCraft starts with, and moved up once
+//! `PINGCRAFT_CONFIG_DIR`: the appearance (light, dark or the system's), and copies of whether notifications show
+//! message text and of the emoji skin tone, which the account keeps: the copy is what PingCraft starts with, and moved up once
 //! to an account that keeps none.
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable))]
 // A Windows GUI program: no console window opens with it (packaging/windows/package.ps1 checks this).

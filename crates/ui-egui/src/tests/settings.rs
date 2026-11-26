@@ -105,8 +105,8 @@ fn notifications_set_previews_and_each_networks_sound_and_colour() {
     let mut h = on_page(&fake, "Notifications");
     h.get_by_role_and_label(Role::CheckBox, "Show message text in notifications").click();
     h.run();
-    assert!(!h.state().state.prefs.previews, "previews off, kept on this computer");
-    assert!(fake.take().is_empty(), "the account is not told");
+    assert!(!h.state().state.prefs.previews, "previews off");
+    assert!(matches!(&fake.take()[..], [Command::SavePreviews(false)]), "kept with the account");
 
     // Each network's rows are in a group named by it.
     h.get_by_role_and_label(Role::Group, "Telegram").get_by_role_and_label(Role::CheckBox, "Notification sound").click();
@@ -162,6 +162,24 @@ fn a_failure_frees_the_waiting_sheet_and_a_verification_reloads_the_devices() {
     fake.tell([Event::Verification(None)]);
     h.run();
     assert!(fake.take().iter().any(|c| matches!(c, Command::LoadDevices)));
+}
+
+/// The account's previews setting wins; an account that keeps none is given this computer's "off" once.
+#[test]
+fn previews_follow_the_account_and_a_local_off_moves_up() {
+    let fake = Fake::default();
+    let mut h = super::signed_in(&fake);
+    fake.take();
+    fake.tell([Event::Previews(Some(false))]);
+    h.run();
+    assert!(!h.state().state.prefs.previews, "the account's");
+    fake.tell([Event::Previews(None)]);
+    h.run();
+    assert!(matches!(&fake.take()[..], [Command::SavePreviews(false)]), "this computer's off moves up");
+    h.state_mut().state.prefs.previews = true;
+    fake.tell([Event::Previews(None)]);
+    h.run();
+    assert!(fake.take().is_empty(), "the default is not sent");
 }
 
 #[test]

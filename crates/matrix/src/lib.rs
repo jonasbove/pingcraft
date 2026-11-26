@@ -39,6 +39,8 @@ pub mod mautrix;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod network_alerts;
 #[cfg(not(target_arch = "wasm32"))]
+pub mod notification_settings;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod recent_emoji;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod session;

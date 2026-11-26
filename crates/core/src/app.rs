@@ -116,6 +116,8 @@ pub enum Command {
     /// The user used this emoji (sent it, reacted with it, or picked it). It joins the account's recently used emoji
     /// on the server, which the user's other devices share; uses are sent together a few seconds after the last.
     EmojiUsed(String),
+    /// Whether notifications show the message's text. Kept with the account, in PingCraft's own account data.
+    SavePreviews(bool),
     /// The user chose this skin tone for emoji (by its saved name, such as `medium`). It is kept with the account,
     /// in PingCraft's own account data, so the user's other devices use it too.
     SaveSkinTone(String),
@@ -223,6 +225,7 @@ impl std::fmt::Debug for Command {
             Self::EmojiUsed(_) => f.write_str("EmojiUsed(..)"),
             // Says something about the person, so it stays out of logs too.
             Self::SaveSkinTone(_) => f.write_str("SaveSkinTone(..)"),
+            Self::SavePreviews(on) => f.debug_tuple("SavePreviews").field(on).finish(),
             Self::RecoveryKeySaved => f.write_str("RecoveryKeySaved"),
             Self::Recover(key) => f.debug_tuple("Recover").field(key).finish(),
             Self::NewRecoveryKey { .. } => f.write_str("NewRecoveryKey { .. }"),
@@ -315,6 +318,9 @@ pub enum Event {
     /// that is asked of the server itself, never assumed from a sync that has not arrived yet. Sent once signed in
     /// and whenever another device changes it.
     SkinTone(Option<String>),
+    /// Whether notifications show the message's text, as the account keeps it, or (`None`) that it keeps nothing: asked
+    /// of the server itself once signed in, then sent whenever another device changes it.
+    Previews(Option<bool>),
     /// Each network's notification sound and accent colour, as the account keeps them (networks without settings
     /// are left out). Sent once signed in and whenever they change.
     NetworkAlerts(std::collections::BTreeMap<Network, Alerts>),

@@ -248,8 +248,8 @@ Goal: a user connects Telegram, Signal and WhatsApp accounts from PingCraft, aft
       `framework::install` starts on the desktop (the XDG portal's `color-scheme` on Linux) and which wakes the window
       when it changes; not tried by hand. A footnote says colour themes are not there yet (M6 ticket
       7 adds them on this page).
-    - **Notifications:** message text in notifications on or off (off: "New message from …"), kept on this computer
-      (`[notifications] previews`); and each network's notification sound and accent colour (moved here from the
+    - **Notifications:** message text in notifications on or off (off: "New message from …"), kept with the account
+      (see "Questions for the maintainer"; this computer keeps a copy in `[notifications] previews`); and each network's notification sound and accent colour (moved here from the
       ACCOUNTS tab, which now points here), the colour any colour from craft-color-ui's colour picker
       (`ColorPickerDialog`, eyedropper off) or typed as hex, kept with the account as before.
     - **Emoji:** the default skin tone, the same synced setting as the picker's.
@@ -851,10 +851,12 @@ from craft-libs' own pieces and writes the gap down here, for a craft-libs chang
 ## Questions for the maintainer (Settings, 2026-11-26)
 
 Decided here the conservative way, each easy to change:
-- **Message previews** are kept on this computer (`config.toml`), not with the account, as a per-device privacy
-  setting. Synced instead?
-- **Appearance** is kept on this computer as an app choice; craft-theme's suite-wide choice (`selection.json`, shared
-  with the other Craft apps) is not written. Share it with the suite, as the colour themes will (M6 ticket 7)?
+- **Message previews** — answered (maintainer, 2026-11-26): kept with the account, in PingCraft's global account data
+  `io.github.jonasbove.pingcraft.notifications` (`{"previews": false}`), asked of the server once signed in and
+  followed through the sync. `config.toml`'s `[notifications] previews` stays as this computer's copy and start-up
+  value; an "off" there moves up once to an account that keeps nothing (tested; live test `tests/previews.rs`).
+- **Appearance** — answered (maintainer, 2026-11-26): stays PingCraft's own, on this computer, for now; it moves to
+  craft-theme's suite-wide choice (`selection.json`) in part 2, with the colour themes (M6 ticket 7).
 - **Each network's sound and colour moved** from the ACCOUNTS tab to Settings (the ACCOUNTS tab points there). Keep a
   copy on ACCOUNTS?
 - **A new recovery key** — answered (maintainer, 2026-11-26): a device that cannot open the backup offers "Reset: make

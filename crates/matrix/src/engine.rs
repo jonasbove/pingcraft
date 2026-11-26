@@ -150,6 +150,8 @@ struct SignedIn {
     skin_tone: crate::emoji_settings::ToneSync,
     /// Each network's alerts as last told to the interface (raw, to tell when another device changed them).
     shown_network_alerts: Option<String>,
+    /// The previews setting as last told to the interface; `None` until the server has been asked.
+    shown_previews: Option<Option<bool>>,
 }
 
 struct Worker {
@@ -244,6 +246,7 @@ impl Worker {
                     self.recent_emoji().await;
                     self.skin_tone(false).await;
                     self.network_alerts().await;
+                    self.previews().await;
                 }
             }
         }
@@ -388,11 +391,34 @@ impl Worker {
             shown_emoji: None,
             skin_tone: crate::emoji_settings::ToneSync::default(),
             shown_network_alerts: None,
+            shown_previews: None,
         });
         self.tick();
         self.recent_emoji().await;
         self.skin_tone(false).await;
         self.network_alerts().await;
+        self.previews().await;
+    }
+
+    /// Asks the server once whether notifications show message text (it may keep nothing), then tells the interface
+    /// when another device changes it. Quiet on failure: the next tick tries again.
+    async fn previews(&mut self) {
+        let Some(s) = self.signed_in.as_mut() else { return };
+        if s.connection.state() != ConnectionState::Online {
+            return;
+        }
+        let now = match s.shown_previews {
+            None => match s.connection.fetch_previews().await {
+                Ok(kept) => kept,
+                Err(_) => return,
+            },
+            Some(shown) => match s.connection.synced_previews().await {
+                Some(synced) if Some(synced) != shown => Some(synced),
+                _ => return,
+            },
+        };
+        s.shown_previews = Some(now);
+        self.emit.send(Event::Previews(now));
     }
 
     /// Tells the interface each network's alerts when they changed (here, or synced from another device).
@@ -709,6 +735,13 @@ impl Worker {
                 self.emit.send(Event::RecentEmoji(emoji));
                 Ok(())
             }
+            Command::SavePreviews(on) => match s.connection.save_previews(on).await {
+                Ok(()) => {
+                    s.shown_previews = Some(Some(on));
+                    Ok(())
+                }
+                Err(e) => Err(e),
+            },
             // Sent at the next tick (within a second), quietly; on failure, again later.
             Command::SaveSkinTone(tone) => {
                 s.skin_tone.chosen(tone);
