@@ -37,7 +37,8 @@ These apply from milestone 2 on (ADR 0009):
   "house rule N" elsewhere in this plan refers to the old numbering. Where PingCraft does not follow the new rules
   yet: integration tests are several binaries in `crates/matrix/tests/` rather than one `tests/it/main.rs` per
   crate (rule 30); there is no automation interface or `pingcraft-cli mcp` (rules 14 and 18); interface text goes
-  through a stand-in for craft-i18n, which does not yet compile next to matrix-sdk (rule 16); colours come from
+  through a stand-in for craft-i18n, which now links next to matrix-sdk but is not swapped in yet (rule 16; M2
+  ticket 9); colours come from
   PingCraft's own tokens until it moves onto craft-theme (rule 14).
 - **Git dependencies** (maintainer, 2026-11-26): any `github.com/storytold` repository may be a cargo git source
   (for example `storytold/vectorcraft`, which craft-libs' `craft-svg` pulls in through `craft-ui`), always pinned
@@ -87,6 +88,18 @@ desktop target.
    - `cargo xtask ci` and `cargo xtask layers`;
    - `cargo xtask bump-images`, from milestone 1: move the pinned image digests forward and report stale ones;
    - craft-libs pinned at one revision.
+   - **Pins** (2026-11-26): craft-libs `a6103343`, the egui family on the storytold fork at `b9770908`, winit at
+     `a517b384`. Moving them is a change of its own (rule 10).
+   - **Patched ruma, carried until upstream fixes it** (maintainer, 2026-11-26): `vendor/ruma-common-0.20.2` and
+     `vendor/ruma-events-0.35.2`, the crates.io releases with four `deserialize` calls typed out, through
+     `[patch.crates-io]`. Without it craft-libs (craft-settings → craft-host → craft-i18n, whose ICU crates turn
+     on `zerovec/serde`) and matrix-sdk 0.19.1 do not compile together (E0275). `vendor/README.md` lists every
+     changed line. **Removed** once a ruma release has the fix and matrix-sdk depends on it (or craft-i18n stops
+     turning on ICU's `serde` features): delete the folders, the patch entries, the workspace `exclude` and the
+     `ATTRIBUTION.md` rows. No upstream issue or fix has been sent: ruma accepts no LLM-written contributions
+     (code, issues or text) and matrix-rust-sdk no agent-written ones and asks for a DCO sign-off, so the
+     maintainer writes them himself. matrix-sdk's widget code has the same pattern but is not compiled here
+     (`experimental-widgets` is off).
 2. **Done, not run yet** (it runs on GitHub once pushed). **CI:** a workflow calling `craft-common-actions`, in
    its own pull request (house rule 11): `ci.yml` runs `cargo xtask ci` through the shared `gate.yml`, on Linux
    (Windows runners have no system SQLite to link), and `house-rules.yml` checks `AGENTS.md`. The tests that need
@@ -131,9 +144,11 @@ desktop target.
    messages), recovery key, entering the recovery key and verify-device sheets, over
    `pingcraft_core::app::Backend`; the desktop app runs them on `pingcraft_matrix::engine`, which is tested
    end to end against tuwunel. Open:
-   - **i18n:** `craft-i18n` cannot be linked next to `matrix-sdk` 0.19.1: its ICU crates turn on `zerovec`'s
-     `serde` feature, and `ruma-common` 0.20.2 then fails to compile (E0275 on `Box::deserialize`). The UI uses a
-     stand-in with the same call shape (`tl!`, `fmt`, `trn`) and no catalogs until ruma or craft-i18n changes.
+   - **i18n:** `craft-i18n` links next to `matrix-sdk` 0.19.1 since the craft-libs update (with the patched ruma
+     in `vendor/`, M2 ticket 1), but the UI still uses its stand-in with the same call shape (`tl!`, `fmt`,
+     `trn`) and no catalogs. The swap is its own change, not a drop-in: craft-i18n's `trn` writes numbers grouped
+     for the region ("1,234 chats"), `fmt` wraps inserted values in bidi isolates when there is right-to-left
+     text, and catalogs need a `build.rs` (`craft-i18n-build`) and an `I18n` with the language setting.
    - **Fonts:** Archivo, Inter and Geist Mono are not bundled (house rule 3 puts fonts in craft-fonts, and
      PingCraft does not use it yet); egui's own faces stand in. egui's emoji face lacks some of the SAS symbols.
    - **Design gaps** (built in the design's language, for the maintainer to review): choosing a passphrase, the
@@ -624,7 +639,7 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
       menu items), not drawn in this change.
     - **Context menu: done, without shortcuts.** A message's menu opens from its "…" button or a right-click;
       the keyboard shortcuts in the design (through `craft-keymap`) are still to come. **They come with the
-      craft-libs update** (maintainer, 2026-11-26): the bump from the pinned `cdee9b8` brings craft-keymap's and
+      craft-libs update** (maintainer, 2026-11-26): the bump from `cdee9b8` (done 2026-11-26, now `a6103343`) brings craft-keymap's and
       craft-menu's shortcuts, so they are not built on the old pin. The draft frames' keys, for then: R reply,
       E react, Ctrl+C copy text, F forward, P pin, S select, I details, Up edit, Del delete (while the menu is open;
       never while a text field has focus).
