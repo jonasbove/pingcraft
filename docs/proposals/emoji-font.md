@@ -3,7 +3,8 @@
 - **Status:** decided by the maintainer (2026-11-25) and built: Noto Color Emoji COLRv1, with the flags, and no
   pull request to craft-fonts or the egui fork. Instead `cargo xtask fonts` fetches the pinned file (the URL and
   SHA-256 below) into a git-ignored folder and the desktop build embeds it; the face order is solved in PingCraft
-  by laying emoji clusters out in a family of their own; the web build has no colour font for now. See PLAN.md,
+  by laying emoji clusters out in a family of their own; the web build fetches the font after the page opens
+  (2026-11-26). See PLAN.md,
   "Messages and chats" 1. The rest of this page is the research as written before the decision.
 - **Source:** `PLAN.md`, "Messages and chats", item 1. Checked 2026-11-25.
 

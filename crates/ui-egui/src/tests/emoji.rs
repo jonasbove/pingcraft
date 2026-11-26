@@ -146,3 +146,35 @@ fn a_reaction_can_be_any_emoji_from_the_picker() {
     h.run();
     h.get_by_label("React with 🎉");
 }
+
+/// The glyphs `text` is drawn with in `ctx`'s fonts, laid out as the app lays emoji out.
+fn glyphs_in(ctx: &egui::Context, text: &str) -> Vec<Glyph> {
+    ctx.run_ui(egui::RawInput::default(), |_| {}).textures_delta.clear();
+    let galley = ctx.fonts_mut(|f| f.layout_job(crate::emoji::text(text, 28.0, egui::Color32::WHITE)));
+    galley.rows.iter().flat_map(|r| r.glyphs.iter().cloned()).collect()
+}
+
+/// The web build starts without the colour font and fetches it after the page opens: until it arrives emoji are
+/// drawn in monochrome, and once it is installed the same text is drawn in colour.
+#[test]
+#[cfg_attr(not(color_emoji), ignore = "built without the colour emoji font: cargo xtask fonts")]
+fn the_colour_font_can_arrive_after_the_first_frame() {
+    let ctx = egui::Context::default();
+    ctx.set_fonts(crate::emoji::monochrome_definitions());
+    assert!(glyphs_in(&ctx, "👍").iter().all(|g| !g.is_color), "monochrome before the font arrives");
+    let bytes = crate::emoji::EMBEDDED.map(<[u8]>::to_vec).unwrap_or_default();
+    assert_eq!(crate::emoji::install_color_font(&ctx, bytes), Ok(()));
+    assert!(glyphs_in(&ctx, "👍").iter().any(|g| g.is_color), "colour once it is installed");
+}
+
+/// A file that is not the pinned font (a broken download, an error page, something else served in its place) is
+/// refused, and emoji stay as they were.
+#[test]
+fn a_font_that_is_not_the_pinned_one_is_refused() {
+    use crate::emoji::FontRefused;
+    let ctx = egui::Context::default();
+    ctx.set_fonts(crate::emoji::monochrome_definitions());
+    assert_eq!(crate::emoji::install_color_font(&ctx, b"<html>not found</html>".to_vec()), Err(FontRefused::NotPinned));
+    assert_eq!(crate::emoji::install_color_font(&ctx, vec![0; 6_000_000]), Err(FontRefused::TooBig));
+    assert!(glyphs_in(&ctx, "👍").iter().all(|g| !g.is_color), "still monochrome");
+}

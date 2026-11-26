@@ -4487,10 +4487,14 @@ dependencies = [
  "emojis",
  "epaint",
  "image",
+ "js-sys",
  "pingcraft-core",
  "qrcode",
  "sha2 0.10.9",
  "unicode-segmentation",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
  "zeroize",
 ]
 

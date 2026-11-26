@@ -26,9 +26,10 @@ unicode-segmentation = "1.13"
 # Emoji names, shortcodes and groups for the picker and `:name:` ((MIT OR Apache-2.0) AND Unicode-3.0).
 emojis = "0.9"
 
-# Colour emoji glyphs (COLR, CBDT, sbix) through vello_cpu, on the desktop. The web build has no colour font yet.
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Colour emoji glyphs (COLR, CBDT, sbix) through vello_cpu, on the desktop and the web.
 epaint = { version = "0.37", features = ["color_fonts"] }
+# Checks a colour emoji font that arrives after start (the web build's) against its pinned hash.
+sha2 = "0.10"
 
 [build-dependencies]
 # Checks the colour emoji font against its pinned hash (build.rs).
@@ -37,6 +38,11 @@ sha2 = "0.10"
 # The browser's clock and time zone on the web.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 chrono = { version = "0.4", default-features = false, features = ["clock", "std", "wasmbind"] }
+# Fetching the colour emoji font after the page opens (all MIT OR Apache-2.0, already used by eframe's web build).
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["Window", "Response"] }
 
 [dev-dependencies]
 # egui 0.37 no longer bundles its fallback faces by default; the tests install them.

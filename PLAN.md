@@ -336,13 +336,21 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
    message's menu; the quick reactions put recently used emoji first; `:name:` turns into the emoji, with
    suggestions while it is typed. Size, release build on Linux x86_64: 73.3 MB stripped before, 80.0 MB after
    (+6.7 MB; the font is 5.0 MB). Open:
-   - **The web build has no colour font** (the target-gated feature keeps `color_fonts` and the font out of wasm;
-     whether `color_fonts` builds for wasm was not tried). It still draws egui's monochrome emoji. Next: fetch the
-     font lazily from the same origin (the proposal's plan). Its size could not be measured: `pingcraft-web`
-     exports nothing yet, so its wasm (513 kB, the same before and after) leaves the interface out.
+   - **The web build loads the colour font after the page opens** (maintainer, 2026-11-26). `color_fonts` builds
+     for wasm32 (clippy `-D warnings`, as `cargo xtask ci` checks it), so it is no longer target-gated. The web build
+     starts with egui's monochrome emoji, and `theme::install` starts fetching `noto-color-emoji/Noto-COLRv1.ttf`
+     next to the app (through `web-sys`, no JavaScript) without holding up the first frame; once it arrives,
+     `emoji::install_color_font` checks it is the pinned file (size, then SHA-256, from `font_pin.rs`) and switches
+     faces. A failed fetch or any other file leaves emoji monochrome and says nothing. Tested natively: a context
+     that starts monochrome draws 👍 in colour once the font is installed, and a wrong or too big file is refused.
+     **Not run in a browser:** `pingcraft-web` is still the stub that exports nothing (no eframe app, no
+     `index.html`, no Trunk), so the fetch has never run and the wasm size with the interface is still unknown.
+     Milestone 4's Trunk build has to copy the pinned file from the fonts folder to that path (for example a
+     `data-trunk rel="copy-file"` of `$CRAFT_FONTS_DIR/noto-color-emoji/Noto-COLRv1.ttf` into
+     `noto-color-emoji/`) and ship its `OFL.txt`, as the desktop packages do.
    - Recently used emoji last for one run of PingCraft; they are not saved. Emoji names and search are English.
    - Picking a skin tone in the picker; the picker and suggestions row have no frames in the design yet.
-   - Without the colour font (the fallback build, and the web) the picker shows tofu for emoji egui's monochrome
+   - Without the colour font (the fallback build, and the web until the font arrives) the picker shows tofu for emoji egui's monochrome
      face lacks; its two tests are ignored in that build.
    - Not tried by hand in the running app; checked through the tests only. A Nix build (no network in its
      sandbox) falls back to monochrome emoji.

@@ -4,7 +4,7 @@
 //! (`CRAFT_FONTS_DIR`, or `.cache/craft-fonts` in the workspace). Without it, emoji are drawn with egui's
 //! monochrome emoji font, unless `CRAFT_FONTS_REQUIRED=1`, which makes a missing font an error (`cargo xtask ci`
 //! and the packages set it). A file that is not the pinned one is always an error. The web build embeds no colour
-//! font for now (PLAN.md, "Messages and chats" 1).
+//! font: it fetches the pinned file after the page opens (`emoji::web`, PLAN.md, "Messages and chats" 1).
 
 use std::path::PathBuf;
 

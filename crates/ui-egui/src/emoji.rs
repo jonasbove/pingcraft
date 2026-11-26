@@ -5,6 +5,9 @@
 //! face, where `1️⃣` would start in the text face and `❤️` too when the text face has U+2764. So emoji clusters are
 //! laid out in a family of their own, [`family`], whose first face is the colour one, and the rest of the text
 //! keeps its own family ([`job`]). The text itself, and so what a screen reader reads, is unchanged.
+//!
+//! The desktop build embeds the font. The web build starts with egui's monochrome emoji and fetches the font after
+//! the page opens (`web`); `install_color_font` switches faces once it is there.
 
 use std::sync::Arc;
 
@@ -17,33 +20,114 @@ const COLOR_FACE: &str = "NotoColorEmoji";
 /// egui's monochrome emoji faces, left out when the colour face is there.
 const MONOCHROME_FACES: [&str; 2] = ["NotoEmoji-Regular", "emoji-icon-font"];
 
+#[allow(dead_code)]
+mod pin {
+    include!("../font_pin.rs");
+}
+
+/// The colour font, embedded in the desktop build when the build found it (`build.rs`).
 #[cfg(color_emoji)]
-const FONT: Option<&[u8]> = Some(include_bytes!(env!("PINGCRAFT_EMOJI_FONT")));
+pub(crate) const EMBEDDED: Option<&[u8]> = Some(include_bytes!(env!("PINGCRAFT_EMOJI_FONT")));
 #[cfg(not(color_emoji))]
-const FONT: Option<&[u8]> = None;
+pub(crate) const EMBEDDED: Option<&[u8]> = None;
 
 /// The family emoji clusters are laid out in: the colour face first when there is one, then the text faces.
 pub fn family() -> FontFamily {
     FontFamily::Name("emoji".into())
 }
 
-/// egui's default fonts, with the colour emoji face in place of the monochrome ones, and [`family`].
+/// egui's default fonts, with the embedded colour emoji face in place of the monochrome ones, and [`family`].
 pub fn definitions() -> FontDefinitions {
+    definitions_with(EMBEDDED.map(FontData::from_static))
+}
+
+/// egui's default fonts with its monochrome emoji, and [`family`]: what the web build starts with.
+#[cfg(test)]
+pub fn monochrome_definitions() -> FontDefinitions {
+    definitions_with(None)
+}
+
+/// egui's default fonts, with this colour emoji face (if any) in place of the monochrome ones, and [`family`].
+fn definitions_with(font: Option<FontData>) -> FontDefinitions {
     let mut defs = FontDefinitions::default();
-    if let Some(bytes) = FONT {
-        defs.font_data.insert(COLOR_FACE.to_owned(), Arc::new(FontData::from_static(bytes)));
+    let colour = font.is_some();
+    if let Some(font) = font {
+        defs.font_data.insert(COLOR_FACE.to_owned(), Arc::new(font));
         for chain in defs.families.values_mut() {
             chain.retain(|face| !MONOCHROME_FACES.contains(&face.as_str()));
             chain.push(COLOR_FACE.to_owned());
         }
     }
     let mut emoji = defs.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
-    if FONT.is_some() {
+    if colour {
         emoji.retain(|face| face != COLOR_FACE);
         emoji.insert(0, COLOR_FACE.to_owned());
     }
     defs.families.insert(family(), emoji);
     defs
+}
+
+/// Why a colour font that arrived after start was not installed.
+#[cfg(any(test, target_arch = "wasm32"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FontRefused {
+    /// Bigger than the pinned file: not hashed at all.
+    TooBig,
+    /// Not the pinned file (its SHA-256 differs).
+    NotPinned,
+}
+
+/// Installs a colour emoji font that arrived after start (the web build fetches it), in place of egui's monochrome
+/// emoji, from the next frame on. Only the pinned file is accepted (`font_pin.rs`), the same one the desktop
+/// embeds; anything else leaves the fonts as they are.
+#[cfg(any(test, target_arch = "wasm32"))]
+pub fn install_color_font(ctx: &egui::Context, bytes: Vec<u8>) -> Result<(), FontRefused> {
+    use sha2::{Digest, Sha256};
+    if !u64::try_from(bytes.len()).is_ok_and(|n| n <= pin::EMOJI_FONT_BYTES) {
+        return Err(FontRefused::TooBig);
+    }
+    if format!("{:x}", Sha256::digest(&bytes)) != pin::EMOJI_FONT_SHA256 {
+        return Err(FontRefused::NotPinned);
+    }
+    ctx.set_fonts(definitions_with(Some(FontData::from_owned(bytes))));
+    Ok(())
+}
+
+/// Fetching the colour font in the web build, after the page has opened.
+#[cfg(target_arch = "wasm32")]
+pub mod web {
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen_futures::JsFuture;
+
+    /// Where the page finds the font: next to the app, at the same place under the folder as in the fonts folder
+    /// (Trunk copies the pinned file there).
+    pub const FONT_URL: &str = super::pin::EMOJI_FONT_PATH;
+
+    /// Starts fetching the colour font in the background; emoji switch to it once it has arrived and checked out.
+    /// The first frames do not wait for it. If it cannot be fetched, or is not the pinned file, emoji stay
+    /// monochrome and nothing is said: the app works the same without it.
+    pub fn fetch_color_font(ctx: &egui::Context) {
+        let ctx = ctx.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            if let Some(bytes) = fetch(FONT_URL).await
+                && super::install_color_font(&ctx, bytes).is_ok()
+            {
+                ctx.request_repaint();
+            }
+        });
+    }
+
+    async fn fetch(url: &str) -> Option<Vec<u8>> {
+        let window = web_sys::window()?;
+        let response: web_sys::Response = JsFuture::from(window.fetch_with_str(url)).await.ok()?.dyn_into().ok()?;
+        if !response.ok() {
+            return None;
+        }
+        let buffer = JsFuture::from(response.array_buffer().ok()?).await.ok()?;
+        let array = js_sys::Uint8Array::new(&buffer);
+        // Not copied at all when it is bigger than the pinned file.
+        (u64::from(array.length()) <= super::pin::EMOJI_FONT_BYTES).then(|| array.to_vec())
+    }
 }
 
 /// Is this grapheme cluster an emoji to draw in colour? Digits, `#`, `*`, `©`, `®` and `❤` on their own are text;
