@@ -96,6 +96,7 @@ pub(super) fn chat(id: &str, name: &str, network: &str, unread: u32, preview: Op
         marked_unread: false,
         archived: None,
         draft: None,
+        draft_for: None,
     }
 }
 

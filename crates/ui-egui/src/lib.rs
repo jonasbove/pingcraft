@@ -89,6 +89,14 @@ impl PingCraftApp {
         }
     }
 
+    /// PingCraft is closing: keeps the open chat's draft (with a reply or edit in progress), as leaving the chat
+    /// would. Call it before the backend is dropped, so it is handled first.
+    pub fn closing(&mut self) {
+        for command in self.state.leaving() {
+            self.backend.send(command);
+        }
+    }
+
     /// Shows desktop notifications through this notifier.
     pub fn set_notifier(&mut self, notifier: Box<dyn Notifier>) {
         self.notifier = Some(notifier);

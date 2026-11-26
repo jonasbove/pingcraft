@@ -6,7 +6,7 @@ use zeroize::Zeroizing;
 
 use crate::bridge::{Answers, BridgeError, BridgedNetwork, LoginStep, StepRef};
 use crate::encryption::{RecoveryKey, RecoveryStatus, Verification};
-use crate::{AccountId, ChatId, ConnectionState, InboxChange, Message, MessageDetails, MessageId, Mute, Network, Quote};
+use crate::{AccountId, ChatId, ConnectionState, DraftFor, InboxChange, Message, MessageDetails, MessageId, Mute, Network, Quote};
 
 /// Something the user asked for. `Debug` never shows a password, passphrase or message text.
 pub enum Command {
@@ -87,10 +87,12 @@ pub enum Command {
         chat: ChatId,
         archive: bool,
     },
-    /// Keeps what the user typed in a chat and has not sent, or (empty) forgets it.
+    /// Keeps what the user typed in a chat and has not sent, with the message it replies to or edits (`draft_for`),
+    /// or (empty) forgets it.
     SaveDraft {
         chat: ChatId,
         text: String,
+        draft_for: Option<DraftFor>,
     },
     /// Tells the chat whether the user is typing.
     Typing {
@@ -168,7 +170,9 @@ impl std::fmt::Debug for Command {
             Self::Mute { chat, mute } => f.debug_struct("Mute").field("chat", chat).field("mute", mute).finish(),
             Self::MarkUnread(c) => f.debug_tuple("MarkUnread").field(c).finish(),
             Self::Archive { chat, archive } => f.debug_struct("Archive").field("chat", chat).field("archive", archive).finish(),
-            Self::SaveDraft { chat, .. } => f.debug_struct("SaveDraft").field("chat", chat).finish_non_exhaustive(),
+            Self::SaveDraft { chat, draft_for, .. } => {
+                f.debug_struct("SaveDraft").field("chat", chat).field("draft_for", draft_for).finish_non_exhaustive()
+            }
             Self::Typing { chat, typing } => f.debug_struct("Typing").field("chat", chat).field("typing", typing).finish(),
             Self::LoadOlder(c) => f.debug_tuple("LoadOlder").field(c).finish(),
             // Which emoji someone uses is as private as what they write.
@@ -316,7 +320,7 @@ mod tests {
             Command::Reply { chat: crate::ChatId("!a".into()), to: crate::MessageId("m".into()), text: "private reply".into() },
             Command::Edit { chat: crate::ChatId("!a".into()), message: crate::MessageId("m".into()), text: "private edit".into() },
             Command::React { chat: crate::ChatId("!a".into()), message: crate::MessageId("m".into()), key: "🫣".into() },
-            Command::SaveDraft { chat: crate::ChatId("!a".into()), text: "unsent draft".into() },
+            Command::SaveDraft { chat: crate::ChatId("!a".into()), text: "unsent draft".into(), draft_for: None },
             Command::EmojiUsed("🫥".into()),
             Command::SaveSkinTone("medium-dark".into()),
             Command::AnswerLogin {

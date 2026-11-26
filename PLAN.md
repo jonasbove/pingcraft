@@ -470,8 +470,19 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
       row gets an accent mark and counts under UNREAD, and opening the chat takes the mark off.
     - **Drafts kept per chat: done (2026-11-25).** Leaving a chat keeps what was typed in the SDK's composer
       draft, in the encrypted state store (never a plain file, ADR 0004), so it survives a restart; the inbox row
-      says "Draft: …" and the text comes back when the chat is opened. Open: a reply or edit in progress is not kept
-      with it, and the draft of the chat that is open when PingCraft closes is not saved yet.
+      says "Draft: …" and the text comes back when the chat is opened. **A reply or edit in progress is kept with
+      it (2026-11-26)**, as the SDK's draft kind (`ComposerDraftType::Reply`/`Edit` with the message's event ID, so
+      it lasts across restarts), and comes back as the reply bar or the edit once the chat's messages have loaded;
+      when that message is not among the loaded ones, the reply or edit is dropped and the text stays as a new
+      message's draft. The SDK keeps one draft per chat, so during an edit only one thing can be kept (decided here,
+      for the maintainer to confirm): an edit that changed the text is kept, and the draft it set aside is lost; an
+      edit left unchanged is no work, so the set-aside draft is kept instead. **The open chat's draft is saved when
+      PingCraft closes** (2026-11-26): `on_exit` queues it before the engine is dropped, and the engine handles what
+      was queued before it stops (tokio's channel hands out queued commands before reporting it closed). Tests: the
+      AccessKit tree for keeping and restoring a reply and an edit, the unchanged edit, a reply whose message is not
+      loaded, and closing (which only checks that the command is sent); the round trip of the draft kind through the
+      SDK's type (unit). The live draft test (`tests/timeline.rs`) now also keeps a reply draft and reads it back; it **was
+      not run** (no test server in this session). Not tried by hand.
     - **Typing indicators: done (2026-11-25).** "Lars Holm is typing…" over the composer (two names, or
       "several people"); PingCraft tells the chat while the user types (again every 20 s) and when they send or
       empty the field. Per-bridge check pending.
@@ -489,9 +500,10 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
       start-up, after a restart and when PingCraft was not running; the time is now or the last message's time if
       that is later, so a sender's clock running ahead does not bring it straight back. Other Matrix apps do not see
       it as archived. Tests: the rule (core unit tests: counts, muted, no messages, coming back), the archive time,
-      and the menu, the filter and coming back through the AccessKit tree. Not tested against a server (no live
-      test; whether the sync brings another device's archiving into the inbox at once, or only at the next change to
-      the chat, is unchecked) and not tried by hand. **Needs a frame** on page "Messages · Draft" (the filter and the
+      and the menu, the filter and coming back through the AccessKit tree. A live check (in `tests/timeline.rs`, the
+      chat settings test) archives a chat and waits for the inbox to show it archived; it **was not run** (no test
+      server in this session). Whether another device's archiving reaches the inbox at once, or only at the next
+      change to the chat, is unchecked; not tried by hand. **Needs a frame** on page "Messages · Draft" (the filter and the
       menu items), not drawn in this change.
     - **Context menu: done, without shortcuts.** A message's menu opens from its "…" button or a right-click;
       the keyboard shortcuts in the design (through `craft-keymap`) are still to come.

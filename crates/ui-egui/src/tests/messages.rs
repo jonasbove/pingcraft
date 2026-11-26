@@ -4,7 +4,7 @@ use egui::accesskit::Toggled;
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
 use pingcraft_core::app::{Command, Event};
-use pingcraft_core::{Abilities, ChatId, MessageBody, MessageId, Quote, Reaction, SendState};
+use pingcraft_core::{Abilities, ChatId, Message, MessageBody, MessageId, Quote, Reaction, SendState};
 
 use super::{Fake, message, signed_in, type_into};
 use crate::PingCraftApp;
@@ -22,19 +22,26 @@ pub(super) fn book_club(fake: &Fake) -> Harness<'static, PingCraftApp> {
     h.get_by_label_contains("Book club, on Telegram").click();
     h.run();
     fake.take();
+    fake.tell([Event::Messages { chat: ChatId("!book".into()), messages: book_club_messages() }]);
+    h.run();
+    h
+}
+
+/// Book club's messages: one from Lars (reacted to), one of the user's own (edited), a deleted one and a reply.
+pub(super) fn book_club_messages() -> Vec<Message> {
     let mut lars = message("1", "Lars Holm", false, text("Next meeting on Thursday?"), SendState::Sent);
     lars.can = THEIRS;
+    lars.event_id = Some("$lars".into());
     lars.reactions = vec![Reaction { key: "👍".into(), by: vec!["Lars Holm".into(), "Ana".into()], mine: true }];
     let mut mine = message("2", "@Ana:example.org", true, text("Thursday works."), SendState::Sent);
     mine.can = ALL;
     mine.edited = true;
+    mine.event_id = Some("$mine".into());
     let gone = message("3", "Lars Holm", false, MessageBody::Deleted, SendState::Sent);
     let mut reply = message("4", "Mei Tanaka", false, text("I'll bring bread"), SendState::Sent);
     reply.can = THEIRS;
     reply.reply_to = Some(Quote { message: Some(MessageId("1".into())), sender: "Lars Holm".into(), body: text("Next meeting on Thursday?") });
-    fake.tell([Event::Messages { chat: ChatId("!book".into()), messages: vec![lars, mine, gone, reply] }]);
-    h.run();
-    h
+    vec![lars, mine, gone, reply]
 }
 
 fn actions(h: &mut Harness<'static, PingCraftApp>, sender: &str, text: &str) {

@@ -186,6 +186,7 @@ pub(crate) async fn chat_from_room(room: &Room, own: Option<&UserId>) -> Chat {
         Some(name) => name.to_string(),
         None => room.display_name().await.map(|n| n.to_string()).unwrap_or_else(|_| room.room_id().to_string()),
     };
+    let (draft, draft_for) = crate::chat_settings::draft(room).await;
     Chat {
         id: ChatId(room.room_id().to_string()),
         account: None,
@@ -200,7 +201,8 @@ pub(crate) async fn chat_from_room(room: &Room, own: Option<&UserId>) -> Chat {
             true => Some(crate::chat_settings::mute_until(room).await.map_or(Mute::UntilUnmuted, Mute::Until)),
         },
         marked_unread: room.is_marked_unread(),
-        draft: crate::chat_settings::draft(room).await,
+        draft,
+        draft_for,
         archived: crate::chat_settings::archived(room).await,
     }
 }

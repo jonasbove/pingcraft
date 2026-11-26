@@ -270,6 +270,11 @@ async fn pins_mutes_and_marking_unread_reach_the_server() {
     })
     .await;
     assert!(connection.opened(&id).await.unwrap().is_some_and(|c| !c.marked_unread));
+    // Archived: when, in PingCraft's own room account data; and back.
+    let archived = connection.archive(&id, true).await.unwrap();
+    assert!(archived.archived.is_some() && archived.is_archived());
+    inbox_until("the archived chat in the inbox", &mut feed, &mut inbox, |inbox| inbox.get(&id).filter(|c| c.is_archived()).map(|_| ())).await;
+    assert_eq!(connection.archive(&id, false).await.unwrap().archived, None);
     assert_eq!(connection.mute(&id, None).await.unwrap().muted, None);
 }
 
@@ -285,8 +290,12 @@ async fn drafts_are_kept_and_typing_is_seen() {
     join_and_say(&ben, &room, "here").await;
     let (ana_connection, _ana_chat) = open(&ana, &room).await;
     let id = ChatId(room.to_string());
-    assert_eq!(ana_connection.save_draft(&id, "not sent yet").await.unwrap().draft.as_deref(), Some("not sent yet"));
-    assert_eq!(ana_connection.save_draft(&id, "").await.unwrap().draft, None);
+    assert_eq!(ana_connection.save_draft(&id, "not sent yet", None).await.unwrap().draft.as_deref(), Some("not sent yet"));
+    // A reply in progress is kept with it, by event ID (the store does not check the event exists).
+    let reply = pingcraft_core::DraftFor::Reply("$somewhere:example.org".into());
+    let kept = ana_connection.save_draft(&id, "about that", Some(&reply)).await.unwrap();
+    assert_eq!((kept.draft.as_deref(), kept.draft_for), (Some("about that"), Some(reply)));
+    assert_eq!(ana_connection.save_draft(&id, "", None).await.unwrap().draft, None);
 
     let (_ben_connection, mut ben_chat) = open(&ben, &room).await;
     ana_connection.typing(&id, true).await.unwrap();

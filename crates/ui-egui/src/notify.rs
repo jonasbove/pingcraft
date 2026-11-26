@@ -75,6 +75,7 @@ mod tests {
             marked_unread: false,
             archived: None,
             draft: None,
+            draft_for: None,
         }
     }
 

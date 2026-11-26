@@ -12,11 +12,12 @@
 
 use matrix_sdk::Room;
 use matrix_sdk::notification_settings::RoomNotificationMode;
+use matrix_sdk::ruma::OwnedEventId;
 use matrix_sdk::ruma::OwnedRoomId;
 use matrix_sdk::ruma::events::RoomAccountDataEventType;
 use matrix_sdk::ruma::serde::Raw;
 use matrix_sdk::store::{ComposerDraft, ComposerDraftType};
-use pingcraft_core::{Chat, ChatId, Mute, Timestamp};
+use pingcraft_core::{Chat, ChatId, DraftFor, Mute, Timestamp};
 use serde_json::json;
 
 use crate::connection::Connection;
@@ -120,20 +121,21 @@ impl Connection {
         Ok(now)
     }
 
-    /// Keeps the user's draft for a chat, or (empty) forgets it.
-    pub async fn save_draft(&self, chat: &ChatId, text: &str) -> Result<Chat, String> {
+    /// Keeps the user's draft for a chat, with the message it replies to or edits (by event ID), or (empty) forgets
+    /// it.
+    pub async fn save_draft(&self, chat: &ChatId, text: &str, draft_for: Option<&DraftFor>) -> Result<Chat, String> {
         let room = self.room(chat)?;
         let text = text.trim();
         let done = if text.is_empty() {
             room.clear_composer_draft(None).await
         } else {
-            let draft =
-                ComposerDraft { plain_text: text.to_owned(), html_text: None, draft_type: ComposerDraftType::NewMessage, attachments: Vec::new() };
+            let draft = ComposerDraft { plain_text: text.to_owned(), html_text: None, draft_type: draft_type(draft_for), attachments: Vec::new() };
             room.save_composer_draft(draft, None).await
         };
         done.map_err(|e| problem("the draft could not be kept", e))?;
         let mut now = self.chat_now(&room).await;
         now.draft = (!text.is_empty()).then(|| text.to_owned());
+        now.draft_for = if text.is_empty() { None } else { draft_for.cloned().filter(|f| draft_type(Some(f)) != ComposerDraftType::NewMessage) };
         Ok(now)
     }
 
@@ -163,9 +165,32 @@ async fn set_mute_until(room: &Room, until: u64) -> Result<(), String> {
         .map_err(|e| problem("the mute could not be saved", e))
 }
 
-/// The user's draft for a room, from the store.
-pub(crate) async fn draft(room: &Room) -> Option<String> {
-    room.load_composer_draft(None).await.ok().flatten().map(|d| d.plain_text).filter(|t| !t.trim().is_empty())
+/// The SDK's kind of draft for what a draft is for. A message ID that is not an event ID (one still being sent)
+/// makes a new message's draft.
+fn draft_type(draft_for: Option<&DraftFor>) -> ComposerDraftType {
+    let event = |id: &String| OwnedEventId::try_from(id.as_str()).ok();
+    match draft_for {
+        Some(DraftFor::Reply(id)) => event(id).map_or(ComposerDraftType::NewMessage, |event_id| ComposerDraftType::Reply { event_id }),
+        Some(DraftFor::Edit(id)) => event(id).map_or(ComposerDraftType::NewMessage, |event_id| ComposerDraftType::Edit { event_id }),
+        None => ComposerDraftType::NewMessage,
+    }
+}
+
+/// What a draft of the SDK's kind is for.
+fn draft_for(kind: ComposerDraftType) -> Option<DraftFor> {
+    match kind {
+        ComposerDraftType::Reply { event_id } => Some(DraftFor::Reply(event_id.to_string())),
+        ComposerDraftType::Edit { event_id } => Some(DraftFor::Edit(event_id.to_string())),
+        ComposerDraftType::NewMessage => None,
+    }
+}
+
+/// The user's draft for a room, from the store, and what it is for.
+pub(crate) async fn draft(room: &Room) -> (Option<String>, Option<DraftFor>) {
+    match room.load_composer_draft(None).await.ok().flatten().filter(|d| !d.plain_text.trim().is_empty()) {
+        Some(d) => (Some(d.plain_text), draft_for(d.draft_type)),
+        None => (None, None),
+    }
 }
 
 /// Whether a room is muted, by the rule the sync last reported.
@@ -177,7 +202,10 @@ pub(crate) fn is_muted(room: &Room) -> bool {
 mod tests {
     use pingcraft_core::Timestamp;
 
-    use super::{ARCHIVED, MUTE_UNTIL, archive_time};
+    use matrix_sdk::store::ComposerDraftType;
+    use pingcraft_core::DraftFor;
+
+    use super::{ARCHIVED, MUTE_UNTIL, archive_time, draft_for, draft_type};
 
     /// The name other Matrix apps and later versions find the data under: it must not change by accident.
     #[test]
@@ -186,6 +214,17 @@ mod tests {
         assert_eq!(MUTE_UNTIL, "io.github.jonasbove.pingcraft.mute_until");
         assert!(MUTE_UNTIL.starts_with(&format!("{}.", crate::NAMESPACE)));
         assert_eq!(ARCHIVED, "io.github.jonasbove.pingcraft.archived");
+    }
+
+    /// A draft's reply or edit goes into the store and comes back as it was; one for a message with no event ID yet
+    /// is kept as a new message's draft.
+    #[test]
+    fn what_a_draft_is_for_is_kept() {
+        for kept in [DraftFor::Reply("$abc:example.org".into()), DraftFor::Edit("$def:example.org".into())] {
+            assert_eq!(draft_for(draft_type(Some(&kept))), Some(kept));
+        }
+        assert_eq!(draft_type(Some(&DraftFor::Reply("not an event ID".into()))), ComposerDraftType::NewMessage);
+        assert_eq!(draft_for(draft_type(None)), None);
     }
 
     /// A chat whose last message is stamped ahead of this computer's clock is archived at that time, so it does not

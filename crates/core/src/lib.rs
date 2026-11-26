@@ -135,9 +135,19 @@ pub struct Chat {
     pub marked_unread: bool,
     /// What the user typed and has not sent yet, kept in the encrypted store.
     pub draft: Option<String>,
+    /// The message the draft replies to or edits; `None` for a new message.
+    pub draft_for: Option<DraftFor>,
     /// When the user archived it (PingCraft's own room account data). Whether it is still archived is
     /// [`Chat::is_archived`]: a newer message brings it back unless it is muted.
     pub archived: Option<Timestamp>,
+}
+
+/// What a draft is for, besides a new message: a reply to a message, or an edit of one of the user's own, by the
+/// message's [`Message::event_id`] (a [`MessageId`] does not last from one run to the next; the event ID does).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DraftFor {
+    Reply(String),
+    Edit(String),
 }
 
 /// How long a chat stays muted.
@@ -201,12 +211,26 @@ pub struct Message {
     /// What the user may do with it, as the adapter worked out (a message still on its way out has no ID on the
     /// server yet, so it cannot be replied to or reacted to).
     pub can: Abilities,
+    /// Its ID on the server, which stays the same from one run to the next; `None` while it is still being sent.
+    pub event_id: Option<String>,
 }
 
 impl Message {
     /// A message with no reactions, reply or edits, that nothing can be done with yet. For adapters and tests.
     pub fn new(id: MessageId, sender: impl Into<String>, own: bool, at: Timestamp, body: MessageBody, state: SendState) -> Self {
-        Self { id, sender: sender.into(), own, at, body, state, reactions: Vec::new(), reply_to: None, edited: false, can: Abilities::default() }
+        Self {
+            id,
+            sender: sender.into(),
+            own,
+            at,
+            body,
+            state,
+            reactions: Vec::new(),
+            reply_to: None,
+            edited: false,
+            can: Abilities::default(),
+            event_id: None,
+        }
     }
 
     /// The reaction with this key the user gave, if they gave it.
@@ -320,6 +344,7 @@ mod tests {
             marked_unread: false,
             archived: None,
             draft: None,
+            draft_for: None,
         };
         assert_eq!(chat.last_activity(), Timestamp(0));
         chat.last_message = Some(MessagePreview { sender: "Ana".into(), own: false, body: MessageBody::Text("hi".into()), at: Timestamp(5) });

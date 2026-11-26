@@ -391,6 +391,7 @@ fn message(id: &TimelineUniqueId, event: &EventTimelineItem, known: &Known<'_>, 
     let body = kind_body(&content.kind);
     let deleted = body == MessageBody::Deleted;
     let mut m = Message::new(MessageId(id.0.clone()), sender, event.is_own(), Timestamp(u64::from(event.timestamp().0)), body, state);
+    m.event_id = event.event_id().map(ToString::to_string);
     m.edited = matches!(&content.kind, MsgLikeKind::Message(message) if message.is_edited());
     m.reactions = reactions(content, known);
     m.reply_to = content.in_reply_to.as_ref().map(|r| quote(r, known, missing));

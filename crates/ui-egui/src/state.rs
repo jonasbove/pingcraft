@@ -6,7 +6,9 @@ use pingcraft_core::app::{Command, Event, SignInProblem};
 use pingcraft_core::bridge::{BridgeError, BridgedNetwork, LoginStep};
 use pingcraft_core::encryption::{RecoveryKey, RecoveryStatus, Verification};
 use pingcraft_core::notify::Notification;
-use pingcraft_core::{Account, ChatId, ConnectionState, Filter, Inbox, InboxChange, Message, MessageBody, MessageDetails, MessageId, Network, Quote};
+use pingcraft_core::{
+    Account, ChatId, ConnectionState, DraftFor, Filter, Inbox, InboxChange, Message, MessageBody, MessageDetails, MessageId, Network, Quote,
+};
 use zeroize::Zeroizing;
 
 use crate::i18n::fmt;
@@ -179,6 +181,8 @@ pub struct OpenChat {
     pub to_bottom: bool,
     /// The message a reaction is being chosen for in the emoji picker.
     pub reacting: Option<MessageId>,
+    /// The reply or edit kept with the draft, waiting for the chat's messages to find its message.
+    pub restoring: Option<DraftFor>,
 }
 
 /// Forwarding messages from the open chat: which ones, and where to.
@@ -211,6 +215,7 @@ impl OpenChat {
             at_bottom: true,
             to_bottom: false,
             reacting: None,
+            restoring: None,
         }
     }
 
@@ -254,9 +259,49 @@ impl OpenChat {
         }
     }
 
+    /// Picks up the reply or edit kept with the draft once the messages have come: the reply bar, or the edit, over
+    /// the composer. When its message is not among them, it is dropped and the text stays as a new message's draft.
+    fn restore(&mut self) {
+        if self.messages.is_empty() {
+            return;
+        }
+        let Some(draft_for) = self.restoring.take() else { return };
+        let find = |event: &str| self.messages.iter().find(|m| m.event_id.as_deref() == Some(event)).map(|m| m.id.clone());
+        match draft_for {
+            DraftFor::Reply(event) => self.replying = find(&event),
+            // The draft is the edited text; should the edit end, that text stays.
+            DraftFor::Edit(event) => self.editing = find(&event).map(|id| (id, self.draft.clone())),
+        }
+    }
+
+    /// The draft to keep when leaving the chat, and what it is for. An edit is kept when it changed something;
+    /// otherwise the draft it set aside is kept, as a new message's.
+    pub fn draft_to_keep(&self) -> (String, Option<DraftFor>) {
+        let event = |id: &MessageId| self.message(id).and_then(|m| m.event_id.clone());
+        let text = self.draft.trim().to_owned();
+        if let Some((id, before)) = &self.editing {
+            let original = match self.message(id).map(|m| &m.body) {
+                Some(MessageBody::Text(t)) => t.trim(),
+                _ => "",
+            };
+            return match event(id) {
+                Some(event) if text != original && !text.is_empty() => (text, Some(DraftFor::Edit(event))),
+                _ => (before.trim().to_owned(), None),
+            };
+        }
+        if text.is_empty() {
+            return (text, None);
+        }
+        match (&self.replying, &self.restoring) {
+            (Some(id), _) => (text, event(id).map(DraftFor::Reply)),
+            (None, restoring) => (text, restoring.clone()),
+        }
+    }
+
     /// Takes in a new list of messages; a reply, edit or deletion of a message that is gone is dropped.
     fn set_messages(&mut self, messages: Vec<Message>) {
         self.messages = messages;
+        self.restore();
         let gone = |id: &Option<MessageId>, list: &[Message]| id.as_ref().is_some_and(|id| !list.iter().any(|m| &m.id == id));
         if gone(&self.replying, &self.messages) {
             self.replying = None;
@@ -463,7 +508,10 @@ impl State {
             return;
         }
         let mut open = OpenChat::new(id);
-        open.draft = self.inbox.get(&open.id).and_then(|c| c.draft.clone()).unwrap_or_default();
+        if let Some(chat) = self.inbox.get(&open.id) {
+            open.draft = chat.draft.clone().unwrap_or_default();
+            open.restoring = chat.draft_for.clone();
+        }
         self.open = Some(open);
     }
 
@@ -475,14 +523,10 @@ impl State {
         if open.typing_told.is_some() {
             out.push(Command::Typing { chat: open.id.clone(), typing: false });
         }
-        // A draft set aside for an edit is the draft.
-        let draft = match &open.editing {
-            Some((_, before)) => before.trim(),
-            None => open.draft.trim(),
-        };
-        let kept = self.inbox.get(&open.id).and_then(|c| c.draft.as_deref()).unwrap_or_default();
-        if draft != kept {
-            out.push(Command::SaveDraft { chat: open.id.clone(), text: draft.to_owned() });
+        let (text, draft_for) = open.draft_to_keep();
+        let kept = self.inbox.get(&open.id).map(|c| (c.draft.as_deref().unwrap_or_default(), c.draft_for.as_ref()));
+        if kept != Some((text.as_str(), draft_for.as_ref())) && !(kept.is_none() && text.is_empty()) {
+            out.push(Command::SaveDraft { chat: open.id.clone(), text, draft_for });
         }
         out
     }
@@ -508,6 +552,7 @@ mod tests {
             marked_unread: false,
             archived: None,
             draft: None,
+            draft_for: None,
         }
     }
 

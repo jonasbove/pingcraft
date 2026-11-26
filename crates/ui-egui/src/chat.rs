@@ -516,7 +516,7 @@ fn composer(ui: &mut Ui, open: &mut OpenChat, name: &str, chat: Option<&Chat>, o
     });
     // The draft kept in the store has been sent: forget it, or it would come back.
     if let Some(c) = chat_kept.filter(|c| c.draft.is_some()) {
-        out.push(Command::SaveDraft { chat: c.id.clone(), text: String::new() });
+        out.push(Command::SaveDraft { chat: c.id.clone(), text: String::new(), draft_for: None });
     }
 }
 

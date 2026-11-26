@@ -74,6 +74,8 @@ impl eframe::App for Window {
     }
 
     fn on_exit(&mut self) {
+        // Before the engine is dropped (with the app, after this), which handles what is queued before it stops.
+        self.app.closing();
         if let Err(e) = self.settings.flush() {
             eprintln!("pingcraft: the settings could not be saved: {e}");
         }

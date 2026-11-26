@@ -112,7 +112,10 @@ fn a_draft_is_kept_when_leaving_a_chat_and_shown_in_the_inbox() {
     h.get_by_label_contains("Lars Holm, on Matrix").click();
     h.run();
     let sent = fake.take();
-    assert!(sent.iter().any(|c| matches!(c, Command::SaveDraft { chat, text } if chat.0 == "!book" && text == "half a thought")), "{sent:?}");
+    assert!(
+        sent.iter().any(|c| matches!(c, Command::SaveDraft { chat, text, draft_for: None } if chat.0 == "!book" && text == "half a thought")),
+        "{sent:?}"
+    );
     // The inbox hears of it from the store.
     let mut book = chat("!book", "Book club", "Telegram", 0, Some(("Lars", "The ending of chapter 8")));
     book.draft = Some("half a thought".into());
@@ -225,4 +228,132 @@ fn a_chat_can_be_archived_and_found_under_archived() {
     h.run();
     h.get_by_label_contains("Book club, on Telegram");
     h.get_by_label("ARCHIVED 0");
+}
+
+/// The draft that is kept, as the backend was asked to keep it: its text and what it is for.
+fn kept_draft(fake: &Fake) -> Option<(String, Option<pingcraft_core::DraftFor>)> {
+    fake.take().into_iter().rev().find_map(|c| match c {
+        Command::SaveDraft { text, draft_for, .. } => Some((text, draft_for)),
+        _ => None,
+    })
+}
+
+/// A reply in progress is kept with the draft (by the message's event ID), and comes back with it: the reply bar
+/// over the composer once the message is loaded.
+#[test]
+fn a_reply_in_progress_is_kept_with_the_draft() {
+    use pingcraft_core::DraftFor;
+    let fake = Fake::default();
+    let mut h = book_club(&fake);
+    h.get_by_label("Message actions: Lars Holm, Next meeting on Thursday?").click();
+    h.run();
+    h.get_by_label("Reply").click();
+    h.run();
+    super::type_into(&mut h, "Message Book club", "yes, Thursday");
+    fake.take();
+    h.get_by_label_contains("Lars Holm, on Matrix").click();
+    h.run();
+    assert_eq!(kept_draft(&fake), Some(("yes, Thursday".into(), Some(DraftFor::Reply("$lars".into())))));
+
+    let mut book = chat("!book", "Book club", "Telegram", 0, Some(("Lars", "The ending of chapter 8")));
+    book.draft = Some("yes, Thursday".into());
+    book.draft_for = Some(DraftFor::Reply("$lars".into()));
+    fake.tell([Event::Inbox(InboxChange::Upsert(book))]);
+    h.run();
+    h.get_by_label_contains("Book club, on Telegram").click();
+    h.run();
+    let messages = super::messages::book_club_messages();
+    fake.tell([Event::Messages { chat: ChatId("!book".into()), messages }]);
+    h.run();
+    h.get_by_label("Replying to Lars Holm");
+    fake.take();
+    h.get_by_label("SEND").click();
+    h.run();
+    let sent = fake.take();
+    assert!(
+        matches!(&sent[..], [Command::Reply { to, text, .. }, Command::SaveDraft { text: kept, .. }] if to.0 == "1" && text == "yes, Thursday" && kept.is_empty()),
+        "{sent:?}"
+    );
+}
+
+/// An edit in progress is kept as the draft and comes back as an edit. An edit left unchanged is no work in
+/// progress: the draft set aside for it is kept instead.
+#[test]
+fn an_edit_in_progress_is_kept_with_the_draft() {
+    use pingcraft_core::DraftFor;
+    let fake = Fake::default();
+    let mut h = book_club(&fake);
+    super::type_into(&mut h, "Message Book club", "set aside");
+    h.get_by_label("Message actions: You, Thursday works.").click();
+    h.run();
+    h.get_by_label("Edit").click();
+    h.run();
+    fake.take();
+    h.get_by_label_contains("Lars Holm, on Matrix").click();
+    h.run();
+    assert_eq!(kept_draft(&fake), Some(("set aside".into(), None)), "an unchanged edit keeps the set-aside draft");
+
+    h.get_by_label_contains("Book club, on Telegram").click();
+    h.run();
+    fake.tell([Event::Messages { chat: ChatId("!book".into()), messages: super::messages::book_club_messages() }]);
+    h.run();
+    h.get_by_label("Message actions: You, Thursday works.").click();
+    h.run();
+    h.get_by_label("Edit").click();
+    h.run();
+    // Typed at the end of the text (where the cursor lands when focused is egui's business).
+    h.state_mut().state.open.as_mut().unwrap().draft.push_str(" Friday too.");
+    h.run();
+    fake.take();
+    h.get_by_label_contains("Lars Holm, on Matrix").click();
+    h.run();
+    assert_eq!(kept_draft(&fake), Some(("Thursday works. Friday too.".into(), Some(DraftFor::Edit("$mine".into())))));
+
+    let mut book = chat("!book", "Book club", "Telegram", 0, None);
+    book.draft = Some("Thursday works. Friday too.".into());
+    book.draft_for = Some(DraftFor::Edit("$mine".into()));
+    fake.tell([Event::Inbox(InboxChange::Upsert(book))]);
+    h.run();
+    h.get_by_label_contains("Book club, on Telegram").click();
+    h.run();
+    fake.tell([Event::Messages { chat: ChatId("!book".into()), messages: super::messages::book_club_messages() }]);
+    h.run();
+    h.get_by_label("Editing your message");
+    fake.take();
+    h.get_by_label("SAVE").click();
+    h.run();
+    let sent = fake.take();
+    assert!(matches!(&sent[..], [Command::Edit { message, text, .. }, ..] if message.0 == "2" && text == "Thursday works. Friday too."), "{sent:?}");
+}
+
+/// A restored reply to a message that is not among the loaded ones is dropped, and its text stays as a new draft.
+#[test]
+fn a_restored_reply_to_a_message_not_loaded_keeps_its_text() {
+    use pingcraft_core::DraftFor;
+    let fake = Fake::default();
+    let mut h = signed_in(&fake);
+    let mut book = chat("!book", "Book club", "Telegram", 0, None);
+    book.draft = Some("about that".into());
+    book.draft_for = Some(DraftFor::Reply("$gone".into()));
+    fake.tell([Event::Inbox(InboxChange::Upsert(book))]);
+    h.run();
+    h.get_by_label_contains("Book club, on Telegram").click();
+    h.run();
+    fake.tell([Event::Messages { chat: ChatId("!book".into()), messages: vec![] }]);
+    h.run();
+    fake.tell([Event::Messages { chat: ChatId("!book".into()), messages: super::messages::book_club_messages() }]);
+    h.run();
+    assert!(h.query_by_label("Replying to Lars Holm").is_none());
+    assert_eq!(h.state().state.open.as_ref().map(|o| o.draft.as_str()), Some("about that"));
+}
+
+/// The open chat's draft is kept when PingCraft closes.
+#[test]
+fn the_open_chats_draft_is_kept_when_pingcraft_closes() {
+    let fake = Fake::default();
+    let mut h = book_club(&fake);
+    super::type_into(&mut h, "Message Book club", "unfinished");
+    fake.take();
+    h.state_mut().closing();
+    assert_eq!(kept_draft(&fake), Some(("unfinished".into(), None)));
 }
