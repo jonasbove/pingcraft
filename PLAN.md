@@ -507,7 +507,8 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
       message's draft. The SDK keeps one draft per chat, so during an edit only one thing can be kept (decided here,
       for the maintainer to confirm): an edit that changed the text is kept, and the draft it set aside is lost; an
       edit left unchanged is no work, so the set-aside draft is kept instead. **The open chat's draft is saved when
-      PingCraft closes** (2026-11-26): `on_exit` queues it before the engine is dropped, and the engine handles what
+      PingCraft closes** (2026-11-26): `on_exit` queues it (only it: not the "stopped typing" notice, a request the closing window would wait on)
+      before the engine is dropped, and the engine handles what
       was queued before it stops (tokio's channel hands out queued commands before reporting it closed). Tests: the
       AccessKit tree for keeping and restoring a reply and an edit, the unchanged edit, a reply whose message is not
       loaded, and closing (which only checks that the command is sent); the round trip of the draft kind through the

@@ -269,8 +269,8 @@ impl OpenChat {
         let find = |event: &str| self.messages.iter().find(|m| m.event_id.as_deref() == Some(event)).map(|m| m.id.clone());
         match draft_for {
             DraftFor::Reply(event) => self.replying = find(&event),
-            // The draft is the edited text; should the edit end, that text stays.
-            DraftFor::Edit(event) => self.editing = find(&event).map(|id| (id, self.draft.clone())),
+            // The draft is the edited text; nothing was set aside for it (the SDK keeps one draft per chat).
+            DraftFor::Edit(event) => self.editing = find(&event).map(|id| (id, String::new())),
         }
     }
 

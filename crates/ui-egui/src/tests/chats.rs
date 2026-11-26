@@ -324,6 +324,7 @@ fn an_edit_in_progress_is_kept_with_the_draft() {
     h.run();
     let sent = fake.take();
     assert!(matches!(&sent[..], [Command::Edit { message, text, .. }, ..] if message.0 == "2" && text == "Thursday works. Friday too."), "{sent:?}");
+    assert_eq!(h.state().state.open.as_ref().map(|o| o.draft.as_str()), Some(""), "the composer is empty once the edit is saved");
 }
 
 /// A restored reply to a message that is not among the loaded ones is dropped, and its text stays as a new draft.
@@ -353,9 +354,11 @@ fn the_open_chats_draft_is_kept_when_pingcraft_closes() {
     let fake = Fake::default();
     let mut h = book_club(&fake);
     super::type_into(&mut h, "Message Book club", "unfinished");
-    fake.take();
+    fake.take_all();
     h.state_mut().closing();
-    assert_eq!(kept_draft(&fake), Some(("unfinished".into(), None)));
+    let sent = fake.take_all();
+    // Only the draft: telling the chat the user stopped typing is a request the closing window would wait on.
+    assert!(matches!(&sent[..], [Command::SaveDraft { text, draft_for: None, .. }] if text == "unfinished"), "{sent:?}");
 }
 
 /// A chat's notification sound and accent colour are set from its menu; unset, they follow the network's, which the

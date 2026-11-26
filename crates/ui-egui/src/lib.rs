@@ -90,10 +90,13 @@ impl PingCraftApp {
     }
 
     /// PingCraft is closing: keeps the open chat's draft (with a reply or edit in progress), as leaving the chat
-    /// would. Call it before the backend is dropped, so it is handled first.
+    /// would. Call it before the backend is dropped, so it is handled first. Only the draft: the window waits for
+    /// what is queued, and telling the chat the user stopped typing is a request not worth that wait.
     pub fn closing(&mut self) {
         for command in self.state.leaving() {
-            self.backend.send(command);
+            if matches!(command, Command::SaveDraft { .. }) {
+                self.backend.send(command);
+            }
         }
     }
 
