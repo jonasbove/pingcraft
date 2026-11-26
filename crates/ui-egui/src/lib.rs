@@ -81,6 +81,12 @@ impl PingCraftApp {
         }
     }
 
+    /// Asks for the first frame's input from the settings given with [`Self::set_prefs`], so the window opens in the
+    /// chosen mode (no light frame before a dark one). Call it once, after `set_prefs` and before the first frame.
+    pub fn prime(&mut self, ctx: &egui::Context) {
+        self.next_input(ctx);
+    }
+
     /// Asks for the next frame's input (the theme's mode, PingCraft's commands and their state), which
     /// [`framework::before_input`] hands craft-ui's runtime.
     fn next_input(&mut self, ctx: &egui::Context) {

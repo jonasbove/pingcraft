@@ -241,7 +241,12 @@ Goal: a user connects Telegram, Signal and WhatsApp accounts from PingCraft, aft
 11. **Built (2026-11-26), with gaps; no frame yet** (it follows craft-libs' preferences pattern, so the design file
     needs a `settings` frame drawn after it). The SETTINGS tab, on `PreferencesPage` (craft-libs update, step 5):
     - **Appearance:** light, dark, or as the system is (default), as craft-theme's mode, kept on this computer
-      (`[appearance] mode` in craft-settings' `config.toml`). A footnote says colour themes are not there yet (M6 ticket
+      (`[appearance] mode = "light" | "dark" | "system"` in craft-settings' `config.toml`: on Linux
+      `$XDG_CONFIG_HOME/pingcraft/config.toml`, or `$PINGCRAFT_CONFIG_DIR/config.toml`), also from View, Appearance in
+      the app menu. It is read and handed to the runtime before the first frame (`PingCraftApp::prime`; tested), so a
+      dark choice never opens on a light frame. "As the system is" follows craft-platform's appearance reader, which
+      `framework::install` starts on the desktop (the XDG portal's `color-scheme` on Linux) and which wakes the window
+      when it changes; not tried by hand. A footnote says colour themes are not there yet (M6 ticket
       7 adds them on this page).
     - **Notifications:** message text in notifications on or off (off: "New message from …"), kept on this computer
       (`[notifications] previews`); and each network's notification sound and accent colour (moved here from the

@@ -82,6 +82,23 @@ fn appearance_is_light_dark_or_the_systems() {
     h.get_by_label_contains("Colour themes are not available yet");
 }
 
+/// The saved appearance applies from the very first frame: a window set to dark never shows a light frame first.
+#[test]
+fn a_saved_dark_appearance_shows_from_the_first_frame() {
+    let ctx = super::context();
+    let mut app = PingCraftApp::new(Box::new(Fake::default()));
+    app.set_prefs(crate::Prefs { appearance: Appearance::Dark, previews: true });
+    app.prime(&ctx);
+    // One pass, the window's first: the theme it resolves is dark.
+    let mut dark = None;
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| dark = Some(crate::Tokens::get(ui.ctx()).dark));
+    output.textures_delta.clear();
+    assert_eq!(dark, Some(true), "dark from the first frame");
+    let mut h = egui_kittest::Harness::builder().with_context(ctx).with_size(egui::vec2(1200.0, 760.0)).build_ui_state(super::frame, app);
+    h.run();
+    assert!(crate::Tokens::get(&h.ctx).dark, "and after");
+}
+
 #[test]
 fn notifications_set_previews_and_each_networks_sound_and_colour() {
     let fake = Fake::default();

@@ -184,6 +184,8 @@ fn main() -> ExitCode {
             let kept = &settings.get().emoji;
             app.set_local_skin_tone(SkinTone::from_id(&kept.skin_tone), kept.skin_tone_migrated);
             app.set_prefs(local_prefs(settings.get()));
+            // Before the first frame, so it opens in the saved mode.
+            app.prime(&cc.egui_ctx);
             let ctx = cc.egui_ctx.clone();
             app.set_notifier(pingcraft_notify::desktop(Arc::new(move || ctx.request_repaint())));
             Ok(Box::new(Window { app, settings }))
