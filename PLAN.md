@@ -506,7 +506,11 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
       change to the chat, is unchecked; not tried by hand. **Needs a frame** on page "Messages · Draft" (the filter and the
       menu items), not drawn in this change.
     - **Context menu: done, without shortcuts.** A message's menu opens from its "…" button or a right-click;
-      the keyboard shortcuts in the design (through `craft-keymap`) are still to come.
+      the keyboard shortcuts in the design (through `craft-keymap`) are still to come. **They come with the
+      craft-libs update** (maintainer, 2026-11-26): the bump from the pinned `cdee9b8` brings craft-keymap's and
+      craft-menu's shortcuts, so they are not built on the old pin. The draft frames' keys, for then: R reply,
+      E react, Ctrl+C copy text, F forward, P pin, S select, I details, Up edit, Del delete (while the menu is open;
+      never while a text field has focus).
 13. **PingCraft's own interface icons** (maintainer, 2026-11-25). A set of a few dozen original icons, drawn for
     PingCraft as SVGs in the design's language (hairline strokes, square ends): reply, forward, react, more, pin,
     unpin, mute and unmute, edit, delete, select, copy, details, jump to latest, search, the encryption marks, and
