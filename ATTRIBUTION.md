@@ -32,3 +32,12 @@ egui's own fonts (Ubuntu Light, Hack, Noto Emoji, the emoji icon font; OFL-1.1, 
 
 The design is built with Inter, Archivo and Geist Mono (SIL OFL 1.1) from
 `storytold/craft-fonts`, passed to `design/tools/build.py` with `--fonts`.
+
+## Vendored code
+
+Third-party crates carried in the repository, patched; what changed and why is in `vendor/README.md`.
+
+| Files | Source | Licence |
+|---|---|---|
+| `vendor/ruma-common-0.20.2/` | The crates.io release ruma-common 0.20.2 ([ruma/ruma](https://github.com/ruma/ruma) at `68994653`, `crates/ruma-common`), with explicit types on three `deserialize` calls. `LICENSE` from the same commit. | MIT |
+| `vendor/ruma-events-0.35.2/` | The crates.io release ruma-events 0.35.2 ([ruma/ruma](https://github.com/ruma/ruma) at `7d271623`, `crates/ruma-events`), with an explicit type on one `deserialize` call. `LICENSE` from the same commit. | MIT |

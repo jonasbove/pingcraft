@@ -5097,8 +5097,6 @@ dependencies = [
 [[package]]
 name = "ruma-common"
 version = "0.20.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b496f80bc1cca375294fba5170bfb5d00f0de0ed655675dc72fa782643f54ea"
 dependencies = [
  "as_variant",
  "base64 0.23.1",
@@ -5131,8 +5129,6 @@ dependencies = [
 [[package]]
 name = "ruma-events"
 version = "0.35.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28eb4aebc89f505550aad7dacaf86276d8041992836ff53e4cebfcb0165beec5"
 dependencies = [
  "as_variant",
  "indexmap",

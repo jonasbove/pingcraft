@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "apps/*", "xtask"]
+# Patched third-party crates (vendor/README.md): not ours, so not formatted, linted or layered as ours.
+exclude = ["vendor"]
 
 [workspace.package]
 version = "0.1.0"
@@ -65,3 +67,7 @@ egui_glow = { git = "https://github.com/storytold/egui.git", rev = "6d518fc79968
 egui_kittest = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
 eframe = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
 winit = { git = "https://github.com/storytold/winit.git", rev = "a517b3846ee8457d84ee4975110bfda6797c44dc" }
+# ruma with explicit types on four `deserialize` calls, so it compiles next to craft-i18n (E0275 once `zerovec/serde`
+# is on). Unmodified crates.io releases otherwise; removed once ruma releases the fix (vendor/README.md).
+ruma-common = { path = "vendor/ruma-common-0.20.2" }
+ruma-events = { path = "vendor/ruma-events-0.35.2" }
