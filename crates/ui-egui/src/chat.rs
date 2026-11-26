@@ -3,7 +3,7 @@
 
 use egui::{Align, Color32, Layout, Margin, RichText, ScrollArea, Sense, Stroke, Ui, Vec2};
 use pingcraft_core::app::Command;
-use pingcraft_core::{Alerts, Chat, Mute, Network};
+use pingcraft_core::{Alerts, Chat, EmojiPresentation, Mute, Network};
 
 use crate::emoji;
 use crate::i18n::fmt;
@@ -15,10 +15,16 @@ use crate::tl;
 use crate::view::Out;
 use crate::widgets::{Kind, avatar, button, hud, network_name, note};
 
+/// How the chat's network's app draws symbols that are text by default; Unicode's way before the chat is known.
+fn emoji_presentation(chat: Option<&Chat>) -> EmojiPresentation {
+    chat.map_or(EmojiPresentation::Unicode, |c| c.network.emoji_presentation())
+}
+
 /// The open chat. Returns whether the user left it (marking it unread).
 pub fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, network: Alerts, out: &mut Out) -> bool {
     let t = Tokens::get(ui.ctx());
     let name = chat.map(|c| c.name.clone()).unwrap_or_default();
+    let presentation = emoji_presentation(chat);
     let mut leave = false;
     // The header.
     egui::Panel::top("chat-header").exact_size(64.0).frame(egui::Frame::new().inner_margin(Margin::symmetric(24, 0))).show(ui, |ui| {
@@ -30,7 +36,7 @@ pub fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, network:
                 let tag_h = ui.fonts_mut(|f| f.row_height(&egui::FontId::monospace(10.0))) + 2.0;
                 let height = if chat.is_some() { name_h + ui.spacing().item_spacing.y + tag_h } else { name_h };
                 ui.add_space(((ui.available_height() - height) / 2.0).max(0.0));
-                ui.label(emoji::text(&name, 16.0, t.ink_strong));
+                ui.label(emoji::text(&name, 16.0, t.ink_strong, presentation));
                 if let Some(chat) = chat {
                     crate::widgets::network_tag_in(ui, &chat.network, chat.alerts.over(network).accent);
                 }
@@ -69,7 +75,7 @@ pub fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, network:
         encrypt_sheet(ui.ctx(), open, &name, out);
     }
     if !open.pinned.is_empty() {
-        pinned_bar(ui, open, out);
+        pinned_bar(ui, open, presentation, out);
     }
     // The composer, with the reply or edit bar over it; while selecting, what can be done with the selection. Hidden
     // under a sheet, so the sheet's buttons are the only ones with their names.
@@ -97,7 +103,7 @@ pub fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, network:
                     last_day = day;
                 }
                 let ticked = open.selected.as_ref().map(|s| s.contains(&message.id));
-                let cx = Cx { chat: &open.id, pinned: &pinned };
+                let cx = Cx { chat: &open.id, pinned: &pinned, emoji: presentation };
                 let (rect, act) = crate::message::message_view(ui, message, &cx, ticked, out);
                 if open.jump_to.as_ref() == Some(&message.id) {
                     ui.scroll_to_rect(rect, Some(Align::Center));
@@ -130,7 +136,7 @@ pub fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, network:
         }
     });
     let deleting: Vec<_> = open.messages.iter().filter(|m| open.deleting.contains(&m.id)).cloned().collect();
-    let cx = Cx { chat: &open.id, pinned: &[] };
+    let cx = Cx { chat: &open.id, pinned: &[], emoji: presentation };
     if !deleting.is_empty() && crate::message::delete_sheet(ui.ctx(), &deleting, &cx, &name, out) {
         // Deleting from a selection ends it, whether or not the user went ahead.
         if open.deleting.len() > 1 || open.selected.is_some() {
@@ -217,7 +223,7 @@ fn chat_menu(ui: &mut Ui, chat: &Chat, network: Alerts, out: &mut Out) -> bool {
 }
 
 /// The pinned messages, one at a time, newest first, under the chat header. Clicking one goes to it.
-fn pinned_bar(ui: &mut Ui, open: &mut OpenChat, out: &mut Out) {
+fn pinned_bar(ui: &mut Ui, open: &mut OpenChat, presentation: EmojiPresentation, out: &mut Out) {
     let t = Tokens::get(ui.ctx());
     let n = open.pinned.len();
     let i = open.pin_shown.min(n.saturating_sub(1));
@@ -240,7 +246,9 @@ fn pinned_bar(ui: &mut Ui, open: &mut OpenChat, out: &mut Out) {
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                     let line = format!("{sender}: {text}");
                     let shown = ui.add(
-                        egui::Label::new(emoji::text(&format!("{}   {line}", count.to_uppercase()), 12.5, t.ink)).truncate().sense(Sense::click()),
+                        egui::Label::new(emoji::text(&format!("{}   {line}", count.to_uppercase()), 12.5, t.ink, presentation))
+                            .truncate()
+                            .sense(Sense::click()),
                     );
                     let label = format!("{count}: {line}");
                     shown.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
@@ -414,6 +422,7 @@ fn details_sheet(ctx: &egui::Context, open: &mut OpenChat, chat: Option<&Chat>) 
 /// The message field and SEND, with a bar over them while replying to a message or editing one of the user's.
 fn composer(ui: &mut Ui, open: &mut OpenChat, name: &str, chat: Option<&Chat>, out: &mut Out) {
     let network = chat.map(|c| &c.network);
+    let presentation = emoji_presentation(chat);
     let t = Tokens::get(ui.ctx());
     let editing = open.editing.as_ref().map(|(id, _)| id.clone());
     let replying = open.replying.as_ref().and_then(|id| open.message(id)).map(|m| (m.sender.clone(), m.own, crate::view::preview_text(&m.body)));
@@ -426,7 +435,7 @@ fn composer(ui: &mut Ui, open: &mut OpenChat, name: &str, chat: Option<&Chat>, o
                 ui.horizontal(|ui| {
                     ui.vertical(|ui| {
                         ui.label(RichText::new(title).monospace().size(11.0).color(t.accent_ink));
-                        ui.add(egui::Label::new(emoji::text(line, 12.5, t.muted)).truncate());
+                        ui.add(egui::Label::new(emoji::text(line, 12.5, t.muted, presentation)).truncate());
                     });
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         let x = ui.add(
@@ -461,7 +470,7 @@ fn composer(ui: &mut Ui, open: &mut OpenChat, name: &str, chat: Option<&Chat>, o
         }
         if let Some(line) = typing_line(&open.typing) {
             egui::Frame::new().inner_margin(Margin { left: 24, right: 24, top: 6, bottom: 0 }).show(ui, |ui| {
-                ui.label(emoji::text(&line, 12.5, t.muted));
+                ui.label(emoji::text(&line, 12.5, t.muted, presentation));
             });
         }
         let edit_id = egui::Id::unique(("pingcraft-composer", &open.id.0));
@@ -478,7 +487,7 @@ fn composer(ui: &mut Ui, open: &mut OpenChat, name: &str, chat: Option<&Chat>, o
                 // Emoji in the draft are laid out like those in messages, in colour.
                 let mut layouter = |ui: &Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
                     let format = egui::TextFormat::simple(egui::TextStyle::Body.resolve(ui.style()), ui.visuals().text_color());
-                    let mut job = emoji::job(text.as_str(), format);
+                    let mut job = emoji::job(text.as_str(), format, presentation);
                     job.wrap.max_width = wrap_width;
                     ui.fonts_mut(|f| f.layout_job(job))
                 };
@@ -608,7 +617,7 @@ fn shortcode_suggestions(ui: &mut Ui, open: &mut OpenChat, edit_id: egui::Id) {
     egui::Frame::new().inner_margin(Margin { left: 24, right: 24, top: 6, bottom: 0 }).show(ui, |ui| {
         ui.horizontal_wrapped(|ui| {
             for (code, e) in found {
-                let chip = egui::Button::new(emoji::text(&format!("{e} :{code}:"), 12.5, t.ink))
+                let chip = egui::Button::new(emoji::text(&format!("{e} :{code}:"), 12.5, t.ink, EmojiPresentation::Unicode))
                     .stroke(t.hairline())
                     .corner_radius(egui::CornerRadius::ZERO);
                 let response = ui.add(chip);

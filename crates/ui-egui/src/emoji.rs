@@ -13,6 +13,7 @@ use std::sync::Arc;
 
 use egui::text::{LayoutJob, TextFormat};
 use egui::{Color32, FontData, FontDefinitions, FontFamily, FontId};
+use pingcraft_core::EmojiPresentation;
 use unicode_segmentation::UnicodeSegmentation;
 
 /// The colour face's name in egui's font definitions.
@@ -130,9 +131,11 @@ pub mod web {
     }
 }
 
-/// Is this grapheme cluster an emoji to draw in colour? Digits, `#`, `*`, `©`, `®` and `❤` on their own are text;
-/// with the emoji variation selector (`❤️`) or as a keycap (`1️⃣`) they are emoji.
-pub fn is_emoji(cluster: &str) -> bool {
+/// Is this grapheme cluster an emoji to draw in colour, in a chat on a network whose app draws symbols that are text
+/// by default as `presentation` says? Digits, `#` and `*` on their own are text, and so is anything with the text
+/// variation selector (U+FE0E); with the emoji variation selector (`❤️`) or as a keycap (`1️⃣`) they are emoji. A
+/// symbol that is text by default (`☺`, `❤`, `©`) is an emoji only where the network's app draws it as one.
+pub fn is_emoji(cluster: &str, presentation: EmojiPresentation) -> bool {
     if cluster.is_ascii() || cluster.contains('\u{fe0e}') {
         return false;
     }
@@ -141,9 +144,29 @@ pub fn is_emoji(cluster: &str) -> bool {
     }
     match emojis::get(cluster) {
         // An emoji that is shown as text unless asked otherwise comes back fully qualified, with the selector.
-        Some(emoji) => emoji.as_str() == cluster,
+        Some(emoji) if emoji.as_str() == cluster => true,
+        Some(_) => match presentation {
+            EmojiPresentation::Unicode => false,
+            EmojiPresentation::EmojiFirst { arrows } => !MARKS.contains(&cluster) && (arrows || !is_arrow(cluster)),
+        },
         // Newer than the emoji data: pictographs, and flags (regional indicator pairs).
         None => cluster.chars().next().is_some_and(|c| matches!(u32::from(c), 0x1_f1e6..=0x1_f1ff | 0x1_f300..=0x1_faff)),
+    }
+}
+
+/// Symbols that stay text without U+FE0F even where a network's app draws other text-default symbols as emoji: in
+/// running text they are marks, not pictures (Telegram Desktop keeps exactly these as text).
+const MARKS: [&str; 3] = ["\u{a9}", "\u{ae}", "\u{2122}"];
+
+/// The arrows that are text by default and have an emoji form (Unicode's "arrow" emoji subgroup): ↔ ↕ ↖ ↗ ↘ ↙ ↩ ↪
+/// ⤴ ⤵ ⬅ ⬆ ⬇ ➡.
+fn is_arrow(cluster: &str) -> bool {
+    let mut chars = cluster.chars();
+    match (chars.next(), chars.next()) {
+        (Some(c), None) => {
+            matches!(c, '\u{2194}'..='\u{2199}' | '\u{21a9}' | '\u{21aa}' | '\u{2934}' | '\u{2935}' | '\u{2b05}'..='\u{2b07}' | '\u{27a1}')
+        }
+        _ => false,
     }
 }
 
@@ -174,13 +197,13 @@ enum Scale {
     AsGiven,
 }
 
-/// `text` as a layout job in `format`, with its emoji in [`family`] at [`INLINE_SCALE`]. Text without emoji is one
-/// section at `format`; lines with emoji are [`EMOJI_LINE`] tall.
-pub fn job(text: &str, format: TextFormat) -> LayoutJob {
-    job_at(text, format, Scale::Inline)
+/// `text` as a layout job in `format`, with its emoji (as [`is_emoji`] tells them for `presentation`) in [`family`]
+/// at [`INLINE_SCALE`]. Text without emoji is one section at `format`; lines with emoji are [`EMOJI_LINE`] tall.
+pub fn job(text: &str, format: TextFormat, presentation: EmojiPresentation) -> LayoutJob {
+    job_at(text, format, Scale::Inline, presentation)
 }
 
-fn job_at(text: &str, format: TextFormat, scale: Scale) -> LayoutJob {
+fn job_at(text: &str, format: TextFormat, scale: Scale, presentation: EmojiPresentation) -> LayoutJob {
     let mut job = LayoutJob::default();
     if text.is_ascii() {
         job.append(text, 0.0, format);
@@ -196,7 +219,7 @@ fn job_at(text: &str, format: TextFormat, scale: Scale) -> LayoutJob {
     let mut start = 0;
     let mut current = None;
     for (at, cluster) in text.grapheme_indices(true) {
-        let emoji = is_emoji(cluster);
+        let emoji = is_emoji(cluster, presentation);
         match current {
             Some(was) if was != emoji => {
                 job.append(&text[start..at], 0.0, if was { emoji_format.clone() } else { format.clone() });
@@ -216,28 +239,29 @@ fn job_at(text: &str, format: TextFormat, scale: Scale) -> LayoutJob {
 }
 
 /// Proportional text at `size` in `color`, with its emoji in colour at [`INLINE_SCALE`]: names, previews, quotes,
-/// reactions.
-pub fn text(text: &str, size: f32, color: Color32) -> LayoutJob {
-    job(text, TextFormat::simple(FontId::proportional(size), color))
+/// reactions. `presentation` is the chat's network's ([`pingcraft_core::Network::emoji_presentation`]).
+pub fn text(text: &str, size: f32, color: Color32, presentation: EmojiPresentation) -> LayoutJob {
+    job(text, TextFormat::simple(FontId::proportional(size), color), presentation)
 }
 
 /// A message's text at `size` in `color`: large ([`LARGE_SCALE`]) when it is only a few emoji ([`is_large`]),
 /// otherwise as [`text`].
-pub fn body(text: &str, size: f32, color: Color32) -> LayoutJob {
-    job_at(text, TextFormat::simple(FontId::proportional(size), color), if is_large(text) { Scale::Large } else { Scale::Inline })
+pub fn body(text: &str, size: f32, color: Color32, presentation: EmojiPresentation) -> LayoutJob {
+    let scale = if is_large(text, presentation) { Scale::Large } else { Scale::Inline };
+    job_at(text, TextFormat::simple(FontId::proportional(size), color), scale, presentation)
 }
 
 /// Emoji (or text with them) at exactly `size`, for places that size emoji themselves: the picker, the quick
-/// reactions and the verification symbols.
+/// reactions and the verification symbols. These are emoji PingCraft chose, so Unicode's presentation applies.
 pub fn symbol(text: &str, size: f32, color: Color32) -> LayoutJob {
-    job_at(text, TextFormat::simple(FontId::proportional(size), color), Scale::AsGiven)
+    job_at(text, TextFormat::simple(FontId::proportional(size), color), Scale::AsGiven, EmojiPresentation::Unicode)
 }
 
 /// Whether a message is shown large: one to [`LARGE_MAX`] emoji and nothing else but white space.
-pub fn is_large(text: &str) -> bool {
+pub fn is_large(text: &str, presentation: EmojiPresentation) -> bool {
     let mut emoji = 0;
     for cluster in text.graphemes(true).filter(|c| !c.chars().all(char::is_whitespace)) {
-        if !is_emoji(cluster) {
+        if !is_emoji(cluster, presentation) {
             return false;
         }
         emoji += 1;
@@ -253,6 +277,8 @@ mod tests {
     use super::{EMOJI_LINE, INLINE_SCALE, LARGE_SCALE, body, is_emoji, is_large, job, symbol, text};
     use egui::Color32;
     use egui::text::{LayoutJob, TextFormat};
+    use pingcraft_core::EmojiPresentation::{self, EmojiFirst, Unicode};
+    use pingcraft_core::Network;
 
     /// Each section of a job: its text, its size, whether it is in the emoji family, and its line height.
     fn sections(j: &LayoutJob) -> Vec<(&str, f32, bool, Option<f32>)> {
@@ -272,18 +298,18 @@ mod tests {
     #[test]
     fn text_stays_text_and_emoji_are_emoji() {
         for text in ["1", "#", "*", "©", "®", "™", "❤", "a", "é", "↔", "\u{2764}\u{fe0e}"] {
-            assert!(!is_emoji(text), "{text:?} is text");
+            assert!(!is_emoji(text, Unicode), "{text:?} is text");
         }
         for emoji in ["1\u{fe0f}\u{20e3}", "#\u{fe0f}\u{20e3}", "❤\u{fe0f}", "😀", "👍🏽", "🇩🇰", "👨\u{200d}👩\u{200d}👧", "🏳\u{fe0f}\u{200d}🌈"]
         {
-            assert!(is_emoji(emoji), "{emoji:?} is an emoji");
+            assert!(is_emoji(emoji, Unicode), "{emoji:?} is an emoji");
         }
     }
 
     #[test]
     fn a_job_keeps_the_text_and_puts_emoji_in_their_family() {
         let text = "Hi 1️⃣ and ❤️👍🏽, 1 ❤ too";
-        let j = job(text, TextFormat::default());
+        let j = job(text, TextFormat::default(), Unicode);
         assert_eq!(j.text, text, "the text, and so what a screen reader reads, is unchanged");
         let emoji: Vec<&str> = j
             .sections
@@ -292,20 +318,20 @@ mod tests {
             .map(|s| &j.text[s.byte_range.start.0..s.byte_range.end.0])
             .collect();
         assert_eq!(emoji, ["1️⃣", "❤️👍🏽"]);
-        assert_eq!(job("plain", TextFormat::default()).sections.len(), 1);
-        assert_eq!(job("", TextFormat::default()).sections.len(), 1);
+        assert_eq!(job("plain", TextFormat::default(), Unicode).sections.len(), 1);
+        assert_eq!(job("", TextFormat::default(), Unicode).sections.len(), 1);
     }
 
     /// Emoji among text are a size up from it; every line of such text is the same height, so a line with an emoji
     /// does not jump. Text without emoji is untouched.
     #[test]
     fn emoji_among_text_are_a_size_up_in_even_lines() {
-        let j = text("Hi 👍🏽 there", 14.0, Color32::WHITE);
+        let j = text("Hi 👍🏽 there", 14.0, Color32::WHITE, Unicode);
         let line = Some(14.0 * EMOJI_LINE);
         assert_eq!(sections(&j), [("Hi ", 14.0, false, line), ("👍🏽", 14.0 * INLINE_SCALE, true, line), (" there", 14.0, false, line)]);
         assert_eq!(j.text, "Hi 👍🏽 there", "what a screen reader reads is unchanged");
-        assert_eq!(sections(&text("Hi é there", 14.0, Color32::WHITE)), [("Hi é there", 14.0, false, None)]);
-        assert_eq!(sections(&text("plain", 14.0, Color32::WHITE)), [("plain", 14.0, false, None)]);
+        assert_eq!(sections(&text("Hi é there", 14.0, Color32::WHITE, Unicode)), [("Hi é there", 14.0, false, None)]);
+        assert_eq!(sections(&text("plain", 14.0, Color32::WHITE, Unicode)), [("plain", 14.0, false, None)]);
         // Places that size emoji themselves get exactly that size.
         assert_eq!(sections(&symbol("👍", 18.0, Color32::WHITE)), [("👍", 18.0, true, None)]);
     }
@@ -314,21 +340,48 @@ mod tests {
     #[test]
     fn a_message_of_up_to_three_emoji_is_large() {
         for large in ["😀", " 👍🏽 ", "❤\u{fe0f}👨\u{200d}👩\u{200d}👧 🇩🇰", "1\u{fe0f}\u{20e3}\n😀"] {
-            assert!(is_large(large), "{large:?} is large");
+            assert!(is_large(large, Unicode), "{large:?} is large");
         }
         for not in ["", "  ", "😀😀😀😀", "hi 😀", "😀!", "❤", "©"] {
-            assert!(!is_large(not), "{not:?} is not large");
+            assert!(!is_large(not, Unicode), "{not:?} is not large");
         }
         let said = "😀 👍🏽";
-        let j = body(said, 14.0, Color32::WHITE);
+        let j = body(said, 14.0, Color32::WHITE, Unicode);
         assert_eq!(j.text, said, "what a screen reader reads is unchanged");
         assert_eq!(
             sections(&j),
             [("😀", 14.0 * LARGE_SCALE, true, None), (" ", 14.0 * LARGE_SCALE, false, None), ("👍🏽", 14.0 * LARGE_SCALE, true, None)]
         );
         // Four is an ordinary message, with its emoji at the inline size.
-        let four = body("😀😀😀😀", 14.0, Color32::WHITE);
+        let four = body("😀😀😀😀", 14.0, Color32::WHITE, Unicode);
         assert_eq!(sections(&four), [("😀😀😀😀", 14.0 * INLINE_SCALE, true, Some(14.0 * EMOJI_LINE))]);
-        assert_eq!(sections(&body("hi 😀", 14.0, Color32::WHITE))[1].1, 14.0 * INLINE_SCALE);
+        assert_eq!(sections(&body("hi 😀", 14.0, Color32::WHITE, Unicode))[1].1, 14.0 * INLINE_SCALE);
+    }
+
+    /// A symbol that is text by default is drawn as the chat's network's app draws it (PLAN.md, "Messages and chats"
+    /// 1): Signal, WhatsApp and Discord draw ☺ ❤ ✔ as emoji, Telegram arrows too; ©, digits and (but on Telegram)
+    /// arrows stay text; U+FE0E keeps any of them text; Matrix follows Unicode.
+    #[test]
+    fn text_default_symbols_follow_the_networks_app() {
+        let cases = ["☺", "❤", "✔", "©", "1", "↔", "☺\u{fe0e}"];
+        let drawn = |network: &str| -> Vec<bool> { cases.iter().map(|c| is_emoji(c, Network::from_id(network).emoji_presentation())).collect() };
+        assert_eq!(drawn("matrix"), [false, false, false, false, false, false, false]);
+        for network in ["signal", "whatsapp", "discord"] {
+            assert_eq!(drawn(network), [true, true, true, false, false, false, false], "{network}");
+        }
+        assert_eq!(drawn("telegram"), [true, true, true, false, false, true, false]);
+        assert_eq!(drawn("somewhere-new"), drawn("matrix"));
+        // With U+FE0F, an emoji everywhere.
+        for presentation in [Unicode, EmojiFirst { arrows: false }, EmojiFirst { arrows: true }] {
+            for emoji in ["☺\u{fe0f}", "©\u{fe0f}", "↔\u{fe0f}", "1\u{fe0f}\u{20e3}", "😀"] {
+                assert!(is_emoji(emoji, presentation), "{emoji:?} with {presentation:?}");
+            }
+            assert!(!is_emoji("™", presentation) && !is_emoji("®", presentation));
+        }
+        // A lone ☺ is a large message on Signal, and text on Matrix.
+        let signal = Network::from_id("signal").emoji_presentation();
+        assert!(is_large("☺", signal) && !is_large("☺", Unicode));
+        let on = |p: EmojiPresentation| sections(&text("so ☺ today", 14.0, Color32::WHITE, p)).len();
+        assert_eq!((on(signal), on(Unicode)), (3, 1));
     }
 }

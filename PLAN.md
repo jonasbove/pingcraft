@@ -428,6 +428,39 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
      about 18 px tall in a 19 px line, against a 14.4 px text line), and a large message through the AccessKit tree
      with its text unchanged. Open: a message with an emoji has its lines a third further apart than one without
      (the maintainer may prefer the emoji to overlap the line spacing a little instead).
+   - **Symbols that are text by default follow the chat's network's app** (maintainer, 2026-11-26; it started with a
+     ☺ that Signal shows as a colour emoji and PingCraft showed as text). `Network::emoji_presentation` in
+     `pingcraft-core`: `Unicode` (text unless U+FE0F follows) or `EmojiFirst { arrows }` (an emoji whenever it has an
+     emoji form, except ©, ® and ™; arrows such as ↔ only with `arrows`). Everywhere: U+FE0F makes an emoji, U+FE0E
+     keeps text, digits, `#` and `*` are text unless a keycap. Telegram: `EmojiFirst { arrows: true }`; Signal,
+     WhatsApp and Discord: `EmojiFirst { arrows: false }`; Matrix and networks not looked at: `Unicode`. Used for
+     message bodies (and which are large), names, previews, quotes, reactions, the bars and the composer; the picker
+     and suggestions show emoji PingCraft chose, with U+FE0F. Unit tests per network for ☺ ❤ ✔ © 1 ↔ and ☺︎, and a
+     lone ☺ in the (Telegram) test chat is large through the AccessKit tree. What each app does, read from their
+     public source (behaviour only, nothing copied) and not tried by hand:
+     - **Signal:** Android draws a text-default symbol as its own emoji with or without U+FE0F (its emoji tree
+       treats a trailing U+FE0F as optional; `lib/emoji/.../parsing/EmojiTree.java`) and ignores U+FE0E; whether
+       its downloaded emoji data has © ® ™ was not checked. Desktop is strict: only fully qualified sequences are
+       keys of its emoji data (`ts/axo/emoji.std.ts`, `scripts/generate-emoji-data.mjs`), so a bare ☺ stays text
+       there. iOS leaves it to Apple's renderer (not checked). PingCraft follows the phones, as the report did.
+       Signal's large messages are up to 5 emoji (`JumboEmoji.kt`, `kMaxJumbomojiCount`).
+     - **Telegram:** Desktop treats U+FE0F as optional except for exactly ™ © ® (`desktop-app/codegen`
+       `codegen/emoji/data.cpp`, `generator.cpp`; `lib_ui` `ui/text/text_block_parser.cpp`), so bare ☺ ❤ ✔ ↔ are
+       emoji; no handling of U+FE0E was found. Android makes everything in its emoji list an emoji, © ® ™ included,
+       and swallows U+FE0E (`Emoji.java`, `EmojiData.java`). PingCraft follows Desktop. Large: up to 3
+       (`kIsolatedEmojiLimit`).
+     - **WhatsApp:** closed source; no public description was found. From memory of its Web and Android apps a bare
+       ❤ is a red heart. **Unsure**: chosen like Signal's phones for the maintainer to confirm.
+     - **Discord:** not researched beyond user reports of ™ being turned into an emoji (Discord's support forum,
+       "Don't correct trademark symbol to emoji"), which suggests it is lenient. **Unsure**: like Signal for now.
+     - **Element (Matrix):** Element Web marks up only `\p{RGI_Emoji}` (fully qualified) and explicitly not before
+       U+FE0E (`apps/web/src/HtmlUtils.tsx`); what a bare ☺ looks like then depends on the font stack (Inter, then
+       the system's colour emoji font). Element X iOS's "only emoji" check (matrix-rust-sdk
+       `contains_only_emojis`) accepts unqualified forms through the `emojis` crate. Matrix stays `Unicode`.
+     Sources at the default branches of signalapp/Signal-Desktop (01e5971), signalapp/Signal-Android (2dd5703),
+     signalapp/Signal-iOS (4537228), desktop-app/codegen (0696d38), desktop-app/lib_ui (b635328), DrKLO/Telegram
+     (21f7d10), element-hq/element-web (4a1cfaf), element-hq/element-x-ios (476d869), matrix-org/matrix-rust-sdk
+     (7dabadc), read on 2026-11-26.
 2. **Done (2026-11-25), with gaps.** **Reactions.** Show reactions under a message with counts and who reacted; add and remove one from the picker or a
    quick row of recent ones.
    Built: a chip per reaction under the message (the count, who reacted on hover and in its accessible name, in the

@@ -3,7 +3,7 @@
 
 use egui::{Align, Color32, Layout, Margin, Rect, RichText, Sense, Stroke, Ui};
 use pingcraft_core::app::Command;
-use pingcraft_core::{ChatId, Message, MessageBody, MessageId, Quote, Reaction, SendState};
+use pingcraft_core::{ChatId, EmojiPresentation, Message, MessageBody, MessageId, Quote, Reaction, SendState};
 
 use crate::emoji;
 use crate::i18n::fmt;
@@ -47,6 +47,8 @@ pub struct Cx<'a> {
     pub chat: &'a ChatId,
     /// The chat's pinned messages.
     pub pinned: &'a [MessageId],
+    /// How the chat's network's app draws symbols that are text by default ([`crate::emoji::is_emoji`]).
+    pub emoji: EmojiPresentation,
 }
 
 /// What a message asked the open chat to do, beyond sending a command.
@@ -170,12 +172,12 @@ fn own(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out, act: &mut Opt
 fn contents(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out, act: &mut Option<Act>) {
     head(ui, message, cx, out, act);
     if let Some(quote) = &message.reply_to
-        && let Some(a) = quote_view(ui, quote, &message.id)
+        && let Some(a) = quote_view(ui, quote, &message.id, cx.emoji)
     {
         *act = Some(a);
     }
     // The text is selectable, so it takes right-clicks itself: it opens the same menu.
-    body(ui, &message.body).context_menu(|ui| {
+    body(ui, &message.body, cx.emoji).context_menu(|ui| {
         if let Some(a) = menu(ui, message, cx, out) {
             *act = Some(a);
         }
@@ -188,7 +190,7 @@ fn contents(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out, act: &mu
 fn head(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out, act: &mut Option<Act>) {
     let t = Tokens::get(ui.ctx());
     ui.horizontal(|ui| {
-        ui.label(emoji::text(&who(message), 13.0, t.ink_strong));
+        ui.label(emoji::text(&who(message), 13.0, t.ink_strong, cx.emoji));
         ui.label(RichText::new(crate::time::clock(message.at)).monospace().size(12.0).color(t.muted));
         if message.edited {
             ui.label(RichText::new(tl!("edited")).monospace().size(12.0).color(t.muted));
@@ -292,14 +294,14 @@ fn menu(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out) -> Option<Ac
 }
 
 /// The quoted original above a reply. Clicking it goes to the original.
-fn quote_view(ui: &mut Ui, quote: &Quote, reply: &MessageId) -> Option<Act> {
+fn quote_view(ui: &mut Ui, quote: &Quote, reply: &MessageId, presentation: EmojiPresentation) -> Option<Act> {
     let t = Tokens::get(ui.ctx());
     let text = snippet(&quote.body);
     let sender = if quote.sender.is_empty() { tl!("a message") } else { quote.sender.as_str() };
     let inner = egui::Frame::new().inner_margin(Margin { left: 10, right: 0, top: 2, bottom: 2 }).show(ui, |ui| {
         ui.set_max_width(420.0);
-        ui.label(emoji::text(sender, 12.0, t.accent_ink));
-        ui.add(egui::Label::new(emoji::text(&text, 12.5, t.muted)).truncate());
+        ui.label(emoji::text(sender, 12.0, t.accent_ink, presentation));
+        ui.add(egui::Label::new(emoji::text(&text, 12.5, t.muted, presentation)).truncate());
     });
     let rect = inner.response.rect;
     ui.painter().vline(rect.left() + 1.0, rect.y_range(), Stroke::new(2.0, t.line_strong));
@@ -319,18 +321,18 @@ fn quote_view(ui: &mut Ui, quote: &Quote, reply: &MessageId) -> Option<Act> {
 fn reactions(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out) {
     ui.horizontal_wrapped(|ui| {
         for reaction in &message.reactions {
-            if chip(ui, reaction, message.can.react).clicked() {
+            if chip(ui, reaction, message.can.react, cx.emoji).clicked() {
                 out.push(Command::React { chat: cx.chat.clone(), message: message.id.clone(), key: reaction.key.clone() });
             }
         }
     });
 }
 
-fn chip(ui: &mut Ui, reaction: &Reaction, enabled: bool) -> egui::Response {
+fn chip(ui: &mut Ui, reaction: &Reaction, enabled: bool, presentation: EmojiPresentation) -> egui::Response {
     let t = Tokens::get(ui.ctx());
     let shown = shown_key(&reaction.key);
     let count = reaction.by.len().max(1);
-    let text = emoji::text(&format!("{} {count}", drawn_key(&reaction.key)), 13.0, if reaction.mine { t.accent_ink } else { t.ink });
+    let text = emoji::text(&format!("{} {count}", drawn_key(&reaction.key)), 13.0, if reaction.mine { t.accent_ink } else { t.ink }, presentation);
     let stroke = Stroke::new(1.0, if reaction.mine { t.accent_ink } else { t.line_strong });
     let fill = if reaction.mine { t.accent_tint } else { Color32::TRANSPARENT };
     let response = ui.add_enabled(enabled, egui::Button::new(text).fill(fill).stroke(stroke).corner_radius(egui::CornerRadius::ZERO));
@@ -347,10 +349,10 @@ fn chip(ui: &mut Ui, reaction: &Reaction, enabled: bool) -> egui::Response {
     response.on_hover_text(names)
 }
 
-fn body(ui: &mut Ui, body: &MessageBody) -> egui::Response {
+fn body(ui: &mut Ui, body: &MessageBody, presentation: EmojiPresentation) -> egui::Response {
     let t = Tokens::get(ui.ctx());
     match body {
-        MessageBody::Text(text) => ui.add(egui::Label::new(emoji::body(text, 14.0, Color32::PLACEHOLDER)).wrap()),
+        MessageBody::Text(text) => ui.add(egui::Label::new(emoji::body(text, 14.0, Color32::PLACEHOLDER, presentation)).wrap()),
         MessageBody::WaitingForKey => {
             egui::Frame::new()
                 .fill(t.sunken)
@@ -383,7 +385,7 @@ pub fn delete_sheet(ctx: &egui::Context, messages: &[Message], cx: &Cx<'_>, chat
         (&title, &chat_name.to_uppercase()),
         |ui| {
             for message in messages.iter().take(5) {
-                ui.label(emoji::text(&snippet(&message.body), 13.0, Color32::PLACEHOLDER));
+                ui.label(emoji::text(&snippet(&message.body), 13.0, Color32::PLACEHOLDER, cx.emoji));
             }
             ui.label(RichText::new(tl!("They are deleted for everyone in this chat, and a “Message deleted” line stays in their place.")).size(14.0));
             note(ui, tl!("PingCraft asks the network's bridge to delete them there too. Whether they disappear there depends on the network."));

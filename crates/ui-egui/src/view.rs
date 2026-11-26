@@ -591,7 +591,15 @@ fn chat_row(ui: &mut Ui, chat: &Chat, accent: Option<pingcraft_core::Accent>, se
                     ui.label(RichText::new(PINNED_MARK).size(12.0).color(t.muted));
                 }
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                    ui.add(egui::Label::new(crate::emoji::text(&chat.name, 14.0, if strong { t.ink_strong } else { t.ink })).truncate());
+                    ui.add(
+                        egui::Label::new(crate::emoji::text(
+                            &chat.name,
+                            14.0,
+                            if strong { t.ink_strong } else { t.ink },
+                            chat.network.emoji_presentation(),
+                        ))
+                        .truncate(),
+                    );
                 });
             });
         });
@@ -607,7 +615,10 @@ fn chat_row(ui: &mut Ui, chat: &Chat, accent: Option<pingcraft_core::Accent>, se
                 }
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                     let text = preview.clone().unwrap_or_default();
-                    ui.add(egui::Label::new(crate::emoji::text(&text, 12.5, if strong { t.ink } else { t.muted })).truncate());
+                    ui.add(
+                        egui::Label::new(crate::emoji::text(&text, 12.5, if strong { t.ink } else { t.muted }, chat.network.emoji_presentation()))
+                            .truncate(),
+                    );
                 });
             });
         });

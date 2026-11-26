@@ -52,6 +52,31 @@ impl Network {
             _ => None,
         }
     }
+
+    /// How the network's own app draws a symbol that is text by default in Unicode, such as ☺ U+263A or ❤ U+2764,
+    /// when it comes without the emoji variation selector (U+FE0F): PingCraft draws a chat's messages the way the
+    /// people in it see them on that network. What each app does, and how sure that is: PLAN.md, "Messages and
+    /// chats" 1. Matrix, and networks PingCraft has not looked at, follow Unicode.
+    pub fn emoji_presentation(&self) -> EmojiPresentation {
+        match self.0.as_str() {
+            "telegram" => EmojiPresentation::EmojiFirst { arrows: true },
+            "signal" | "whatsapp" | "discord" => EmojiPresentation::EmojiFirst { arrows: false },
+            _ => EmojiPresentation::Unicode,
+        }
+    }
+}
+
+/// Whether a symbol that is text by default in Unicode (☺ U+263A, ❤ U+2764, ✔ U+2714) is drawn as an emoji when it
+/// comes without the emoji variation selector (U+FE0F), as a network's own app does ([`Network::emoji_presentation`]).
+/// In every case U+FE0F makes such a symbol an emoji, U+FE0E keeps it text, and digits, `#` and `*` are text unless
+/// they are a keycap (with U+20E3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum EmojiPresentation {
+    /// As Unicode says: text unless U+FE0F follows.
+    Unicode,
+    /// An emoji whenever it has an emoji form, except ©, ® and ™, which stay text, and the arrows (↔ U+2194, ➡ U+27A1
+    /// and the like), which are emoji only with `arrows`.
+    EmojiFirst { arrows: bool },
 }
 
 /// How likely a network is to restrict or ban an account for being connected through a bridge. Shown to the user
@@ -388,6 +413,18 @@ mod tests {
         assert!(Network::matrix().is_matrix());
         assert!(Network::from_id("  ").is_matrix());
         assert!(!Network::from_id("telegram").is_matrix());
+    }
+
+    /// Each network's app's way with symbols that are text by default (PLAN.md, "Messages and chats" 1).
+    #[test]
+    fn emoji_presentation_follows_each_networks_app() {
+        use super::EmojiPresentation::{EmojiFirst, Unicode};
+        assert_eq!(Network::from_id("Telegram").emoji_presentation(), EmojiFirst { arrows: true });
+        assert_eq!(Network::from_id("signal").emoji_presentation(), EmojiFirst { arrows: false });
+        assert_eq!(Network::from_id("whatsapp").emoji_presentation(), EmojiFirst { arrows: false });
+        assert_eq!(Network::from_id("discord").emoji_presentation(), EmojiFirst { arrows: false });
+        assert_eq!(Network::matrix().emoji_presentation(), Unicode);
+        assert_eq!(Network::from_id("somewhere-new").emoji_presentation(), Unicode);
     }
 
     #[test]

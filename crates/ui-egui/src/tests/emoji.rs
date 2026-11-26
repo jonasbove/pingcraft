@@ -10,7 +10,7 @@ fn glyphs(text: &str, colour_family: bool) -> (Vec<Glyph>, egui::ColorImage) {
     let mut out = ctx.run_ui(egui::RawInput::default(), |_| {});
     out.textures_delta.clear();
     let job = if colour_family {
-        crate::emoji::text(text, 28.0, egui::Color32::WHITE)
+        crate::emoji::text(text, 28.0, egui::Color32::WHITE, pingcraft_core::EmojiPresentation::Unicode)
     } else {
         egui::text::LayoutJob::simple_singleline(text.to_owned(), egui::FontId::proportional(28.0), egui::Color32::WHITE)
     };
@@ -150,7 +150,7 @@ fn a_reaction_can_be_any_emoji_from_the_picker() {
 /// The glyphs `text` is drawn with in `ctx`'s fonts, laid out as the app lays emoji out.
 fn glyphs_in(ctx: &egui::Context, text: &str) -> Vec<Glyph> {
     ctx.run_ui(egui::RawInput::default(), |_| {}).textures_delta.clear();
-    let galley = ctx.fonts_mut(|f| f.layout_job(crate::emoji::text(text, 28.0, egui::Color32::WHITE)));
+    let galley = ctx.fonts_mut(|f| f.layout_job(crate::emoji::text(text, 28.0, egui::Color32::WHITE, pingcraft_core::EmojiPresentation::Unicode)));
     galley.rows.iter().flat_map(|r| r.glyphs.iter().cloned()).collect()
 }
 
@@ -364,7 +364,14 @@ fn emoji_a_size_up_fit_even_lines() {
     crate::theme::install(&ctx);
     ctx.run_ui(egui::RawInput::default(), |_| {}).textures_delta.clear();
     for size in [12.5, 14.0, 16.0] {
-        let galley = ctx.fonts_mut(|f| f.layout_job(crate::emoji::text("Hg 😀 ❤\u{fe0f}\nHg only text\n👍🏽 Hg", size, egui::Color32::WHITE)));
+        let galley = ctx.fonts_mut(|f| {
+            f.layout_job(crate::emoji::text(
+                "Hg 😀 ❤\u{fe0f}\nHg only text\n👍🏽 Hg",
+                size,
+                egui::Color32::WHITE,
+                pingcraft_core::EmojiPresentation::Unicode,
+            ))
+        });
         let heights: Vec<f32> = galley.rows.iter().map(|r| r.size.y).collect();
         assert_eq!(heights.len(), 3);
         assert!(heights.iter().all(|h| *h == heights[0]), "every line is as tall: {heights:?}");
@@ -398,6 +405,8 @@ fn an_emoji_only_message_is_large_and_keeps_its_text() {
         super::message("8", "Mei Tanaka", false, MessageBody::Text(large.into()), SendState::Sent),
         super::message("9", "Mei Tanaka", false, MessageBody::Text("Okay".into()), SendState::Sent),
         super::message("10", "Mei Tanaka", false, MessageBody::Text("😀😀😀😀".into()), SendState::Sent),
+        // Text by default in Unicode, but an emoji in Telegram's app, so in this Telegram chat too.
+        super::message("11", "Mei Tanaka", false, MessageBody::Text("☺".into()), SendState::Sent),
     ];
     fake.tell([Event::Messages { chat: ChatId("!book".into()), messages }]);
     h.run();
@@ -408,4 +417,5 @@ fn an_emoji_only_message_is_large_and_keeps_its_text() {
     let (large, text, four) = (height(large), height("Okay"), height("😀😀😀😀"));
     assert!(large > text * 2.0, "two emoji are large: {large} against {text}");
     assert!(four < text * 2.0, "four emoji are not: {four} against {text}");
+    assert!(height("☺") > text * 2.0, "a lone ☺ is large on Telegram");
 }
