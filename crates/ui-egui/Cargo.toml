@@ -26,6 +26,8 @@ craft-menu = { workspace = true }
 # The colour picker for a network's accent colour (maintainer, 2026-11-26).
 craft-color-ui = { workspace = true, features = ["ui"] }
 log = "0.4"
+# The values PingCraft's own commands carry (a network, a device), as craft-keymap's command parameters.
+serde_json = { workspace = true }
 # Times in the inbox and the chat (house rule 5).
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 # Decoding the logo PNG.

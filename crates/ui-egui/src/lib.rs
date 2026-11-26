@@ -33,7 +33,7 @@ use egui::{Frame, Margin};
 use pingcraft_core::app::{Backend, Command, Event};
 use pingcraft_core::notify::Notifier;
 
-use crate::commands::AppCommand;
+use crate::commands::{AppCommand, SettingAction};
 
 pub use picker::SkinTone;
 pub use state::{Appearance, Prefs, Screen, State, Tab};
@@ -140,6 +140,19 @@ impl PingCraftApp {
                 }
             }
             AppCommand::SignOut => state.settings.sign_out = true,
+            AppCommand::Search => {
+                state.tab = Tab::Inbox;
+                state.focus_search = true;
+            }
+            AppCommand::NextChat => view::step_chat(state, true, false, out),
+            AppCommand::PreviousChat => view::step_chat(state, false, false, out),
+            AppCommand::NextUnread => view::step_chat(state, true, true, out),
+            AppCommand::PreviousUnread => view::step_chat(state, false, true, out),
+            AppCommand::MarkRead => {
+                if let Some(open) = &state.open {
+                    out.push(Command::MarkRead(open.id.clone()));
+                }
+            }
         }
     }
 
@@ -239,8 +252,14 @@ impl PingCraftApp {
         }
         let t = Tokens::get(&ctx);
         self.notifications(&ctx, &mut out);
-        for command in framework::take_fired(&ctx).iter().filter_map(AppCommand::from_ref) {
-            self.run(command, &mut out);
+        for fired in framework::take_fired(&ctx) {
+            if let Some(command) = AppCommand::from_ref(&fired) {
+                self.run(command, &mut out);
+            } else if let Some(action) = SettingAction::from_ref(&fired)
+                && self.state.screen == Screen::Inbox
+            {
+                settings::run_action(&ctx, &mut self.state, &mut out, action);
+            }
         }
         egui::Panel::top("menu").frame(Frame::new().fill(t.bg)).show(ui, |ui| {
             MenuBarUi::new(&self.menu).keyboard(!self.dialogs.shows_modal()).show(ui);
@@ -280,6 +299,16 @@ impl PingCraftApp {
         }
         for command in std::mem::take(&mut self.state.requested) {
             self.run(command, &mut out);
+        }
+        for action in std::mem::take(&mut self.state.actions) {
+            settings::run_action(&ctx, &mut self.state, &mut out, action);
+        }
+        // Escape that nothing else took (no field, menu, popup or dialog): an open chat goes back to the list.
+        let back = self.state.screen == Screen::Inbox && self.state.tab == Tab::Inbox && self.state.open.is_some();
+        if back && craft_ui::runtime::keys::with_window_intents(&ctx, false, |intents| intents.take(craft_ui::runtime::keys::Intent::Cancel)) {
+            out.extend(self.state.leaving());
+            out.push(Command::CloseChat);
+            self.state.open = None;
         }
         // Chosen in the picker (or on the Emoji page) this frame: kept with the account.
         let picked = picker::tone(&ctx);

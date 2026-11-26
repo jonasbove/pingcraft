@@ -478,6 +478,7 @@ mod chats;
 mod emoji;
 mod messages;
 mod settings;
+mod shortcuts;
 
 #[test]
 fn an_unencrypted_chat_offers_to_turn_encryption_on() {

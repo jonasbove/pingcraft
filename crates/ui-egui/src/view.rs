@@ -335,6 +335,32 @@ pub fn inbox(ui: &mut Ui, state: &mut State, out: &mut Out) {
     forward_sheet(ui.ctx(), state, out);
 }
 
+/// Opens the next (`forward`) or previous chat in the inbox's order, with its filter and search, wrapping at the
+/// ends; `unread` skips the read ones. With no chat open, the first or the last. Opening marks it read, as a click
+/// does.
+pub fn step_chat(state: &mut State, forward: bool, unread: bool, out: &mut Out) {
+    let order: Vec<(pingcraft_core::ChatId, bool)> =
+        state.inbox.visible(state.filter, &state.search).map(|c| (c.id.clone(), c.is_unread())).collect();
+    let n = order.len();
+    if n == 0 {
+        return;
+    }
+    let at = state.open.as_ref().and_then(|o| order.iter().position(|(id, _)| *id == o.id));
+    let next = (1..=n).find_map(|step| {
+        let i = match (at, forward) {
+            (Some(at), true) => (at + step) % n,
+            (Some(at), false) => (at + n - step % n) % n,
+            (None, true) => step - 1,
+            (None, false) => n - step,
+        };
+        let (id, is_unread) = &order[i];
+        (!unread || *is_unread).then(|| id.clone())
+    });
+    if let Some(chat) = next.filter(|c| state.open.as_ref().is_none_or(|o| o.id != *c)) {
+        open_chat_from_elsewhere(state, chat, out);
+    }
+}
+
 /// Opens a chat from outside the inbox list (a notification was clicked), as clicking its row would.
 pub fn open_chat_from_elsewhere(state: &mut State, chat: pingcraft_core::ChatId, out: &mut Out) {
     state.tab = Tab::Inbox;
@@ -423,6 +449,9 @@ fn inbox_list(ui: &mut Ui, state: &mut State, out: &mut Out) {
                 .desired_width(f32::INFINITY);
             let search = ui.add(search);
             search.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, tl!("Search chats")));
+            if std::mem::take(&mut state.focus_search) {
+                search.request_focus();
+            }
         });
         ui.add_space(8.0);
         let (place, count) = match state.filter {

@@ -400,6 +400,10 @@ pub struct State {
     /// PingCraft's commands asked for this frame by the screens (a tab, a choice on a page), run by the app as a
     /// shortcut or a menu row runs them.
     pub requested: Vec<crate::commands::AppCommand>,
+    /// Settings' actions that take a value, asked for this frame, run as `requested` are.
+    pub actions: Vec<crate::commands::SettingAction>,
+    /// The inbox's search field takes the focus next frame.
+    pub focus_search: bool,
 }
 
 impl State {

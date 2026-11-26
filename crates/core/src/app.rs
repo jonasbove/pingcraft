@@ -82,6 +82,8 @@ pub enum Command {
     },
     /// Marks a chat as unread. Opening it marks it read again.
     MarkUnread(ChatId),
+    /// Marks a chat read: its messages, and takes off a "marked unread".
+    MarkRead(ChatId),
     /// Moves a chat out of the inbox into the archive (`archive`), or back. An archived chat comes back by itself
     /// when a new message arrives, unless it is muted.
     Archive {
@@ -213,6 +215,7 @@ impl std::fmt::Debug for Command {
             Self::PinChat { chat, pin } => f.debug_struct("PinChat").field("chat", chat).field("pin", pin).finish(),
             Self::Mute { chat, mute } => f.debug_struct("Mute").field("chat", chat).field("mute", mute).finish(),
             Self::MarkUnread(c) => f.debug_tuple("MarkUnread").field(c).finish(),
+            Self::MarkRead(c) => f.debug_tuple("MarkRead").field(c).finish(),
             Self::ChatAlerts { chat, alerts } => f.debug_struct("ChatAlerts").field("chat", chat).field("alerts", alerts).finish(),
             Self::NetworkAlerts { network, alerts } => f.debug_struct("NetworkAlerts").field("network", network).field("alerts", alerts).finish(),
             Self::Archive { chat, archive } => f.debug_struct("Archive").field("chat", chat).field("archive", archive).finish(),

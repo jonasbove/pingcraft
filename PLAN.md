@@ -782,9 +782,20 @@ craft-ui's dialog host, the i18n swap, the automation interface and colour theme
   Settings has a default shortcut, ⌘, (Ctrl+, off macOS), as in the other Craft apps; the others wait for the design.
   A shortcut, a menu row and a command button (`Button::command`) all fire into the frame's output, which
   `framework::before_input` keeps for the app to run (`PingCraftApp::run`); the header's tabs and the Appearance
-  page run the same function. **Not registered yet** (rule 14, open): the per-device Verify and Sign out, renaming
-  this device, previews, a network's sound and colour, and the skin tone go straight to the backend's commands or
-  the app's state, as the rest of PingCraft does; they become registered commands with the automation interface. **The app menu** is craft-menu's in-window bar (`MenuBarUi`) over File (Sign out…), Edit
+  page run the same function. Settings' actions that take a value (previews, a network's sound and colour, the skin
+  tone, renaming this device, verifying or signing out another device) are `SettingAction`s: their ids are registered
+  too, a fired reference carries the value in its parameters, and the page's controls run the same
+  `settings::run_action` (2026-11-26).
+  **Shortcuts** (maintainer, 2026-11-26), with `Cmd` ⌘ on macOS and Ctrl elsewhere, `Ctrl` the Control key: ⌘,
+  Settings; ⌘1 Inbox and ⌘2 Accounts; ⌘F search chats (the Craft apps' find); F5 and ⌘R Refresh (craft-libs has no
+  convention for it; decided here); Ctrl+Tab / Ctrl+⇧Tab, ⌥↓ / ⌥↑ and ⌘PgDn / ⌘PgUp next and previous chat in the
+  inbox's order with its filter and search, wrapping; Ctrl+⌥Tab / Ctrl+⌥⇧Tab and ⌥⇧↓ / ⌥⇧↑ next and previous unread
+  chat; ⌘⇧A mark the open chat read (new core command `MarkRead`). Opening a chat this way marks it read as a click
+  does. Escape in an open chat goes back to the list when no field, menu, popup or dialog takes it (the window's own
+  Escape, `with_window_intents`). Menus: Go (Inbox, Accounts, Search chats, the four moves) and Chat (Mark as read);
+  View keeps Refresh and Appearance. Ctrl+Tab works from the composer (tested). A desktop may keep Ctrl+⌥Tab for
+  itself; not worked around. ⌥ chords do not fire while a text field has the keys (craft-keymap's typing rule).
+  Kittests in `tests/shortcuts.rs`. **The app menu** is craft-menu's in-window bar (`MenuBarUi`) over File (Sign out…), Edit
   (Settings, tagged `ItemRole::Settings`, which the Linux and Windows layouts put last in Edit as "Preferences…")
   and View (Inbox, Accounts, Refresh, Appearance). **Not done:** the native macOS menu (`craft_menu::mac::install`,
   with its per-frame poll and gate; macOS is not compiled here), so a Mac build would show the in-window bar; the

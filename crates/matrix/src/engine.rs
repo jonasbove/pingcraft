@@ -717,6 +717,7 @@ impl Worker {
             command @ (Command::PinChat { .. }
             | Command::Mute { .. }
             | Command::MarkUnread(_)
+            | Command::MarkRead(_)
             | Command::ChatAlerts { .. }
             | Command::Archive { .. }
             | Command::SaveDraft { .. }) => chat_setting(s, command).await.map(|c| upsert = c),
@@ -824,6 +825,12 @@ async fn chat_setting(s: &SignedIn, command: Command) -> Result<Option<pingcraft
         Command::PinChat { chat, pin } => c.pin_chat(&chat, pin).await,
         Command::Mute { chat, mute } => c.mute(&chat, mute).await,
         Command::MarkUnread(chat) => c.mark_unread(&chat).await,
+        Command::MarkRead(chat) => {
+            if let Some((_, timeline)) = s.chat.as_ref().filter(|(open, _)| *open == chat) {
+                let _ = timeline.mark_read().await;
+            }
+            return c.opened(&chat).await;
+        }
         Command::ChatAlerts { chat, alerts } => c.set_chat_alerts(&chat, alerts).await,
         Command::Archive { chat, archive } => c.archive(&chat, archive).await,
         Command::SaveDraft { chat, text, draft_for } => c.save_draft(&chat, &text, draft_for.as_ref()).await,

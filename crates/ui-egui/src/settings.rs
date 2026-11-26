@@ -30,7 +30,7 @@ use craft_ui::patterns::preferences::{GroupSpec, PageSpec, PrefValue, Preference
 use craft_ui::runtime::requests::ColorRequest;
 use craft_ui::style::{TypeRole, Variant};
 
-use crate::commands::AppCommand;
+use crate::commands::{AppCommand, SettingAction};
 use crate::i18n::fmt;
 use crate::picker::SkinTone;
 use crate::state::{Appearance, State};
@@ -193,8 +193,6 @@ struct Model<'a> {
     shown_colours: BTreeMap<String, [u8; 3]>,
     words: Words,
     out: &'a mut Out,
-    /// The skin tone chosen on the Emoji page this frame.
-    chosen_tone: Option<SkinTone>,
 }
 
 impl<'a> Model<'a> {
@@ -215,7 +213,7 @@ impl<'a> Model<'a> {
             })
             .collect();
         let device_name = state.settings.this_device().map(|d| d.name.clone()).unwrap_or_default();
-        Self { tone: crate::picker::tone(ui.ctx()), state, shown_colours, words: Words { networks, device_name }, out, chosen_tone: None }
+        Self { tone: crate::picker::tone(ui.ctx()), state, shown_colours, words: Words { networks, device_name }, out }
     }
 
     /// The colour a network's row shows: its own setting, else its own colour.
@@ -359,11 +357,10 @@ impl<'a> Model<'a> {
                 Text::new(line).role(TypeRole::Caption).shade(Shade::Muted).show(ui);
                 Row::new().show(ui, |ui, _| {
                     if !device.verified && button(ui, &fmt(tl!("Verify {device}"), &[("device", &name)]), Kind::Secondary, !busy).clicked() {
-                        self.out.push(Command::VerifyDevice(device.id.clone()));
+                        self.state.actions.push(SettingAction::VerifyDevice(device.id.0.clone()));
                     }
                     if button(ui, &fmt(tl!("Sign out {device}…"), &[("device", &name)]), Kind::Secondary, true).clicked() {
-                        self.state.settings.device_sign_out =
-                            Some(DeviceSignOut { device: device.clone(), password: Zeroizing::default(), sent: false, problem: None });
+                        self.state.actions.push(SettingAction::SignOutDevice(device.id.0.clone()));
                     }
                 });
             });
@@ -410,43 +407,22 @@ impl PreferencesModel for Model<'_> {
     }
 
     fn set(&mut self, key: &str, value: PrefValue) {
-        match (key, value) {
-            ("appearance.mode", PrefValue::Choice(id)) => self.state.requested.push(AppCommand::Appearance(Appearance::from_id(&id))),
-            ("notifications.previews", PrefValue::Bool(on)) => {
-                self.state.prefs.previews = on;
-                self.out.push(Command::SavePreviews(on));
-            }
-            ("emoji.skin_tone", PrefValue::Choice(id)) => self.chosen_tone = Some(SkinTone::from_id(&id)),
-            ("security.device_name", PrefValue::Text(typed)) => {
-                let sent = &mut self.state.settings.renamed;
-                if let Some(name) = clean_name(&typed).filter(|n| *n != self.words.device_name && sent.as_ref() != Some(n)) {
-                    *sent = Some(name.clone());
-                    self.out.push(Command::RenameDevice(name));
-                }
-            }
+        let action = match (key, value) {
+            ("appearance.mode", PrefValue::Choice(id)) => return self.state.requested.push(AppCommand::Appearance(Appearance::from_id(&id))),
+            ("notifications.previews", PrefValue::Bool(on)) => SettingAction::Previews(on),
+            ("emoji.skin_tone", PrefValue::Choice(id)) => SettingAction::SkinTone(id),
+            ("security.device_name", PrefValue::Text(typed)) => SettingAction::RenameDevice(typed),
             (key, value) => {
                 let Some((id, what)) = parse_network_key(key) else { return };
-                let network = Network::from_id(id);
-                let own = self.state.network_alerts.get(&network).copied().unwrap_or_default();
+                let network = id.to_owned();
                 match (what, value) {
-                    ("sound", PrefValue::Bool(on)) => self.set_network(&network, Alerts { sound: Some(on), ..own }),
-                    ("accent", PrefValue::Color(Rgba([r, g, b, _]))) => {
-                        let picked = Accent([r, g, b]);
-                        // The colour the row already shows (a field committing what it was given) changes nothing.
-                        if picked.0 == self.accent_shown(&network) {
-                            return;
-                        }
-                        // The colour shown for a network's own (its theme shade) is its own, saved as such.
-                        let own_shade = self.shown_colours.get(id).copied() == Some(picked.0);
-                        let accent = if own_shade { Accent::of_network(id).or(Some(picked)) } else { Some(picked) };
-                        if accent != own.accent {
-                            self.set_network(&network, Alerts { accent, ..own });
-                        }
-                    }
-                    _ => {}
+                    ("sound", PrefValue::Bool(on)) => SettingAction::NetworkSound { network, on },
+                    ("accent", PrefValue::Color(Rgba([r, g, b, _]))) => SettingAction::NetworkAccent { network, colour: Accent([r, g, b]).hex() },
+                    _ => return,
                 }
             }
-        }
+        };
+        self.state.actions.push(action);
     }
 
     fn custom_row(&mut self, ui: &mut Ui, key: &str) -> bool {
@@ -471,7 +447,7 @@ impl PreferencesModel for Model<'_> {
                     }
                 }
             }
-            "emoji" => self.chosen_tone = Some(SkinTone::default()),
+            "emoji" => self.state.actions.push(SettingAction::SkinTone(SkinTone::default().id().to_owned())),
             // Nothing on the Security page has a default to go back to: each is an action, or the device's name.
             // craft-libs' page shows Reset Section on every page (PLAN.md, "craft-libs: what PingCraft lacks").
             _ => {}
@@ -494,9 +470,6 @@ pub fn settings(ui: &mut Ui, state: &mut State, out: &mut Out) -> Option<ColorRe
     let shown = egui::Frame::new()
         .inner_margin(egui::Margin::same(16))
         .show(ui, |ui| PreferencesPage::new(Bind::bound(&mut page_state)).show(ui, &mut model));
-    if let Some(tone) = model.chosen_tone {
-        crate::picker::set_tone(ui.ctx(), tone);
-    }
     state.settings.page = page_state;
     shown.inner.pick_color
 }
@@ -505,6 +478,72 @@ pub fn settings(ui: &mut Ui, state: &mut State, out: &mut Out) -> Option<ColorRe
 pub fn picked_colour(ui: &Ui, state: &mut State, out: &mut Out, key: &str, colour: Srgba) {
     let mut model = Model::new(ui, state, out);
     model.set_color(key, colour);
+}
+
+/// Runs one of Settings' actions, from its page or fired as a command, as the page's controls would.
+pub fn run_action(ctx: &egui::Context, state: &mut State, out: &mut Out, action: SettingAction) {
+    match action {
+        SettingAction::Previews(on) => {
+            if state.prefs.previews != on {
+                state.prefs.previews = on;
+                out.push(Command::SavePreviews(on));
+            }
+        }
+        SettingAction::NetworkSound { network, on } => {
+            let network = Network::from_id(&network);
+            let own = state.network_alerts.get(&network).copied().unwrap_or_default();
+            if own.sound != Some(on) {
+                set_network(state, out, network, Alerts { sound: Some(on), ..own });
+            }
+        }
+        SettingAction::NetworkAccent { network, colour } => network_accent(ctx, state, out, &Network::from_id(&network), &colour),
+        SettingAction::SkinTone(id) => crate::picker::set_tone(ctx, SkinTone::from_id(&id)),
+        SettingAction::RenameDevice(typed) => {
+            let current = state.settings.this_device().map(|d| d.name.clone()).unwrap_or_default();
+            let sent = &mut state.settings.renamed;
+            if let Some(name) = clean_name(&typed).filter(|n| *n != current && sent.as_ref() != Some(n)) {
+                *sent = Some(name.clone());
+                out.push(Command::RenameDevice(name));
+            }
+        }
+        SettingAction::VerifyDevice(id) => {
+            if state.verification.is_none() {
+                out.push(Command::VerifyDevice(DeviceId(id)));
+            }
+        }
+        SettingAction::SignOutDevice(id) => {
+            let device = state.settings.devices.as_ref().and_then(|d| d.iter().find(|d| d.id.0 == id && !d.this)).cloned();
+            if let Some(device) = device {
+                state.settings.device_sign_out = Some(DeviceSignOut { device, password: Zeroizing::default(), sent: false, problem: None });
+            }
+        }
+    }
+}
+
+/// Sets a network's alerts, shown at once so that a second change before the backend answers builds on this one.
+fn set_network(state: &mut State, out: &mut Out, network: Network, alerts: Alerts) {
+    state.network_alerts.insert(network.clone(), alerts);
+    out.push(Command::NetworkAlerts { network, alerts });
+}
+
+/// A network's accent colour, typed or picked as `#rrggbb`. The colour the row already shows (a field committing
+/// what it was given) changes nothing, and the theme's shade of a network's own colour is saved as that colour.
+fn network_accent(ctx: &egui::Context, state: &mut State, out: &mut Out, network: &Network, colour: &str) {
+    let Some(picked) = Accent::parse(colour).filter(|_| colour.starts_with('#')) else { return };
+    let t = Tokens::get(ctx);
+    let shade = |n: &Network| t.network(n).map(|c| [c.r(), c.g(), c.b()]);
+    let own = state.network_alerts.get(network).copied().unwrap_or_default();
+    let shown = match own.accent {
+        Some(a) => a.network().and_then(|id| shade(&Network::from_id(id))).unwrap_or(a.0),
+        None => shade(network).unwrap_or([t.muted.r(), t.muted.g(), t.muted.b()]),
+    };
+    if picked.0 == shown {
+        return;
+    }
+    let accent = if shade(network) == Some(picked.0) { Accent::of_network(network.id()).or(Some(picked)) } else { Some(picked) };
+    if accent != own.accent {
+        set_network(state, out, network.clone(), Alerts { accent, ..own });
+    }
 }
 
 /// The sheets Settings opens: changing the passphrase, a new recovery key, signing this or another device out.
