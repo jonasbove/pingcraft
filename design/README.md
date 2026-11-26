@@ -24,7 +24,7 @@ copies in `exports/2x/`.
 | Components | the library below; `exports/_components.png` |
 | **M2 · Client** (1200×760 window) | `sign-in`, `recovery-key`, `inbox`, `inbox-light`, `inbox-networks`, `inbox-empty`, `chat-states`, `verify-device`, `unlock` |
 | **M3 · Accounts** (1200×760 window) | `connect-network`, `connect-risk`, `connect-choose`, `connect-qr`, `connect-phone`, `remove-account` (as built, 2026-11-25) |
-| **Messages · Draft** (1200×760 window) | `chat-actions`, `chat-own-menu`, `delete-message`, `chat-reply`, `chat-edit`, `chat-select`, `message-details`, `forward`, `chat-menu` (all carry the "Draft · for review" tag) |
+| **Messages · Draft** (1200×760 window) | `chat-actions`, `chat-own-menu`, `delete-message`, `chat-reply`, `chat-edit`, `chat-select`, `message-details`, `forward`, `chat-menu`, `emoji-picker`, `emoji-react`, `emoji-shortcode` (all carry the "Draft · for review" tag) |
 
 `inbox.png` is the main screen.
 
@@ -131,12 +131,19 @@ built (where it differed from the first draft, PLAN.md lists it). `tools/message
   shows pinned chats first with a pin before the tag, a muted chat with a struck bell and a quiet (unfilled)
   count, and a chat marked unread with a plain accent mark where the count goes.
 
-**Emoji are placeholders.** The headless build has no emoji font, so the quick reactions are drawn as "+1", "♥",
-"ha", "oh", "sad", "thx". The desktop app draws colour emoji (Noto Color Emoji, `ATTRIBUTION.md`), and has an
-emoji picker (search, recently used, then every emoji), `:name:` shortcodes with suggestions over the composer,
-and MORE REACTIONS… in the message's menu. These have no frames yet: the picker and the suggestions row follow
-the menu's look (hairline box, square corners, mono capitals for RECENTLY USED and ALL EMOJI), for the
-maintainer's review.
+- **emoji-picker:** the composer's emoji button opens the picker over it, drawn as built (2026-11-26): the search
+  field, SKIN TONE with a button per tone (the chosen one, Medium, framed and sunken; a radio button to a screen
+  reader), RECENTLY USED (the account's, kept on the server) and ALL EMOJI, eight to a row, in the chosen tone.
+- **emoji-react:** MORE REACTIONS… opens the same picker over the chat, under REACT, shown searching ("party" finds
+  two emoji).
+- **emoji-shortcode:** typing `:smi` suggests up to six shortcodes over the composer, shortest first, each with its
+  emoji in the skin tone; a finished `:name:` turns into its emoji.
+
+**Emoji are placeholders.** The headless build cannot draw colour emoji (FigCraft does not paint the COLRv1 font),
+so the quick reactions are drawn as "+1", "♥", "ha", "oh", "sad", "thx", every emoji in the picker and the
+suggestions is a small hairline square, and the skin tone buttons are swatches of the six tones where the app
+shows a raised hand in each. The desktop app draws colour emoji (Noto Color Emoji, `ATTRIBUTION.md`); `tools/messages.py`
+builds these frames too.
 
 New components: **Reaction chip** (Off / On), **Reply quote** (2 px line_strong rule on the left, sender in
 accent_ink Small 12, the text in one line), **Menu item** (Default / Hover / Danger: icon, Body 13 label, Mono 12

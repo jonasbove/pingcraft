@@ -456,8 +456,142 @@ def chat_menu(d, name, x, y):
     return f
 
 
+# --- the emoji picker, as built (2026-11-26) -------------------------------------------------------------
+# The headless build cannot draw colour emoji (FigCraft does not paint COLRv1), so each emoji is a placeholder
+# square, and the skin tones are swatches of the six tones (the app shows a raised hand in each).
+
+TONES = (("Default", "#ffc83d"), ("Light", "#f7dece"), ("Medium-light", "#f3d2a2"), ("Medium", "#d5ab88"),
+         ("Medium-dark", "#af7e57"), ("Dark", "#7c533e"))
+PICKER_W = 8 * 34 + 16  # picker.rs: PER_ROW buttons of 34 and the margins
+
+
+def emoji_cell(d, parent, name):
+    """One emoji button (30 x 28 in the app), with a placeholder where the colour emoji goes."""
+    c = d.frame(parent, name, 0, 0, 30, 28, fill=None, layout="horizontal", mainAlign="center", crossAlign="center",
+                sizingH="fixed", sizingV="fixed", clip=False)
+    ph = d.rect(c, 0, 0, 18, 18, "sunken", name="Emoji placeholder")
+    box_stroke(d, ph, "line_strong")
+    return c
+
+
+def emoji_row(d, parent, name, n):
+    r = hstack(d, parent, name, gap=4)
+    for i in range(n):
+        emoji_cell(d, r, f"Emoji {i + 1}")
+    return r
+
+
+def tone_row(d, parent, chosen):
+    """SKIN TONE and one button per tone; the chosen one framed and sunken (a radio button to a screen reader)."""
+    r = hstack(d, parent, "Skin tone", gap=4, h=26)
+    hud(d, r, "Skin tone", name="Skin tone label")
+    for label, colour in TONES:
+        on = label == chosen
+        b = d.frame(r, f"{label} skin tone", 0, 0, 26, 26, fill="sunken" if on else None, layout="horizontal",
+                    mainAlign="center", crossAlign="center", sizingH="fixed", sizingV="fixed", clip=False)
+        if on:
+            box_stroke(d, b, "line_strong")
+        sw = d.rect(b, 0, 0, 14, 14, colour, name="Tone")
+        box_stroke(d, sw, "line")
+    return r
+
+
+def picker_body(d, parent, query=None, tone="Medium"):
+    """The picker as picker.rs draws it: the search field, the skin tone row, RECENTLY USED and ALL EMOJI (when
+    nothing is searched for), and the grid, eight to a row, that scrolls after 240 px."""
+    sf = d.inst("Search field", parent, props={"Placeholder": query or "Search emoji"}, name="Search emoji")
+    d.set(sf, sizingH="fill")
+    if query:
+        d.set(d.sub(sf, "Placeholder"), fill="ink")
+    tone_row(d, parent, tone)
+    if not query:
+        hud(d, parent, "Recently used", name="Recently used")
+        emoji_row(d, parent, "Recent", 5)
+        hud(d, parent, "All emoji", name="All emoji")
+    grid = vstack(d, parent, "Grid", gap=2)
+    if query:
+        # "party" finds two: partying face and party popper.
+        emoji_row(d, grid, "Row 1", 2)
+    else:
+        for i in range(7):
+            emoji_row(d, grid, f"Row {i + 1}", 8)
+    return grid
+
+
+def popup(d, f, name, w):
+    """egui's popup: bg, a line_strong hairline and the dialog shadow, square corners."""
+    m = d.frame(f, name, 0, 0, w, 10, fill="bg", stroke="line_strong", layout="vertical", gap=8,
+                padding=[8, 8, 8, 8], sizingV="hug", clip=False)
+    d.effect_style(m, "Shadow/Dialog")
+    return m
+
+
+def emoji_picker(d, name, x, y):
+    """The composer's emoji button opens the picker over it: search, the skin tone (Medium chosen), the recently
+    used emoji, then every emoji in Unicode's order, in the chosen tone. Choosing one puts it in the message."""
+    f, pane, tl = chat_frame(d, name, x, y)
+    divider(d, tl, "Today · 24 Nov")
+    theirs(d, tl, "Ana Ortiz", "AO", "09:02", "Has everyone got the book? The library on Elm Street had two copies left.")
+    theirs(d, tl, "Lars Holm", "LH", "14:28", "Halfway through chapter 9. No spoilers, please!")
+    cp = d.sub(pane, "Composer")
+    inp = d.sub(cp, "Message input")
+    d.R("instance.setProperties", {"ids": [inp], "properties": {"Value": "Great, see you there "}})
+    d.set(d.sub(inp, "Value"), fill="ink")
+    em = d.sub(cp, "Emoji")
+    d.set(em, fill="sunken")
+    ex, ey = where(d, em, f)
+    m = popup(d, f, "Emoji picker", PICKER_W + 16)
+    picker_body(d, m)
+    d.set(m, x=ex, y=ey - d.get(m, "height")["height"] - 4)
+    frame_tag(d, f)
+    return f
+
+
+def emoji_react(d, name, x, y):
+    """MORE REACTIONS… in a message's menu opens the same picker as a reaction, over the chat: REACT, then the
+    picker. Shown searching ("party", which finds two); results come in the chosen skin tone where an emoji has
+    one."""
+    f, pane, tl = chat_frame(d, name, x, y)
+    divider(d, tl, "Today · 24 Nov")
+    theirs(d, tl, "Lars Holm", "LH", "14:28", "Same here. Chapter 9 so far. No spoilers, please!")
+    scrim(d, f)
+    w = PICKER_W + 32
+    m = d.frame(f, "Reaction picker", 0, 0, w, 10, fill="bg", stroke="line_strong", layout="vertical", gap=8,
+                padding=[16, 16, 16, 16], sizingV="hug", clip=False)
+    d.effect_style(m, "Shadow/Dialog")
+    hud(d, m, "React", name="React")
+    picker_body(d, m, query="party")
+    centre(d, m, w)
+    frame_tag(d, f)
+    return f
+
+
+def emoji_shortcode(d, name, x, y):
+    """Typing `:name` suggests shortcodes over the composer (six at most, shortest first), each with its emoji in
+    the skin tone; a finished `:name:` turns into its emoji."""
+    f, pane, tl = chat_frame(d, name, x, y)
+    divider(d, tl, "Today · 24 Nov")
+    theirs(d, tl, "Lars Holm", "LH", "14:28", "Halfway through chapter 9. No spoilers, please!")
+    cp = d.sub(pane, "Composer")
+    inp = d.sub(cp, "Message input")
+    d.R("instance.setProperties", {"ids": [inp], "properties": {"Value": "Ha, no spoilers :smi", "State": "Focus"}})
+    d.set(d.sub(inp, "Value"), fill="ink")
+    row = d.frame(pane, "Shortcode suggestions", 0, 0, W - LEFT_W, 10, fill=None, layout="horizontal", gap=6,
+                  padding=[6, 24, 0, 24], sizingH="fill", sizingV="hug", clip=False)
+    for code in ("smile", "smirk", "smiley", "smile_cat", "smirk_cat", "smiley_cat"):
+        c = hstack(d, row, f"Insert :{code}:", gap=6, h=24, padding=[0, 8, 0, 8])
+        box_stroke(d, c, "line")
+        ph = d.rect(c, 0, 0, 12, 12, "sunken", name="Emoji placeholder")
+        box_stroke(d, ph, "line_strong")
+        d.text(c, f":{code}:", "Small/12.5", "ink", name="Shortcode")
+    insert(d, pane, row, 2)
+    frame_tag(d, f)
+    return f
+
+
 FRAMES = [("chat-actions", chat_actions), ("chat-own-menu", own_menu), ("delete-message", delete_message),
           ("chat-reply", chat_reply), ("chat-edit", chat_edit), ("chat-select", chat_select),
-          ("message-details", message_details), ("forward", forward), ("chat-menu", chat_menu)]
+          ("message-details", message_details), ("forward", forward), ("chat-menu", chat_menu),
+          ("emoji-picker", emoji_picker), ("emoji-react", emoji_react), ("emoji-shortcode", emoji_shortcode)]
 
 __all__ = ["FRAMES", "DRAFT"]

@@ -335,7 +335,7 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
    shortcode, recently used, every emoji) is behind an emoji button by the composer and MORE REACTIONS… in a
    message's menu; the quick reactions put recently used emoji first; `:name:` turns into the emoji, with
    suggestions while it is typed. Size, release build on Linux x86_64: 73.3 MB stripped before, 80.0 MB after
-   (+6.7 MB; the font is 5.0 MB). Open:
+   (+6.7 MB; the font is 5.0 MB). Follow-ups (2026-11-26) and what is still open:
    - **The web build loads the colour font after the page opens** (maintainer, 2026-11-26). `color_fonts` builds
      for wasm32 (clippy `-D warnings`, as `cargo xtask ci` checks it), so it is no longer target-gated. The web build
      starts with egui's monochrome emoji, and `theme::install` starts fetching `noto-color-emoji/Noto-COLRv1.ttf`
@@ -377,9 +377,11 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
      could carry it, for the maintainer to decide. The web build has no settings store yet, so there it lasts for
      the session. Tests: the row's marked tone and the picker in that tone (AccessKit), a saved tone in the quick
      reactions and shortcodes, the tone names and how a tone applies (unit), and saving and reading it back.
-   - The picker and the suggestions row have no frames in the design yet.
-   - Without the colour font (the fallback build, and the web until the font arrives) the picker shows tofu for emoji egui's monochrome
-     face lacks; its two tests are ignored in that build.
+   - **Frames as built** (2026-11-26): `emoji-picker`, `emoji-react` and `emoji-shortcode` on page "Messages ·
+     Draft" in `design/pingcraft.figcraft` (`design/tools/messages.py`, exports at 1x and 2x), for the maintainer's
+     review. Emoji are placeholder squares there and the tones swatches: FigCraft cannot paint the COLRv1 font.
+   - Without the colour font (the fallback build, and the web until the font arrives) the picker shows tofu for
+     emoji egui's monochrome face lacks; its three tests are ignored in that build.
    - Not tried by hand in the running app; checked through the tests only. A Nix build (no network in its
      sandbox) falls back to monochrome emoji.
 2. **Done (2026-11-25), with gaps.** **Reactions.** Show reactions under a message with counts and who reacted; add and remove one from the picker or a
