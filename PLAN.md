@@ -297,6 +297,18 @@ Starts when mautrix-discord releases its bridgev2 rewrite (ADR 0008).
 6. **Unread count on the app's icon** (maintainer, 2026-11-25): the total unread on the taskbar or dock
    icon, or in the tray where there is one, cleared as chats are read. Per platform: what each desktop supports
    (Linux launchers vary) is checked in the ticket.
+7. **Colour themes** (maintainer, 2026-11-26), on craft-libs' `craft-theme` and `craft-theme-store`, after the
+   craft-libs update moves PingCraft onto craft-ui:
+   - **PingCraft's own look becomes a theme** ("PingCraft", the orchid accent) and stays the default. Network
+     colours stay the networks' own in every theme.
+   - **Built in, in PingCraft only** (not craft-libs built-ins): Tokyo Night, Catppuccin (Latte, Frappé, Macchiato,
+     Mocha) and Gruvbox (light and dark), as `craft-design-theme` files from their MIT-licensed palettes, each in
+     `ATTRIBUTION.md`; alongside craft-libs' own built-ins.
+   - **Import:** craft theme JSON (craft-theme-store already does this), base16 and base24 schemes (one converter
+     onto the theme's seeds), and VS Code colour themes (a best-effort mapping; the result is checked by craft-theme's
+     contrast pass and the user sees what could not be mapped).
+   - **One choice for the Craft suite,** shared with the other Craft apps, with a "just for PingCraft" option
+     (craft-theme's per-app choice).
 
 ## Messages and chats (maintainer, 2026-11-25)
 
