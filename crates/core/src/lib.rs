@@ -135,6 +135,9 @@ pub struct Chat {
     pub marked_unread: bool,
     /// What the user typed and has not sent yet, kept in the encrypted store.
     pub draft: Option<String>,
+    /// When the user archived it (PingCraft's own room account data). Whether it is still archived is
+    /// [`Chat::is_archived`]: a newer message brings it back unless it is muted.
+    pub archived: Option<Timestamp>,
 }
 
 /// How long a chat stays muted.
@@ -150,6 +153,12 @@ impl Chat {
     /// Whether the inbox shows the chat as unread: it has unread messages, or the user marked it.
     pub fn is_unread(&self) -> bool {
         self.unread > 0 || self.marked_unread
+    }
+
+    /// Whether the chat is out of the inbox, in the archive: the user archived it, and since then no message has
+    /// come, or it is muted (a muted chat stays archived whatever arrives).
+    pub fn is_archived(&self) -> bool {
+        self.archived.is_some_and(|at| self.muted.is_some() || self.last_activity() <= at)
     }
 
     /// When the chat last had a message, for sorting the inbox. A chat without messages sorts last.
@@ -309,6 +318,7 @@ mod tests {
             pinned: false,
             muted: None,
             marked_unread: false,
+            archived: None,
             draft: None,
         };
         assert_eq!(chat.last_activity(), Timestamp(0));

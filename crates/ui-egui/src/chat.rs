@@ -147,8 +147,8 @@ pub fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, out: &mu
     false
 }
 
-/// The chat's "…" menu: pin it to the top of the inbox, mark it unread, mute it. Returns whether the user left the
-/// chat (marking it unread).
+/// The chat's "…" menu: pin it to the top of the inbox, mark it unread, archive it, mute it. Returns whether the
+/// user left the chat (marking it unread, or archiving it).
 fn chat_menu(ui: &mut Ui, chat: &Chat, out: &mut Out) -> bool {
     let t = Tokens::get(ui.ctx());
     let mut leave = false;
@@ -171,6 +171,16 @@ fn chat_menu(ui: &mut Ui, chat: &Chat, out: &mut Out) -> bool {
             out.push(Command::MarkUnread(id.clone()));
             leave = true;
         }
+        if chat.is_archived() {
+            if ui.button(tl!("Move back to the inbox")).clicked() {
+                out.push(Command::Archive { chat: id.clone(), archive: false });
+            }
+        } else if ui.button(tl!("Archive")).clicked() {
+            out.push(Command::CloseChat);
+            out.push(Command::Archive { chat: id.clone(), archive: true });
+            leave = true;
+        }
+        note(ui, tl!("An archived chat comes back to the inbox when a new message arrives, unless it is muted."));
         ui.separator();
         hud(ui, tl!("Notifications"), t.muted);
         match chat.muted {

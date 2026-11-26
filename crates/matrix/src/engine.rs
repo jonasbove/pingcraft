@@ -633,6 +633,7 @@ impl Worker {
             Command::PinChat { chat, pin } => s.connection.pin_chat(&chat, pin).await.map(|c| upsert = Some(c)),
             Command::Mute { chat, mute } => s.connection.mute(&chat, mute).await.map(|c| upsert = Some(c)),
             Command::MarkUnread(chat) => s.connection.mark_unread(&chat).await.map(|c| upsert = Some(c)),
+            Command::Archive { chat, archive } => s.connection.archive(&chat, archive).await.map(|c| upsert = Some(c)),
             Command::SaveDraft { chat, text } => s.connection.save_draft(&chat, &text).await.map(|c| upsert = Some(c)),
             // Typing notices are a courtesy: one that fails is not worth a problem bar.
             Command::Typing { chat, typing } => {

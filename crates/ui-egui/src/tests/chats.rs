@@ -182,3 +182,47 @@ fn sending_a_kept_draft_forgets_it() {
         "{sent:?}"
     );
 }
+
+/// Archiving a chat from its menu leaves it; archived chats are out of the inbox and its counts, under ARCHIVED,
+/// and can be moved back from there; a newer message brings one back by itself.
+#[test]
+fn a_chat_can_be_archived_and_found_under_archived() {
+    use pingcraft_core::Timestamp;
+    let fake = Fake::default();
+    let mut h = book_club(&fake);
+    chat_menu(&mut h);
+    h.get_by_label("Archive").click();
+    h.run();
+    let sent = fake.take();
+    assert!(matches!(&sent[..], [Command::CloseChat, Command::Archive { chat, archive: true }] if chat.0 == "!book"), "{sent:?}");
+    assert!(h.state().state.open.is_none(), "archiving a chat leaves it");
+
+    let mut book = chat("!book", "Book club", "Telegram", 2, Some(("Lars", "The ending of chapter 8")));
+    book.archived = Some(Timestamp(1_795_000_000_000));
+    fake.tell([Event::Inbox(InboxChange::Upsert(book.clone()))]);
+    h.run();
+    assert!(h.query_by_label_contains("Book club, on Telegram").is_none(), "out of the inbox");
+    h.get_by_label("ALL 1");
+    h.get_by_label("UNREAD 0");
+    h.get_by_label("ARCHIVED 1").click();
+    h.run();
+    h.get_by_label_contains("Book club, on Telegram").click();
+    h.run();
+    fake.take();
+    chat_menu(&mut h);
+    h.get_by_label("Move back to the inbox").click();
+    h.run();
+    let sent = fake.take();
+    assert!(matches!(&sent[..], [Command::Archive { chat, archive: false }] if chat.0 == "!book"), "{sent:?}");
+
+    // A message after it was archived brings it back by itself.
+    h.get_by_label("ALL 1").click();
+    h.run();
+    let mut newer = chat("!book", "Book club", "Telegram", 3, Some(("Lars", "Chapter 9 now")));
+    newer.archived = book.archived;
+    newer.last_message.as_mut().unwrap().at = Timestamp(1_795_000_000_001);
+    fake.tell([Event::Inbox(InboxChange::Upsert(newer))]);
+    h.run();
+    h.get_by_label_contains("Book club, on Telegram");
+    h.get_by_label("ARCHIVED 0");
+}

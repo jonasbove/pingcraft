@@ -81,6 +81,12 @@ pub enum Command {
     },
     /// Marks a chat as unread. Opening it marks it read again.
     MarkUnread(ChatId),
+    /// Moves a chat out of the inbox into the archive (`archive`), or back. An archived chat comes back by itself
+    /// when a new message arrives, unless it is muted.
+    Archive {
+        chat: ChatId,
+        archive: bool,
+    },
     /// Keeps what the user typed in a chat and has not sent, or (empty) forgets it.
     SaveDraft {
         chat: ChatId,
@@ -161,6 +167,7 @@ impl std::fmt::Debug for Command {
             Self::PinChat { chat, pin } => f.debug_struct("PinChat").field("chat", chat).field("pin", pin).finish(),
             Self::Mute { chat, mute } => f.debug_struct("Mute").field("chat", chat).field("mute", mute).finish(),
             Self::MarkUnread(c) => f.debug_tuple("MarkUnread").field(c).finish(),
+            Self::Archive { chat, archive } => f.debug_struct("Archive").field("chat", chat).field("archive", archive).finish(),
             Self::SaveDraft { chat, .. } => f.debug_struct("SaveDraft").field("chat", chat).finish_non_exhaustive(),
             Self::Typing { chat, typing } => f.debug_struct("Typing").field("chat", chat).field("typing", typing).finish(),
             Self::LoadOlder(c) => f.debug_tuple("LoadOlder").field(c).finish(),

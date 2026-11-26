@@ -476,7 +476,23 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
       "several people"); PingCraft tells the chat while the user types (again every 20 s) and when they send or
       empty the field. Per-bridge check pending.
     - **Jump to latest: done (2026-11-25).** JUMP TO LATEST over the timeline when it is scrolled up.
-    - **Archive a chat:** not built (no frame yet).
+    - **Archive a chat: done (2026-11-26), without a frame.** ARCHIVE in the chat's "…" menu leaves the chat and
+      moves it out of the inbox; an ARCHIVED filter next to ALL and UNREAD lists the archived chats (with its own
+      count; ALL and UNREAD leave them out, so they also leave the unread count), and their menu says MOVE BACK TO
+      THE INBOX. An archived chat comes back by itself when a message newer than the archiving arrives, unless it is
+      muted (then it stays archived whatever arrives). Mechanism (decided here, for the maintainer to confirm): PingCraft's
+      own room account data `io.github.jonasbove.pingcraft.archived` with `{"at": <ms>}` (0 when not archived), the
+      same way as `mute_until`, not the `m.lowpriority` tag: other Matrix apps show that tag as a "low priority"
+      section rather than out of the inbox, the SDK removes the chat's `m.favourite` (its pin) when it sets it, and a
+      tag cannot carry the time the chat was archived. "Comes back" is worked out from that time and the last
+      message's (`Chat::is_archived`), so nothing has to be written when a message arrives and it works the same at
+      start-up, after a restart and when PingCraft was not running; the time is now or the last message's time if
+      that is later, so a sender's clock running ahead does not bring it straight back. Other Matrix apps do not see
+      it as archived. Tests: the rule (core unit tests: counts, muted, no messages, coming back), the archive time,
+      and the menu, the filter and coming back through the AccessKit tree. Not tested against a server (no live
+      test; whether the sync brings another device's archiving into the inbox at once, or only at the next change to
+      the chat, is unchecked) and not tried by hand. **Needs a frame** on page "Messages · Draft" (the filter and the
+      menu items), not drawn in this change.
     - **Context menu: done, without shortcuts.** A message's menu opens from its "…" button or a right-click;
       the keyboard shortcuts in the design (through `craft-keymap`) are still to come.
 13. **PingCraft's own interface icons** (maintainer, 2026-11-25). A set of a few dozen original icons, drawn for

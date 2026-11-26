@@ -1,6 +1,11 @@
 //! A chat's own settings: pinned to the top of the inbox (the `m.favourite` tag), muted (a push rule, with the time
-//! it ends in PingCraft's own room account data), marked unread (`m.marked_unread`), and the user's draft (in the
-//! SDK's encrypted state store on this device, never in a plain file: ADR 0004).
+//! it ends in PingCraft's own room account data), marked unread (`m.marked_unread`), archived (when, in PingCraft's
+//! own room account data), and the user's draft (in the SDK's encrypted state store on this device, never in a plain
+//! file: ADR 0004).
+//!
+//! Archiving is not the `m.lowpriority` tag: other Matrix apps show that as a "low priority" section, not as out of
+//! the inbox, the SDK takes a chat's `m.favourite` (its pin) off when it sets it, and a tag cannot say when the chat
+//! was archived, which PingCraft needs to bring it back when a newer message arrives.
 //!
 //! Each change goes to the server, which keeps it for the user's other Matrix apps too. The inbox learns of it with
 //! the next sync; each call also returns the chat as it now is, so the interface does not wait for that.
@@ -26,6 +31,28 @@ pub(crate) async fn mute_until(room: &Room) -> Option<Timestamp> {
     let raw = room.account_data(RoomAccountDataEventType::from(MUTE_UNTIL)).await.ok()??;
     let content: serde_json::Value = raw.get_field("content").ok()??;
     content.get("until").and_then(serde_json::Value::as_u64).filter(|&t| t > 0).map(Timestamp)
+}
+
+/// Room account data where PingCraft keeps when the user archived a chat (`{"at": ms}`; 0 when it is not).
+pub(crate) const ARCHIVED: &str = crate::namespaced!("archived");
+
+/// When the user archived a chat, from its room account data: `None` when it is not archived.
+pub(crate) async fn archived(room: &Room) -> Option<Timestamp> {
+    let raw = room.account_data(RoomAccountDataEventType::from(ARCHIVED)).await.ok()??;
+    let content: serde_json::Value = raw.get_field("content").ok()??;
+    content.get("at").and_then(serde_json::Value::as_u64).filter(|&t| t > 0).map(Timestamp)
+}
+
+/// The time to archive a chat at: now, or its last message's time if that is later (another server's clock may run
+/// ahead of this computer's, and the chat must not come straight back).
+pub(crate) fn archive_time(now: Timestamp, last_message: Option<Timestamp>) -> Timestamp {
+    now.max(last_message.unwrap_or_default())
+}
+
+/// This computer's clock, in milliseconds since 1970 (as the server's timestamps are), through ruma, which also
+/// reads the browser's clock on the web.
+fn now_ms() -> Timestamp {
+    Timestamp(u64::from(matrix_sdk::ruma::MilliSecondsSinceUnixEpoch::now().get()))
 }
 
 fn problem(what: &str, e: impl std::fmt::Display) -> String {
@@ -77,6 +104,19 @@ impl Connection {
         room.set_unread_flag(true).await.map_err(|e| problem("the chat could not be marked unread", e))?;
         let mut now = self.chat_now(&room).await;
         now.marked_unread = true;
+        Ok(now)
+    }
+
+    /// Moves a chat into the archive, or back into the inbox.
+    pub async fn archive(&self, chat: &ChatId, archive: bool) -> Result<Chat, String> {
+        let room = self.room(chat)?;
+        let mut now = self.chat_now(&room).await;
+        let at = archive.then(|| archive_time(now_ms(), now.last_message.as_ref().map(|m| m.at)));
+        let content = Raw::new(&json!({ "at": at.map_or(0, |t| t.0) })).map_err(|e| problem("the chat could not be archived", e))?.cast_unchecked();
+        room.set_account_data_raw(RoomAccountDataEventType::from(ARCHIVED), content)
+            .await
+            .map_err(|e| problem(if archive { "the chat could not be archived" } else { "the chat could not be moved back to the inbox" }, e))?;
+        now.archived = at;
         Ok(now)
     }
 
@@ -135,7 +175,9 @@ pub(crate) fn is_muted(room: &Room) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::MUTE_UNTIL;
+    use pingcraft_core::Timestamp;
+
+    use super::{ARCHIVED, MUTE_UNTIL, archive_time};
 
     /// The name other Matrix apps and later versions find the data under: it must not change by accident.
     #[test]
@@ -143,5 +185,15 @@ mod tests {
         assert_eq!(crate::NAMESPACE, "io.github.jonasbove.pingcraft");
         assert_eq!(MUTE_UNTIL, "io.github.jonasbove.pingcraft.mute_until");
         assert!(MUTE_UNTIL.starts_with(&format!("{}.", crate::NAMESPACE)));
+        assert_eq!(ARCHIVED, "io.github.jonasbove.pingcraft.archived");
+    }
+
+    /// A chat whose last message is stamped ahead of this computer's clock is archived at that time, so it does not
+    /// come straight back.
+    #[test]
+    fn a_chat_is_archived_after_its_last_message() {
+        assert_eq!(archive_time(Timestamp(100), Some(Timestamp(40))), Timestamp(100));
+        assert_eq!(archive_time(Timestamp(100), Some(Timestamp(140))), Timestamp(140));
+        assert_eq!(archive_time(Timestamp(100), None), Timestamp(100));
     }
 }

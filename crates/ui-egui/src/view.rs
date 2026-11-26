@@ -399,9 +399,10 @@ fn inbox_list(ui: &mut Ui, state: &mut State, out: &mut Out) {
     let t = Tokens::get(ui.ctx());
     egui::Frame::new().inner_margin(Margin { left: 16, right: 16, top: 16, bottom: 8 }).show(ui, |ui| {
         ui.horizontal(|ui| {
-            let all = format!("{} {}", tl!("All").to_uppercase(), state.inbox.len());
+            let all = format!("{} {}", tl!("All").to_uppercase(), state.inbox.in_inbox());
             let unread = format!("{} {}", tl!("Unread").to_uppercase(), state.inbox.unread_chats());
-            for (label, filter) in [(all, Filter::All), (unread, Filter::Unread)] {
+            let archived = format!("{} {}", tl!("Archived").to_uppercase(), state.inbox.archived());
+            for (label, filter) in [(all, Filter::All), (unread, Filter::Unread), (archived, Filter::Archived)] {
                 let on = state.filter == filter;
                 let text = RichText::new(label).monospace().size(11.0).color(if on { t.invert_fg } else { t.muted });
                 let cell = egui::Button::new(text).stroke(Stroke::new(1.0, t.line_strong)).selected(on);
@@ -418,7 +419,11 @@ fn inbox_list(ui: &mut Ui, state: &mut State, out: &mut Out) {
             search.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, tl!("Search chats")));
         });
         ui.add_space(8.0);
-        hud(ui, &format!("{} · {}", tl!("Inbox"), trn(state.inbox.len() as u64, "{n} chat", "{n} chats")), t.muted);
+        let (place, count) = match state.filter {
+            Filter::Archived => (tl!("Archive"), state.inbox.archived()),
+            Filter::All | Filter::Unread => (tl!("Inbox"), state.inbox.in_inbox()),
+        };
+        hud(ui, &format!("{} · {}", place, trn(count as u64, "{n} chat", "{n} chats")), t.muted);
         if state.recovery == RecoveryStatus::NeedsKey {
             needs_key(ui, state, out);
         }
@@ -432,6 +437,8 @@ fn inbox_list(ui: &mut Ui, state: &mut State, out: &mut Out) {
             egui::Frame::new().inner_margin(Margin::same(16)).show(ui, |ui| {
                 let text = if !state.inbox_loaded {
                     tl!("Loading your chats…")
+                } else if state.filter == Filter::Archived && state.search.trim().is_empty() {
+                    tl!("No archived chats. An archived chat comes back to the inbox when a new message arrives, unless it is muted.")
                 } else if state.inbox.is_empty() {
                     tl!("No chats yet. Chats from the networks you connect, and your Matrix chats, show up here.")
                 } else {

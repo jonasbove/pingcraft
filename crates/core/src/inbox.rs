@@ -4,6 +4,9 @@ use crate::{Chat, ChatId};
 
 /// One change to the inbox, as the Matrix adapter reports it. The adapter sends a [`InboxChange::Reset`] first,
 /// then changes; [`Inbox::apply`] keeps the order, so the adapter does not have to.
+// A chat is a few hundred bytes and changes come one at a time over a channel, so boxing `Upsert` would only add an
+// allocation per change.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InboxChange {
     /// Every chat, replacing what was there.
@@ -20,6 +23,8 @@ pub enum Filter {
     #[default]
     All,
     Unread,
+    /// The archived chats, which the other filters leave out.
+    Archived,
 }
 
 /// All of a user's chats, newest activity first. Ties keep a stable order by name, then ID, so the list does not
@@ -79,16 +84,28 @@ impl Inbox {
         let needle = search.trim().to_lowercase();
         self.chats.iter().filter(move |c| {
             let passes_filter = match filter {
-                Filter::All => true,
-                Filter::Unread => c.is_unread(),
+                Filter::All => !c.is_archived(),
+                Filter::Unread => !c.is_archived() && c.is_unread(),
+                Filter::Archived => c.is_archived(),
             };
             passes_filter && (needle.is_empty() || c.name.to_lowercase().contains(&needle))
         })
     }
 
-    /// The number of chats with unread messages, for the window title and the filter's count.
+    /// The number of chats with unread messages, for the window title and the filter's count. Archived chats are
+    /// left out: they are out of the inbox.
     pub fn unread_chats(&self) -> usize {
-        self.chats.iter().filter(|c| c.is_unread()).count()
+        self.chats.iter().filter(|c| !c.is_archived() && c.is_unread()).count()
+    }
+
+    /// The number of chats in the inbox, archived ones left out.
+    pub fn in_inbox(&self) -> usize {
+        self.chats.iter().filter(|c| !c.is_archived()).count()
+    }
+
+    /// The number of archived chats.
+    pub fn archived(&self) -> usize {
+        self.chats.iter().filter(|c| c.is_archived()).count()
     }
 
     /// Whether `a` belongs before `b`: pinned chats first, then newer activity, then name, then ID.
@@ -115,6 +132,7 @@ mod tests {
             pinned: false,
             muted: None,
             marked_unread: false,
+            archived: None,
             draft: None,
         }
     }
@@ -157,6 +175,30 @@ mod tests {
         assert_eq!(names(inbox.visible(Filter::All, "")), ["Old but pinned", "Newest", "Marked"]);
         assert_eq!(names(inbox.visible(Filter::Unread, "")), ["Marked"]);
         assert_eq!(inbox.unread_chats(), 1);
+    }
+
+    /// An archived chat leaves the inbox and its counts, and comes back with a newer message unless it is muted.
+    #[test]
+    fn archived_chats_leave_the_inbox_until_a_new_message_unless_muted() {
+        let mut quiet = chat("1", "Quiet", 10, 3);
+        quiet.archived = Some(Timestamp(10));
+        let mut muted = chat("2", "Muted", 50, 1);
+        muted.archived = Some(Timestamp(20));
+        muted.muted = Some(crate::Mute::UntilUnmuted);
+        let mut empty = chat("4", "No messages", 0, 0);
+        empty.archived = Some(Timestamp(5));
+        let mut inbox = Inbox::new([quiet.clone(), muted, chat("3", "Busy", 30, 1), empty]);
+        assert_eq!(names(inbox.visible(Filter::All, "")), ["Busy"]);
+        assert_eq!(names(inbox.visible(Filter::Unread, "")), ["Busy"]);
+        assert_eq!(names(inbox.visible(Filter::Archived, "")), ["Muted", "Quiet", "No messages"]);
+        assert_eq!((inbox.in_inbox(), inbox.unread_chats(), inbox.archived()), (1, 1, 3));
+        // A message after it was archived brings it back.
+        let mut back = chat("1", "Quiet", 11, 4);
+        back.archived = quiet.archived;
+        assert!(!back.is_archived());
+        inbox.upsert(back);
+        assert_eq!(names(inbox.visible(Filter::All, "")), ["Busy", "Quiet"]);
+        assert_eq!(names(inbox.visible(Filter::Archived, "qu")), Vec::<&str>::new());
     }
 
     #[test]
