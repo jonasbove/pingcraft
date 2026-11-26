@@ -7,12 +7,14 @@
 
 mod accounts;
 mod chat;
+mod commands;
 mod emoji;
 pub mod framework;
 pub mod i18n;
 mod message;
 mod notify;
 mod picker;
+mod settings;
 mod state;
 mod theme;
 mod time;
@@ -22,12 +24,19 @@ mod widgets;
 #[cfg(test)]
 mod tests;
 
+use craft_color_ui::ui::ColorPickerDialog;
+use craft_menu::{MenuBar, MenuBarUi};
+use craft_ui::contract::Tracked;
+use craft_ui::dialog::{DialogHost, DialogResult};
+use craft_ui::runtime::commands::{AppCatalog, CommandInput, CommandStates};
 use egui::{Frame, Margin};
 use pingcraft_core::app::{Backend, Command, Event};
 use pingcraft_core::notify::Notifier;
 
+use crate::commands::AppCommand;
+
 pub use picker::SkinTone;
-pub use state::{Screen, State, Tab};
+pub use state::{Appearance, Prefs, Screen, State, Tab};
 pub use theme::Tokens;
 
 /// The logo as drawn in the window (the design's `pingcraft-logo-128.png`).
@@ -47,11 +56,84 @@ pub struct PingCraftApp {
     /// Whether the account has answered which tone it keeps, so a tone kept on this computer from before has been
     /// moved up to it (or set aside). The app saves this with its local copy of the tone.
     skin_tone_migrated: bool,
+    /// PingCraft's commands, as registered with craft-ui's command board.
+    catalog: Option<AppCatalog>,
+    /// Each command's state, as last handed to the board.
+    command_states: Tracked<CommandStates>,
+    /// The app menu, laid out for the platform.
+    menu: Tracked<MenuBar>,
+    /// craft-ui's dialogs the app opens: the colour picker.
+    dialogs: DialogHost,
 }
 
 impl PingCraftApp {
     pub fn new(backend: Box<dyn Backend>) -> Self {
-        Self { backend, state: State::default(), notifier: None, skin_tone: SkinTone::default(), skin_tone_migrated: false }
+        Self {
+            backend,
+            state: State::default(),
+            notifier: None,
+            skin_tone: SkinTone::default(),
+            skin_tone_migrated: false,
+            catalog: commands::catalog(),
+            command_states: Tracked::new(CommandStates::new()),
+            menu: commands::laid_out(),
+            dialogs: DialogHost::new(),
+        }
+    }
+
+    /// Asks for the next frame's input (the theme's mode, PingCraft's commands and their state), which
+    /// [`framework::before_input`] hands craft-ui's runtime.
+    fn next_input(&mut self, ctx: &egui::Context) {
+        let states = commands::states(&self.state);
+        if *self.command_states != states {
+            self.command_states.edit(|s| *s = states);
+        }
+        let mut input = CommandInput::new().states(&self.command_states);
+        if let Some(catalog) = &self.catalog {
+            input = input.catalog(catalog.clone());
+        }
+        framework::set_next(ctx, self.state.prefs.appearance, input);
+    }
+
+    /// The settings kept on this computer, for the app to save.
+    pub fn prefs(&self) -> Prefs {
+        self.state.prefs
+    }
+
+    /// Starts from the settings kept on this computer.
+    pub fn set_prefs(&mut self, prefs: Prefs) {
+        self.state.prefs = prefs;
+    }
+
+    /// Runs one of PingCraft's commands, from wherever it came. One that cannot run now does nothing.
+    fn run(&mut self, command: AppCommand, out: &mut view::Out) {
+        if !command.enabled(&self.state) {
+            return;
+        }
+        let state = &mut self.state;
+        match command {
+            AppCommand::Inbox => state.tab = Tab::Inbox,
+            AppCommand::Accounts => {
+                if state.tab != Tab::Accounts {
+                    view::open_accounts(state, out);
+                }
+            }
+            AppCommand::Settings => {
+                state.tab = Tab::Settings;
+                out.push(Command::LoadDevices);
+            }
+            AppCommand::Refresh => out.push(Command::Refresh),
+            AppCommand::Appearance(appearance) => state.prefs.appearance = appearance,
+            AppCommand::ChangePassphrase => state.settings.passphrase = Some(settings::PassphraseForm::default()),
+            AppCommand::NewRecoveryKey => state.settings.new_key = Some(false),
+            AppCommand::EnterRecoveryKey => state.recovery_forms.entering = true,
+            AppCommand::VerifyThisDevice => {
+                if state.verification.is_none() {
+                    out.push(Command::VerifyThisDevice);
+                }
+            }
+            AppCommand::SignOut => state.settings.sign_out = true,
+        }
     }
 
     /// Installs the interface's look and fonts on the window's context. Call it once, when the window is created,
@@ -146,7 +228,13 @@ impl PingCraftApp {
         }
         let t = Tokens::get(&ctx);
         self.notifications(&ctx, &mut out);
-        egui::Panel::top("header").exact_size(48.0).frame(Frame::new().fill(t.bg)).show(ui, |ui| view::header(ui, &mut self.state, &mut out));
+        for command in framework::take_fired(&ctx).iter().filter_map(AppCommand::from_ref) {
+            self.run(command, &mut out);
+        }
+        egui::Panel::top("menu").frame(Frame::new().fill(t.bg)).show(ui, |ui| {
+            MenuBarUi::new(&self.menu).keyboard(!self.dialogs.shows_modal()).show(ui);
+        });
+        egui::Panel::top("header").exact_size(48.0).frame(Frame::new().fill(t.bg)).show(ui, |ui| view::header(ui, &mut self.state));
         egui::Panel::bottom("footer").exact_size(34.0).frame(Frame::new().fill(t.bg)).show(ui, |ui| view::footer(ui, &self.state));
         egui::CentralPanel::default().frame(Frame::new().fill(t.sunken).inner_margin(Margin::ZERO)).show(ui, |ui| {
             view::problem_bar(ui, &mut self.state);
@@ -158,8 +246,15 @@ impl PingCraftApp {
                 Screen::Inbox => {
                     match self.state.tab {
                         Tab::Inbox => view::inbox(ui, &mut self.state, &mut out),
-                        Tab::Accounts => accounts::accounts(ui, &mut self.state, &mut out),
+                        Tab::Accounts => accounts::accounts(ui, &mut self.state),
+                        Tab::Settings => {
+                            if let Some(request) = settings::settings(ui, &mut self.state, &mut out) {
+                                // The eyedropper would capture the screen; a network's colour has no need of it.
+                                self.dialogs.open(ColorPickerDialog::from_request(request).eyedropper(false));
+                            }
+                        }
                     }
+                    settings::sheets(&ctx, &mut self.state, &mut out);
                     accounts::connect_sheet(&ctx, &mut self.state, &mut out);
                     accounts::remove_sheet(&ctx, &mut self.state, &mut out);
                     view::recovery_key(&ctx, &mut self.state, &mut out);
@@ -168,13 +263,21 @@ impl PingCraftApp {
                 }
             }
         });
-        // Chosen in the picker this frame: kept with the account.
+        self.dialogs.run(ui);
+        if let Some(DialogResult::Ok(picked)) = self.dialogs.take::<ColorPickerDialog>() {
+            settings::picked_colour(ui, &mut self.state, &mut out, &picked.key, picked.picked.color);
+        }
+        for command in std::mem::take(&mut self.state.requested) {
+            self.run(command, &mut out);
+        }
+        // Chosen in the picker (or on the Emoji page) this frame: kept with the account.
         let picked = picker::tone(&ctx);
         if picked != self.skin_tone {
             self.skin_tone = picked;
             out.push(Command::SaveSkinTone(picked.id().to_owned()));
         }
         out.extend(picker::take_used(&ctx).into_iter().map(Command::EmojiUsed));
+        self.next_input(&ctx);
         for command in out {
             self.backend.send(command);
         }

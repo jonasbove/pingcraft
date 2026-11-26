@@ -1,7 +1,11 @@
 //! craft-ui's runtime, hosted from PingCraft's own eframe `App` through the `craft_ui::shell::embed` hooks (craft-libs
 //! docs/craft-framework.md, section 2.2): [`install`] once when the window is created, [`before_input`] in
 //! `raw_input_hook`, [`close_path`] last in `logic` and [`before_ui`] first in `ui`. The tests install it with
-//! [`install_headless`].
+//! [`install_headless`] and run [`before_input`] from an egui plugin's input hook, which egui calls at the same point.
+//!
+//! [`before_input`] hands the runtime the input the interface asked for at the end of its last frame ([`set_next`]:
+//! the theme's mode, PingCraft's commands and their state), and keeps the commands fired in the frame before for the
+//! interface to run ([`take_fired`]).
 //!
 //! The runtime takes Tab, F6 and Escape from egui for the whole window: Tab moves over one order of every focusable
 //! control, and a sheet (a craft-ui dialog) keeps Tab inside it and closes on Escape.
@@ -10,21 +14,31 @@ use std::sync::{Arc, LazyLock};
 
 use craft_host::target::ShellInfo;
 use craft_host::{AppInfo, Host};
+use craft_theme::ModeChoice;
 use craft_ui::InstallSpec;
+use craft_ui::runtime::commands::{CommandInput, CommandRef};
 use craft_ui::runtime::env::RootEnv;
 use craft_ui::runtime::frame::{FrameInput, set_input};
 use craft_ui::shell::embed::{self, CloseDecision};
 use craft_window::system::{NoWindows, WindowSystem};
 use egui::Context;
 
+use crate::state::Appearance;
+
 /// The app's name and version for the runtime's dialogs and words. PingCraft's words are not craft-i18n's yet
 /// (PLAN.md, M2 ticket 9), so the host carries no catalogs and the framework's own words are English.
 static HOST: LazyLock<Arc<Host>> =
     LazyLock::new(|| Arc::new(Host::builder(AppInfo { id: "pingcraft", name: "PingCraft", version: env!("CARGO_PKG_VERSION") }).build()));
 
-/// The root values of every frame: craft-libs' defaults (its default theme, the system's light or dark).
-fn input() -> FrameInput {
-    FrameInput::new(RootEnv::new()).host(Arc::clone(&HOST))
+/// The root values of a frame: craft-libs' default theme in the mode the user chose (light, dark, or the system's),
+/// and PingCraft's commands with their state.
+pub fn input(appearance: Appearance, commands: CommandInput) -> FrameInput {
+    let mode = match appearance {
+        Appearance::Light => ModeChoice::Light,
+        Appearance::Dark => ModeChoice::Dark,
+        Appearance::System => ModeChoice::System,
+    };
+    FrameInput::new(RootEnv::new().mode(mode)).host(Arc::clone(&HOST)).commands(commands)
 }
 
 fn install_with(ctx: &Context, spec: InstallSpec) -> Result<(), craft_ui::InstallError> {
@@ -32,7 +46,7 @@ fn install_with(ctx: &Context, spec: InstallSpec) -> Result<(), craft_ui::Instal
         Ok(()) | Err(craft_ui::InstallError::AlreadyInstalled) => {}
         Err(error) => return Err(error),
     }
-    set_input(ctx, input());
+    set_input(ctx, input(Appearance::default(), CommandInput::new()));
     Ok(())
 }
 
@@ -57,9 +71,51 @@ pub fn install_headless(ctx: &Context) {
     }
 }
 
-/// From `raw_input_hook`, before each frame: the root values and the host.
+/// What the interface asked the next frame's input to be.
+#[derive(Clone)]
+struct Next {
+    appearance: Appearance,
+    commands: CommandInput,
+}
+
+/// The commands fired in earlier frames that the interface has not taken yet.
+#[derive(Clone, Default)]
+struct Fired(Vec<CommandRef>);
+
+fn next_id() -> egui::Id {
+    egui::Id::unique("pingcraft-next-input")
+}
+
+fn fired_id() -> egui::Id {
+    egui::Id::unique("pingcraft-fired")
+}
+
+/// From `raw_input_hook`, before each frame: keeps the commands the frame before fired, and hands the runtime the
+/// input the interface asked for.
 pub fn before_input(ctx: &Context) {
-    embed::before_input(ctx, |_output| input());
+    embed::before_input(ctx, |output| {
+        let fired: Vec<CommandRef> = output.fired.into_iter().map(|f| f.command).collect();
+        let next = ctx.data_mut(|d| {
+            if !fired.is_empty() {
+                d.get_temp_mut_or_default::<Fired>(fired_id()).0.extend(fired);
+            }
+            d.get_temp::<Next>(next_id())
+        });
+        match next {
+            Some(Next { appearance, commands }) => input(appearance, commands),
+            None => input(Appearance::default(), CommandInput::new()),
+        }
+    });
+}
+
+/// The input the next frame should have: the theme's mode, and PingCraft's commands with their state.
+pub fn set_next(ctx: &Context, appearance: Appearance, commands: CommandInput) {
+    ctx.data_mut(|d| d.insert_temp(next_id(), Next { appearance, commands }));
+}
+
+/// The commands fired since the last call (a shortcut, a menu row, a command button), oldest first.
+pub fn take_fired(ctx: &Context) -> Vec<CommandRef> {
+    ctx.data_mut(|d| d.remove_temp::<Fired>(fired_id())).map(|f| f.0).unwrap_or_default()
 }
 
 /// First in `ui`, each pass: hands the runtime the window (eframe's `Frame`) and fits it to its monitor once.

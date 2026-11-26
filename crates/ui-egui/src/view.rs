@@ -8,6 +8,7 @@ use pingcraft_core::encryption::{CancelReason, RecoveryKey, RecoveryStatus, SasS
 use pingcraft_core::{Chat, ConnectionState, Filter, MessageBody};
 use zeroize::Zeroizing;
 
+use crate::commands::AppCommand;
 use crate::i18n::{fmt, trn};
 use crate::state::{NetworkEntry, Screen, State, Tab};
 use crate::theme::Tokens;
@@ -22,7 +23,7 @@ use craft_ui::display::Shade;
 /// The commands the screens collected in one frame.
 pub type Out = Vec<Command>;
 
-pub fn header(ui: &mut Ui, state: &mut State, out: &mut Out) {
+pub fn header(ui: &mut Ui, state: &mut State) {
     let t = Tokens::get(ui.ctx());
     ui.horizontal_centered(|ui| {
         ui.add_space(16.0);
@@ -32,14 +33,15 @@ pub fn header(ui: &mut Ui, state: &mut State, out: &mut Out) {
         ui.label(RichText::new("Craft").size(t.title).strong().color(t.accent_ink));
         if state.screen == Screen::Inbox {
             ui.add_space(24.0);
-            if nav_cell(ui, tl!("Inbox"), state.tab == Tab::Inbox, true) {
-                state.tab = Tab::Inbox;
+            for (label, tab, command) in [
+                (tl!("Inbox"), Tab::Inbox, AppCommand::Inbox),
+                (tl!("Accounts"), Tab::Accounts, AppCommand::Accounts),
+                (tl!("Settings"), Tab::Settings, AppCommand::Settings),
+            ] {
+                if nav_cell(ui, label, state.tab == tab, true) && state.tab != tab {
+                    state.requested.push(command);
+                }
             }
-            if nav_cell(ui, tl!("Accounts"), state.tab == Tab::Accounts, true) && state.tab != Tab::Accounts {
-                open_accounts(state, out);
-            }
-            // Settings has no screen yet.
-            nav_cell(ui, tl!("Settings"), false, false);
         }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.add_space(16.0);
@@ -51,7 +53,7 @@ pub fn header(ui: &mut Ui, state: &mut State, out: &mut Out) {
             if state.screen == Screen::Inbox {
                 ui.add_space(12.0);
                 if button(ui, tl!("Refresh"), Kind::Secondary, true).clicked() {
-                    out.push(Command::Refresh);
+                    state.requested.push(AppCommand::Refresh);
                 }
             }
         });
@@ -641,7 +643,8 @@ fn empty_chat(ui: &mut Ui, state: &mut State, out: &mut Out) {
 pub fn recovery_key(ctx: &egui::Context, state: &mut State, out: &mut Out) {
     let Some(key) = state.recovery_forms.new_key.clone() else { return };
     let user = state.user.clone().unwrap_or_default();
-    let caption = format!("{} · {user}", tl!("First sign-in"));
+    let first = if state.recovery_forms.replacing { tl!("New recovery key") } else { tl!("First sign-in") };
+    let caption = format!("{first} · {user}");
     let ticked = std::cell::Cell::new(state.recovery_forms.saved_ticked);
     let copied = std::cell::Cell::new(state.recovery_forms.copied);
     let mut done = false;
@@ -686,6 +689,7 @@ pub fn recovery_key(ctx: &egui::Context, state: &mut State, out: &mut Out) {
         state.recovery_forms.new_key = None;
         state.recovery_forms.saved_ticked = false;
         state.recovery_forms.copied = false;
+        state.recovery_forms.replacing = false;
         out.push(Command::RecoveryKeySaved);
     }
 }

@@ -5,8 +5,9 @@
 //! where a keychain works, to try that path.
 //!
 //! Its settings on this computer are craft-settings' `config.toml` in the platform's configuration folder, or in
-//! `PINGCRAFT_CONFIG_DIR`. For now that is a copy of the emoji skin tone, which the account keeps: the copy is what
-//! PingCraft starts with, and moved up once to an account that keeps none.
+//! `PINGCRAFT_CONFIG_DIR`: the appearance (light, dark or the system's), whether notifications show message text, and
+//! a copy of the emoji skin tone, which the account keeps: the copy is what PingCraft starts with, and moved up once
+//! to an account that keeps none.
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable))]
 // A Windows GUI program: no console window opens with it (packaging/windows/package.ps1 checks this).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
@@ -21,7 +22,7 @@ use serde::{Deserialize, Serialize};
 
 use pingcraft_keychain::KdfParams;
 use pingcraft_matrix::engine::{Engine, Secrets};
-use pingcraft_ui_egui::{PingCraftApp, SkinTone, framework};
+use pingcraft_ui_egui::{Appearance, PingCraftApp, SkinTone, framework};
 
 /// The folder name under the platform's data folder.
 const APP_ID: &str = "pingcraft";
@@ -31,7 +32,29 @@ const APP_ID: &str = "pingcraft";
 #[derive(Serialize, Deserialize, Default, Clone, PartialEq)]
 #[serde(default)]
 struct Prefs {
+    appearance: AppearancePrefs,
+    notifications: NotificationPrefs,
     emoji: EmojiPrefs,
+}
+
+#[derive(Serialize, Deserialize, Default, Clone, PartialEq)]
+#[serde(default)]
+struct AppearancePrefs {
+    /// `light`, `dark` or `system` ([`Appearance::id`]); anything else, or nothing, follows the system.
+    mode: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
+#[serde(default)]
+struct NotificationPrefs {
+    /// Whether a notification shows the message's text, or only who wrote.
+    previews: bool,
+}
+
+impl Default for NotificationPrefs {
+    fn default() -> Self {
+        Self { previews: true }
+    }
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, PartialEq)]
@@ -66,6 +89,21 @@ fn keep_skin_tone(tone: SkinTone, migrated: bool, settings: &mut SettingsStore<P
     }
 }
 
+/// Keeps the settings of this computer (appearance, previews) in the settings file, which saves them a moment later.
+fn keep_prefs(prefs: pingcraft_ui_egui::Prefs, settings: &mut SettingsStore<Prefs>) {
+    if local_prefs(settings.get()) != prefs {
+        settings.update(|p| {
+            p.appearance.mode = prefs.appearance.id().to_owned();
+            p.notifications.previews = prefs.previews;
+        });
+    }
+}
+
+/// The settings of this computer as the interface takes them.
+fn local_prefs(settings: &Prefs) -> pingcraft_ui_egui::Prefs {
+    pingcraft_ui_egui::Prefs { appearance: Appearance::from_id(&settings.appearance.mode), previews: settings.notifications.previews }
+}
+
 impl eframe::App for Window {
     fn raw_input_hook(&mut self, ctx: &egui::Context, _raw_input: &mut egui::RawInput) {
         framework::before_input(ctx);
@@ -79,6 +117,7 @@ impl eframe::App for Window {
         framework::before_ui(ui.ctx(), frame);
         self.app.ui(ui);
         keep_skin_tone(self.app.skin_tone(), self.app.skin_tone_migrated(), &mut self.settings);
+        keep_prefs(self.app.prefs(), &mut self.settings);
         self.settings.tick(Instant::now());
     }
 
@@ -144,6 +183,7 @@ fn main() -> ExitCode {
             let (settings, _) = SettingsStore::<Prefs>::open(Location::Auto);
             let kept = &settings.get().emoji;
             app.set_local_skin_tone(SkinTone::from_id(&kept.skin_tone), kept.skin_tone_migrated);
+            app.set_prefs(local_prefs(settings.get()));
             let ctx = cc.egui_ctx.clone();
             app.set_notifier(pingcraft_notify::desktop(Arc::new(move || ctx.request_repaint())));
             Ok(Box::new(Window { app, settings }))
@@ -183,6 +223,23 @@ mod tests {
         again.flush().unwrap();
         let (third, _) = SettingsStore::<Prefs>::open_at(dir.path());
         assert!(third.get().emoji.skin_tone_migrated, "moved up once, never again");
+    }
+
+    /// The appearance and the previews setting are saved and come back; a file without them (from before Settings)
+    /// follows the system and shows previews.
+    #[test]
+    fn the_appearance_and_previews_are_saved_and_come_back() {
+        use pingcraft_ui_egui::{Appearance, Prefs as Local};
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(craft_settings::store::CONFIG_FILE), "schema_version = 1\n\n[emoji]\nskin_tone = \"dark\"\n").unwrap();
+        let (mut settings, _) = SettingsStore::<Prefs>::open_at(dir.path());
+        assert_eq!(super::local_prefs(settings.get()), Local::default(), "an older file");
+        let chosen = Local { appearance: Appearance::Dark, previews: false };
+        super::keep_prefs(chosen, &mut settings);
+        settings.flush().unwrap();
+        let (again, _) = SettingsStore::<Prefs>::open_at(dir.path());
+        assert_eq!(super::local_prefs(again.get()), chosen);
+        assert_eq!(again.get().emoji.skin_tone, "dark", "the rest of the file is kept");
     }
 
     /// A settings file from before the account kept the tone has no `skin_tone_migrated`: it reads as not moved up

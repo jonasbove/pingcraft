@@ -54,6 +54,18 @@ impl SkinTone {
         Self::ALL.into_iter().find(|t| t.id() == id).unwrap_or_default()
     }
 
+    /// Its name in a list of tones (Settings).
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Default => tl!("Default"),
+            Self::Light => tl!("Light"),
+            Self::MediumLight => tl!("Medium-light"),
+            Self::Medium => tl!("Medium"),
+            Self::MediumDark => tl!("Medium-dark"),
+            Self::Dark => tl!("Dark"),
+        }
+    }
+
     /// Its accessible name in the picker.
     fn name(self) -> &'static str {
         match self {

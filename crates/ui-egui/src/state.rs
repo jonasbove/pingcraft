@@ -64,6 +64,8 @@ pub struct RecoveryForms {
     pub entering: bool,
     pub typed: Zeroizing<String>,
     pub wrong: bool,
+    /// The new key replaces one the account had (asked for in Settings), rather than being the first sign-in's.
+    pub replacing: bool,
 }
 
 /// The tabs in the header, once signed in.
@@ -72,6 +74,47 @@ pub enum Tab {
     #[default]
     Inbox,
     Accounts,
+    Settings,
+}
+
+/// Light, dark, or as the system is: craft-theme's mode choice, for the window's theme.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Appearance {
+    Light,
+    Dark,
+    /// As the operating system says (light where it says nothing).
+    #[default]
+    System,
+}
+
+impl Appearance {
+    /// The name it is saved under on this computer. Never change one.
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Light => "light",
+            Self::Dark => "dark",
+            Self::System => "system",
+        }
+    }
+
+    /// The choice saved under `id`; anything else is the default.
+    pub fn from_id(id: &str) -> Self {
+        [Self::Light, Self::Dark].into_iter().find(|a| a.id() == id).unwrap_or_default()
+    }
+}
+
+/// The settings kept on this computer only, by the app (the account keeps the others).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Prefs {
+    pub appearance: Appearance,
+    /// Whether a notification shows the message's text, or only who wrote.
+    pub previews: bool,
+}
+
+impl Default for Prefs {
+    fn default() -> Self {
+        Self { appearance: Appearance::default(), previews: true }
+    }
 }
 
 /// What a network's bridge said, for the ACCOUNTS tab.
@@ -347,15 +390,26 @@ pub struct State {
     pub notifications: Vec<Notification>,
     /// Each network's notification sound and accent colour, as the account keeps them.
     pub network_alerts: BTreeMap<Network, Alerts>,
+    /// The settings kept on this computer; they stay when the user signs out.
+    pub prefs: Prefs,
+    /// Whether PingCraft is unlocked with a passphrase on this computer (no keychain); `None` until the backend says.
+    /// It stays when the user signs out.
+    pub passphrase: Option<bool>,
+    /// The Settings tab's state.
+    pub settings: crate::settings::SettingsState,
+    /// PingCraft's commands asked for this frame by the screens (a tab, a choice on a page), run by the app as a
+    /// shortcut or a menu row runs them.
+    pub requested: Vec<crate::commands::AppCommand>,
 }
 
 impl State {
     pub fn apply(&mut self, event: Event) {
+        self.settings.apply(&event);
         match event {
-            Event::AlreadyRunning => *self = Self { screen: Screen::AlreadyRunning, ..Self::default() },
+            Event::AlreadyRunning => *self = Self { screen: Screen::AlreadyRunning, prefs: self.prefs, ..Self::default() },
             Event::SignedOut => {
                 let server = std::mem::take(&mut self.sign_in.server);
-                *self = Self { screen: Screen::SignIn, ..Self::default() };
+                *self = Self { screen: Screen::SignIn, prefs: self.prefs, passphrase: self.passphrase, ..Self::default() };
                 self.sign_in.server = server;
             }
             Event::Locked { first } => {
@@ -392,7 +446,7 @@ impl State {
                 if let InboxChange::Upsert(chat) = &change
                     && self.inbox_loaded
                     && self.open.as_ref().is_none_or(|o| o.id != chat.id)
-                    && let Some(mut n) = crate::notify::for_inbox_change(self.inbox.get(&chat.id), chat)
+                    && let Some(mut n) = crate::notify::for_inbox_change(self.inbox.get(&chat.id), chat, self.prefs.previews)
                 {
                     n.sound = self.alerts(chat).sounds();
                     self.notifications.push(n);
@@ -403,7 +457,7 @@ impl State {
                 if let Some(open) = self.open.as_mut().filter(|o| o.id == chat) {
                     // The chat is in sight only on the INBOX tab of a window with focus.
                     let seen = self.focused && self.tab == Tab::Inbox;
-                    if let Some(mut n) = crate::notify::for_open_chat(&open.messages, &messages, self.inbox.get(&chat), seen) {
+                    if let Some(mut n) = crate::notify::for_open_chat(&open.messages, &messages, self.inbox.get(&chat), seen, self.prefs.previews) {
                         n.sound = self.inbox.get(&chat).is_none_or(|c| Self::alerts_with(&self.network_alerts, c).sounds());
                         self.notifications.push(n);
                     }
@@ -439,8 +493,8 @@ impl State {
                     open.at_start = true;
                 }
             }
-            // For the Settings screen, which comes next.
-            Event::Passphrase(_) | Event::PassphraseChanged(_) | Event::Devices(_) | Event::SignOutRefused { .. } => {}
+            Event::Passphrase(on) => self.passphrase = Some(on),
+            Event::PassphraseChanged(_) | Event::Devices(_) | Event::SignOutRefused { .. } => {}
             Event::NewRecoveryKey(key) => {
                 self.recovery_forms.new_key = Some(key);
                 self.recovery_forms.saved_ticked = false;

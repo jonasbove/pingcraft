@@ -21,6 +21,10 @@ craft-host = { workspace = true }
 craft-behavior = { workspace = true }
 craft-theme = { workspace = true }
 craft-window = { workspace = true }
+# The app menu and its commands (craft-libs `menu`, with craft-keymap's chords through craft-ui's command board).
+craft-menu = { workspace = true }
+# The colour picker for a network's accent colour (maintainer, 2026-11-26).
+craft-color-ui = { workspace = true, features = ["ui"] }
 log = "0.4"
 # Times in the inbox and the chat (house rule 5).
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }

@@ -109,7 +109,7 @@ fn risk_blocks(network: &Network) -> Vec<(&'static str, String)> {
 }
 
 /// The ACCOUNTS tab.
-pub fn accounts(ui: &mut Ui, state: &mut State, out: &mut Out) {
+pub fn accounts(ui: &mut Ui, state: &mut State) {
     let t = Tokens::get(ui.ctx());
     egui::CentralPanel::default().frame(egui::Frame::new().fill(t.bg).inner_margin(Margin::symmetric(24, 24))).show(ui, |ui| {
         ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
@@ -144,7 +144,7 @@ pub fn accounts(ui: &mut Ui, state: &mut State, out: &mut Out) {
             ui.add_space(24.0);
             your_accounts(ui, state);
             ui.add_space(24.0);
-            sound_and_colour(ui, state, out);
+            note(ui, tl!("Each network's notification sound and accent colour are in Settings, under Notifications."));
         });
     });
 }
@@ -224,34 +224,6 @@ fn cards(ui: &mut Ui, state: &mut State) {
     if (tallest_now - tallest).abs() > 0.5 {
         ui.ctx().data_mut(|d| d.insert_temp(tallest_id, tallest_now));
         ui.ctx().request_repaint();
-    }
-}
-
-/// Each network's notification sound and accent colour, which its chats follow unless they set their own.
-fn sound_and_colour(ui: &mut Ui, state: &mut State, out: &mut Out) {
-    let t = Tokens::get(ui.ctx());
-    hud(ui, tl!("Sound and colour"), Shade::Muted);
-    note(
-        ui,
-        tl!(
-            "For each network's chats, unless a chat sets its own in its menu. Your system's own notification sound. Kept with your account, in PingCraft only."
-        ),
-    );
-    for id in NETWORKS.iter().copied().chain(["matrix"]) {
-        let network = Network::from_id(id);
-        let name = network_name(&network);
-        let own = state.network_alerts.get(&network).copied().unwrap_or_default();
-        egui::Frame::new().stroke(t.hairline()).inner_margin(Margin::symmetric(16, 8)).show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.horizontal(|ui| {
-                ui.add_sized([120.0, 18.0], egui::Label::new(RichText::new(&name).size(t.body).color(t.ink_strong)));
-                if let Some(alerts) = crate::widgets::alerts_controls(ui, own, own, &name, tl!("its own")) {
-                    // Shown at once, so a second change before the backend answers builds on this one.
-                    state.network_alerts.insert(network.clone(), alerts);
-                    out.push(Command::NetworkAlerts { network: network.clone(), alerts });
-                }
-            });
-        });
     }
 }
 

@@ -286,7 +286,7 @@ fn an_edit_in_progress_is_kept_with_the_draft() {
     super::type_into(&mut h, "Message Book club", "set aside");
     h.get_by_label("Message actions: You, Thursday works.").click();
     h.run();
-    h.get_by_label("Edit").click();
+    h.get_by_role(egui::accesskit::Role::Menu).get_by_label("Edit").click();
     h.run();
     fake.take();
     h.get_by_label_contains("Lars Holm, on Matrix").click();
@@ -299,7 +299,7 @@ fn an_edit_in_progress_is_kept_with_the_draft() {
     h.run();
     h.get_by_label("Message actions: You, Thursday works.").click();
     h.run();
-    h.get_by_label("Edit").click();
+    h.get_by_role(egui::accesskit::Role::Menu).get_by_label("Edit").click();
     h.run();
     // Typed at the end of the text (where the cursor lands when focused is egui's business).
     h.state_mut().state.open.as_mut().unwrap().draft.push_str(" Friday too.");
@@ -415,46 +415,6 @@ fn a_chats_sound_and_colour_follow_its_network_unless_set() {
     fake.tell([Event::Inbox(InboxChange::Upsert(Box::new(mei)))]);
     h.run();
     assert_eq!(notifier.shown.borrow().iter().map(|n| n.sound).collect::<Vec<_>>(), [false, true]);
-}
-
-/// The ACCOUNTS tab sets each network's notification sound and accent colour.
-#[test]
-fn a_networks_sound_and_colour_are_set_on_the_accounts_tab() {
-    use egui::accesskit::Role;
-    use pingcraft_core::{Alerts, Network};
-    let fake = Fake::default();
-    let mut h = signed_in(&fake);
-    h.get_by_label("Accounts").click();
-    h.run();
-    fake.take();
-    // Below the cards and the accounts: scrolled to, as a screen reader would.
-    h.get_by_role_and_label(Role::CheckBox, "Notification sound for Telegram").scroll_to_me();
-    h.run();
-    h.run();
-    h.get_by_role_and_label(Role::CheckBox, "Notification sound for Telegram").click();
-    h.run();
-    let sent = fake.take();
-    assert!(
-        matches!(&sent[..], [Command::NetworkAlerts { network, alerts: Alerts { sound: Some(false), accent: None } }] if *network == Network::from_id("telegram")),
-        "{sent:?}"
-    );
-    // A second change before the backend answers builds on the first.
-    h.get_by_role_and_label(Role::RadioButton, "Accent colour for Telegram: Discord's").click();
-    h.run();
-    let sent = fake.take();
-    assert!(
-        matches!(&sent[..], [Command::NetworkAlerts { alerts: Alerts { sound: Some(false), accent: Some(a) }, .. }] if a.network() == Some("discord")),
-        "{sent:?}"
-    );
-    h.get_by_role_and_label(Role::RadioButton, "Accent colour for Signal: WhatsApp's").scroll_to_me();
-    h.run();
-    h.get_by_role_and_label(Role::RadioButton, "Accent colour for Signal: WhatsApp's").click();
-    h.run();
-    let sent = fake.take();
-    assert!(
-        matches!(&sent[..], [Command::NetworkAlerts { alerts: Alerts { accent: Some(a), .. }, .. }] if a.network() == Some("whatsapp")),
-        "{sent:?}"
-    );
 }
 
 /// Enter in the composer sends what was typed.

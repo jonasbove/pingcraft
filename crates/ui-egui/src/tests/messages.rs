@@ -1,6 +1,6 @@
 //! What can be done with a message: reactions, replies, editing and deleting.
 
-use egui::accesskit::Toggled;
+use egui::accesskit::{Role, Toggled};
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
 use pingcraft_core::app::{Command, Event};
@@ -100,12 +100,14 @@ fn only_your_own_messages_can_be_edited_or_deleted() {
     let fake = Fake::default();
     let mut h = book_club(&fake);
     actions(&mut h, "Lars Holm", "Next meeting on Thursday?");
-    assert!(h.query_by_label("Edit").is_none() && h.query_by_label("Delete").is_none());
+    // The app menu's Edit is not the message's.
+    let menu = h.get_by_role(Role::Menu);
+    assert!(menu.query_by_label("Edit").is_none() && menu.query_by_label("Delete").is_none());
     h.key_press(egui::Key::Escape);
     h.run();
     actions(&mut h, "You", "Thursday works.");
-    h.get_by_label("Edit");
-    h.get_by_label("Delete");
+    h.get_by_role(Role::Menu).get_by_label("Edit");
+    h.get_by_role(Role::Menu).get_by_label("Delete");
 }
 
 #[test]
@@ -113,7 +115,7 @@ fn editing_puts_the_text_in_the_composer_and_saves_it() {
     let fake = Fake::default();
     let mut h = book_club(&fake);
     actions(&mut h, "You", "Thursday works.");
-    h.get_by_label("Edit").click();
+    h.get_by_role(Role::Menu).get_by_label("Edit").click();
     h.run();
     h.get_by_label("Editing your message");
     type_into(&mut h, "Message Book club", " See you!");

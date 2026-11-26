@@ -48,13 +48,12 @@ fn accept_risk(h: &mut Harness<'static, PingCraftApp>, network: &str) {
 }
 
 #[test]
-fn the_header_has_tabs_and_settings_waits() {
+fn the_header_has_its_tabs() {
     let fake = Fake::default();
     let h = signed_in(&fake);
     for tab in ["Inbox", "Accounts", "Settings"] {
-        h.get_by_label(tab);
+        assert!(!h.get_by_label(tab).accesskit_node().is_disabled(), "{tab}");
     }
-    assert!(h.get_by_label("Settings").accesskit_node().is_disabled(), "no settings screen yet");
 
     let mut h = on_accounts(&fake, vec![]);
     h.get_by_label("Connect Telegram");

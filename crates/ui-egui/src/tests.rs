@@ -64,7 +64,25 @@ impl pingcraft_core::notify::Notifier for FakeNotifier {
 
 fn harness(fake: &Fake) -> Harness<'static, PingCraftApp> {
     let app = PingCraftApp::new(Box::new(fake.clone()));
-    builder().build_ui_state(|ui, app: &mut PingCraftApp| app.ui(ui), app)
+    builder().build_ui_state(frame, app)
+}
+
+/// One frame of the interface.
+pub(super) fn frame(ui: &mut egui::Ui, app: &mut PingCraftApp) {
+    app.ui(ui);
+}
+
+/// Runs [`crate::framework::before_input`] before each frame, as the desktop app's `raw_input_hook` does.
+struct BeforeInput;
+
+impl egui::Plugin for BeforeInput {
+    fn debug_name(&self) -> &'static str {
+        "pingcraft-before-input"
+    }
+
+    fn input_hook(&mut self, ctx: &egui::Context, _input: &mut egui::RawInput) {
+        crate::framework::before_input(ctx);
+    }
 }
 
 /// A context with craft-ui's runtime and the interface installed as the app installs them on its window, but with no installed system fonts,
@@ -72,6 +90,7 @@ fn harness(fake: &Fake) -> Harness<'static, PingCraftApp> {
 pub(super) fn context() -> egui::Context {
     let ctx = egui::Context::default();
     crate::framework::install_headless(&ctx);
+    ctx.add_plugin(BeforeInput);
     crate::emoji::stack(crate::emoji::EMBEDDED.map(egui::FontData::from_static), craft_ui::fonts::SystemFonts::Off).install(&ctx);
     ctx
 }
@@ -353,7 +372,7 @@ fn verifying_compares_seven_named_symbols() {
     let builder = builder();
     #[cfg(not(color_emoji))]
     let builder = builder.allow_missing_glyphs();
-    let mut h = builder.build_ui_state(|ui, app: &mut PingCraftApp| app.ui(ui), app);
+    let mut h = builder.build_ui_state(frame, app);
     fake.tell([Event::SignedIn { user: "@ana:example.org".into() }, Event::Inbox(InboxChange::Reset(vec![]))]);
     h.run();
     let names = ["Dog", "Cat", "Lion", "Horse", "Unicorn", "Pig", "Elephant"];
@@ -458,6 +477,7 @@ mod accounts;
 mod chats;
 mod emoji;
 mod messages;
+mod settings;
 
 #[test]
 fn an_unencrypted_chat_offers_to_turn_encryption_on() {
