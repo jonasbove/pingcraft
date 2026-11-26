@@ -158,14 +158,8 @@ pub fn chat_view(ui: &mut Ui, open: &mut OpenChat, chat: Option<&Chat>, network:
 fn chat_menu(ui: &mut Ui, chat: &Chat, network: Alerts, out: &mut Out) -> bool {
     let t = Tokens::get(ui.ctx());
     let mut leave = false;
-    let more = ui.add(
-        egui::Button::new(RichText::new("…").size(14.0))
-            .stroke(Stroke::new(1.0, t.line_strong))
-            .corner_radius(egui::CornerRadius::ZERO)
-            .min_size(Vec2::splat(34.0)),
-    );
-    more.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, tl!("Chat actions")));
-    egui::Popup::menu(&more).show(|ui| {
+    let more = crate::widgets::icon_button(ui, crate::widgets::icon::MORE, tl!("Chat actions"));
+    crate::widgets::menu_under(&more).show(|ui| {
         ui.set_min_width(260.0);
         let id = chat.id.clone();
         let pin = if chat.pinned { tl!("Unpin from the top of the inbox") } else { tl!("Pin to the top of the inbox") };
@@ -237,8 +231,7 @@ fn pinned_bar(ui: &mut Ui, open: &mut OpenChat, presentation: EmojiPresentation,
         ui.horizontal_centered(|ui| {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if n > 1 {
-                    let next = ui.add(egui::Button::new(RichText::new("›").size(16.0)).frame(false));
-                    next.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, tl!("Next pinned message")));
+                    let next = crate::widgets::icon_button(ui, crate::widgets::icon::NEXT, tl!("Next pinned message"));
                     if next.clicked() {
                         open.pin_shown = (i + 1) % n;
                     }
@@ -438,14 +431,7 @@ fn composer(ui: &mut Ui, open: &mut OpenChat, name: &str, chat: Option<&Chat>, o
                         ui.add(egui::Label::new(emoji::text(line, 12.5, t.muted, presentation)).truncate());
                     });
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        let x = ui.add(
-                            egui::Button::new(RichText::new("×").size(13.0))
-                                .stroke(Stroke::new(1.0, t.line_strong))
-                                .corner_radius(egui::CornerRadius::ZERO)
-                                .min_size(Vec2::splat(30.0)),
-                        );
-                        x.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, cancel));
-                        cancelled = x.clicked();
+                        cancelled = crate::widgets::icon_button(ui, crate::widgets::icon::CLOSE, cancel).clicked();
                     });
                 });
             });

@@ -5691,13 +5691,17 @@ name = "pingcraft-ui-egui"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "craft-behavior",
+ "craft-host",
  "craft-ui",
+ "craft-window",
  "egui",
  "egui_kittest",
  "emojis",
  "epaint",
  "image",
  "js-sys",
+ "log",
  "pingcraft-core",
  "qrcode",
  "sha2 0.10.9",

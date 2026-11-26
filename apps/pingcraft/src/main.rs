@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 
 use pingcraft_keychain::KdfParams;
 use pingcraft_matrix::engine::{Engine, Secrets};
-use pingcraft_ui_egui::{PingCraftApp, SkinTone};
+use pingcraft_ui_egui::{PingCraftApp, SkinTone, framework};
 
 /// The folder name under the platform's data folder.
 const APP_ID: &str = "pingcraft";
@@ -67,7 +67,16 @@ fn keep_skin_tone(tone: SkinTone, migrated: bool, settings: &mut SettingsStore<P
 }
 
 impl eframe::App for Window {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn raw_input_hook(&mut self, ctx: &egui::Context, _raw_input: &mut egui::RawInput) {
+        framework::before_input(ctx);
+    }
+
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        framework::close_path(ctx);
+    }
+
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        framework::before_ui(ui.ctx(), frame);
         self.app.ui(ui);
         keep_skin_tone(self.app.skin_tone(), self.app.skin_tone_migrated(), &mut self.settings);
         self.settings.tick(Instant::now());
@@ -127,6 +136,7 @@ fn main() -> ExitCode {
         "PingCraft",
         options(),
         Box::new(move |cc| {
+            framework::install(&cc.egui_ctx, "io.github.jonasbove.pingcraft")?;
             PingCraftApp::install(&cc.egui_ctx);
             let ctx = cc.egui_ctx.clone();
             let engine = Engine::start(data, secrets, Arc::new(move || ctx.request_repaint()))?;

@@ -512,10 +512,6 @@ pub(crate) fn unsupported(kind: &str) -> String {
     }
 }
 
-/// The marks on a pinned and a muted chat's row.
-pub(crate) const PINNED_MARK: &str = "📌";
-pub(crate) const MUTED_MARK: &str = "🔕";
-
 /// One chat in the list. Its accessible name says the chat, its network, the unread count and the last message.
 fn chat_row(ui: &mut Ui, chat: &Chat, accent: Option<pingcraft_core::Accent>, selected: bool) -> egui::Response {
     let t = Tokens::get(ui.ctx());
@@ -583,12 +579,11 @@ fn chat_row(ui: &mut Ui, chat: &Chat, accent: Option<pingcraft_core::Accent>, se
                 let when = chat.last_message.as_ref().map(|m| short_time(m.at)).unwrap_or_default();
                 ui.label(RichText::new(when).monospace().size(12.0).color(if strong { t.ink } else { t.muted }));
                 crate::widgets::network_tag_in(ui, &chat.network, accent);
-                // Marks drawn from the bundled emoji font (a test checks they have glyphs).
                 if chat.muted.is_some() {
-                    ui.label(RichText::new(MUTED_MARK).size(12.0).color(t.muted));
+                    crate::widgets::mark_icon(ui, crate::widgets::icon::MUTED, tl!("Muted"));
                 }
                 if chat.pinned {
-                    ui.label(RichText::new(PINNED_MARK).size(12.0).color(t.muted));
+                    crate::widgets::mark_icon(ui, crate::widgets::icon::PINNED, tl!("Pinned"));
                 }
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                     ui.add(

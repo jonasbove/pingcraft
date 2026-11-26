@@ -210,13 +210,11 @@ fn head(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out, act: &mut Op
     });
 }
 
-/// The "…" button that opens the message's menu.
+/// The "more" button that opens the message's menu.
 fn more(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out, act: &mut Option<Act>) {
-    let t = Tokens::get(ui.ctx());
     let label = fmt(tl!("Message actions: {sender}, {text}"), &[("sender", &who(message)), ("text", &snippet(&message.body))]);
-    let response = ui.add(egui::Button::new(RichText::new("…").size(14.0).color(t.muted)).frame(false).min_size(egui::vec2(24.0, 18.0)));
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
-    egui::Popup::menu(&response).show(|ui| {
+    let button = crate::widgets::icon_button(ui, crate::widgets::icon::MORE, &label);
+    crate::widgets::menu_under(&button).show(|ui| {
         if let Some(a) = menu(ui, message, cx, out) {
             *act = Some(a);
         }

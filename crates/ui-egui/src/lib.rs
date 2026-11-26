@@ -8,6 +8,7 @@
 mod accounts;
 mod chat;
 mod emoji;
+pub mod framework;
 pub mod i18n;
 mod message;
 mod notify;

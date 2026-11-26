@@ -67,10 +67,11 @@ fn harness(fake: &Fake) -> Harness<'static, PingCraftApp> {
     builder().build_ui_state(|ui, app: &mut PingCraftApp| app.ui(ui), app)
 }
 
-/// A context with the interface installed as the app installs it on its window, but with no installed system fonts,
+/// A context with craft-ui's runtime and the interface installed as the app installs them on its window, but with no installed system fonts,
 /// so the tests draw the same on every machine.
 pub(super) fn context() -> egui::Context {
     let ctx = egui::Context::default();
+    crate::framework::install_headless(&ctx);
     crate::theme::install_style(&ctx);
     crate::emoji::stack(crate::emoji::EMBEDDED.map(egui::FontData::from_static), craft_ui::fonts::SystemFonts::Off).install(&ctx);
     ctx

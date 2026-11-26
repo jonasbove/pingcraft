@@ -657,6 +657,16 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
     (page "Components", where the draft frames' icons are placeholders), then drawn in egui in place of the text
     marks used today (📌, 🔕, "…", "×", "›"). Each recorded in `ATTRIBUTION.md`; checked with craft-libs `ui`
     first (house rule 16).
+    **Superseded by craft-ui's icons** (maintainer, 2026-11-26: craft-libs dictates the look). Done (craft-libs
+    update, part 1): the marks are craft-ui's catalogue icons (`craft_ui` icons, Lucide by default): the message's
+    and the chat's menus open from `IconButton`s with `more`, the next pinned message is `chevron_right`, cancelling
+    a reply or edit is `close`, and a chat row's pinned and muted marks are labelled `Icon`s ("Pinned", "Muted";
+    they were bare emoji before, which a screen reader read as such). PingCraft draws no icons of its own, so
+    nothing goes in `ATTRIBUTION.md`. craft-ui's runtime is installed for this (`framework.rs`, the `embed` hooks in
+    the desktop app; the tests install it headless). Still text, with no catalogue icon to take: the composer's
+    emoji button (an emoji, 😀) and a loading message's "…". The menus' rows stay words; icons for reply, forward,
+    react, select and the rest come with the menus (part 1, step 4) where the catalogue has them. Network marks:
+    the network tags (craft-ui badges, step 3); no network logos, as before.
 
 ## craft-libs: what PingCraft lacks
 
@@ -676,6 +686,11 @@ from craft-libs' own pieces and writes the gap down here, for a craft-libs chang
   served face as a family's first face.
 - **A browser `FontFetcher`.** craft-ui defines the trait but ships no implementation; vectorcraft-web carries its
   own (`BrowserFetcher`). PingCraft does not need one while the stopgap above stands.
+- **Icons the catalogue lacks** (`craft_ui` icons at the pinned revision): notifications off (a bell with a slash;
+  `track_mute`, a muted speaker, stands in for a muted chat), an emoji or smiley face (the composer's emoji button
+  stays the emoji 😀), reply, forward, react (add a reaction), unpin, select, send, archive and mark as unread.
+  Present and used where they fit: `more`, `close`, `chevron_right`, `pin`, `copy`, `trash`, `pencil`, `info`,
+  `arrow_down`, `lock`, `search`, `settings`.
 - **Emoji layout** (`emoji.rs`): craft-ui's text has no equivalent of PingCraft's emoji a size up among text, large
   emoji-only messages, or a network's own emoji presentation (`pingcraft_core::EmojiPresentation`), so these stay
   PingCraft's.

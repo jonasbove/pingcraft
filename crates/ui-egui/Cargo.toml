@@ -14,8 +14,13 @@ workspace = true
 [dependencies]
 pingcraft-core = { workspace = true }
 egui = { workspace = true }
-# craft-libs' UI library (craft-libs docs/craft-framework.md): the interface's font stack, with colour glyphs.
+# craft-libs' UI library (craft-libs docs/craft-framework.md): the interface's font stack, the runtime and its
+# components, and the services the runtime reads (the host, the window system).
 craft-ui = { workspace = true, features = ["color_fonts"] }
+craft-host = { workspace = true }
+craft-behavior = { workspace = true }
+craft-window = { workspace = true }
+log = "0.4"
 # Times in the inbox and the chat (house rule 5).
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 # Decoding the logo PNG.

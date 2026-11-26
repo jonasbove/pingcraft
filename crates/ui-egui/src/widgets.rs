@@ -4,9 +4,48 @@
 use egui::{Align2, Color32, CornerRadius, FontId, Frame, Margin, Response, RichText, Sense, Stroke, TextureHandle, Ui, Vec2};
 use pingcraft_core::{Accent, Alerts, Network};
 
+use craft_behavior::IconId;
+use craft_ui::buttons::{ButtonOutput, IconButton};
+use craft_ui::contract::{Props as _, Show as _};
+use craft_ui::display::Icon;
+use craft_ui::primitives::IconSpec;
+
 use crate::i18n::fmt;
 use crate::theme::{Tokens, wash};
 use crate::tl;
+
+/// The craft-ui icons (its catalogue, `craft_ui::primitives::icon_names`; the default set is Lucide) PingCraft uses.
+/// Where the catalogue has no icon for the meaning, the nearest one stands in (PLAN.md, "craft-libs: what PingCraft
+/// lacks").
+pub mod icon {
+    /// What else can be done with something: a message's or a chat's menu.
+    pub const MORE: &str = "more";
+    /// Close or cancel: a reply or edit in progress.
+    pub const CLOSE: &str = "close";
+    /// The next one: the next pinned message.
+    pub const NEXT: &str = "chevron_right";
+    /// A chat pinned to the top of the inbox.
+    pub const PINNED: &str = "pin";
+    /// A muted chat. Stand-in: the catalogue has no "notifications off" (bell with a slash); `track_mute` is a muted
+    /// speaker.
+    pub const MUTED: &str = "track_mute";
+}
+
+/// A craft-ui icon button showing `icon` (one of [`icon`]), named `label` for screen readers and in its tooltip.
+pub fn icon_button(ui: &mut Ui, icon: &'static str, label: &str) -> ButtonOutput {
+    IconButton::new(IconId::new(icon)).label(label.to_owned()).show(ui)
+}
+
+/// A menu that opens under `button` when it is clicked (by the framework's click rule, which a key press or an
+/// AccessKit action also meets) and closes when it is clicked again.
+pub fn menu_under(button: &ButtonOutput) -> egui::Popup<'_> {
+    egui::Popup::menu(&button.response).open_memory(button.clicked().then_some(egui::SetOpenCommand::Toggle))
+}
+
+/// A craft-ui icon in the muted ink, named `label` for screen readers and in its tooltip: a mark such as a chat's pin.
+pub fn mark_icon(ui: &mut Ui, icon: &'static str, label: &str) -> Response {
+    Icon::new(IconSpec::svg(IconId::new(icon))).label(label.to_owned()).show(ui)
+}
 
 /// A small mono capitals label (the design's HUD style).
 pub fn hud(ui: &mut Ui, text: &str, color: Color32) -> Response {
