@@ -219,7 +219,18 @@ async fn details_show_edits_and_forwarding_sends_copies() {
     .await;
     chat.edit(&sent.id, "second words").await.unwrap();
     chat_until("the edit", &mut chat, &mut last, |ms| ms.iter().find(|m| m.id == sent.id && m.edited).map(|_| ())).await;
-    let details = chat.details(&sent.id).await.unwrap();
+    // `edited` is true from the edit's local echo, but the details' versions come from the event cache, which only
+    // has the edit once its remote echo has synced. Until then they show the first version alone.
+    let details = within("both versions in the details", async {
+        loop {
+            let details = chat.details(&sent.id).await.unwrap();
+            if details.versions.len() >= 2 {
+                return details;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        }
+    })
+    .await;
     assert!(details.encrypted);
     let versions: Vec<_> = details.versions.iter().map(|(_, b)| b.clone()).collect();
     assert_eq!(versions, [MessageBody::Text("first words".into()), MessageBody::Text("second words".into())]);
