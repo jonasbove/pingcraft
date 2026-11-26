@@ -52,6 +52,9 @@ pub struct ToneSync {
     /// Chosen on this device and not sent yet.
     pending: Option<String>,
     not_before: Option<Instant>,
+    /// The synced copy as it was when a choice was sent: until the sync brings the new one, it is not another
+    /// device's change.
+    stale: Option<Option<String>>,
 }
 
 impl ToneSync {
@@ -74,10 +77,11 @@ impl ToneSync {
         self.not_before = None;
     }
 
-    /// The tone chosen here was sent.
-    pub fn saved(&mut self) {
+    /// The tone chosen here was sent; `synced_then` is what the synced copy said just before.
+    pub fn saved(&mut self, synced_then: Option<String>) {
         self.pending = None;
         self.not_before = None;
+        self.stale = Some(synced_then);
     }
 
     /// The server said which tone the account keeps: what to tell the interface, unless a choice made here
@@ -96,6 +100,12 @@ impl ToneSync {
     pub fn synced(&mut self, tone: Option<String>) -> Option<String> {
         // A synced copy without a tone says nothing: the sync may not have brought it.
         let tone = tone?;
+        if let Some(stale) = &self.stale {
+            if stale.as_ref() == Some(&tone) {
+                return None;
+            }
+            self.stale = None;
+        }
         if !self.known || self.pending.is_some() || self.shown.as_ref() == Some(&tone) {
             return None;
         }
@@ -197,9 +207,11 @@ mod tests {
         tone.chosen("medium".into());
         assert_eq!(tone.next(Instant::now()), Next::Save("medium".into()));
         assert_eq!(tone.synced(Some("light".into())), None, "the choice made here is still to be sent");
-        tone.saved();
+        tone.saved(Some("light".into()));
         assert_eq!(tone.pending(), None);
+        assert_eq!(tone.synced(Some("light".into())), None, "the synced copy from before the save, until the sync brings it");
         assert_eq!(tone.synced(Some("medium".into())), None, "its own choice coming back");
+        assert_eq!(tone.synced(Some("light".into())), Some("light".into()), "another device's change after that");
     }
 
     /// A choice made before the server answered wins over what the server says, and is sent.

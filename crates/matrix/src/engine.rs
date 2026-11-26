@@ -488,9 +488,9 @@ impl Worker {
         };
         match next {
             // A failure is quiet and tried again later: the header already says when the server cannot be reached.
-            Next::Save(tone) => match s.connection.save_skin_tone(&tone).await {
-                Ok(()) => s.skin_tone.saved(),
-                Err(_) => s.skin_tone.failed(now),
+            Next::Save(tone) => match (s.connection.synced_skin_tone().await, s.connection.save_skin_tone(&tone).await) {
+                (synced_then, Ok(())) => s.skin_tone.saved(synced_then),
+                (_, Err(_)) => s.skin_tone.failed(now),
             },
             Next::Fetch if !closing => match s.connection.fetch_skin_tone().await {
                 Ok(tone) => {
