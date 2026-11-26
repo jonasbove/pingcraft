@@ -130,7 +130,7 @@ fn deleting_asks_first() {
     actions(&mut h, "You", "Thursday works.");
     h.get_by_label("Delete").click();
     h.run();
-    h.get_by_label("Delete this message?");
+    h.get_by_role_and_label(egui::accesskit::Role::Dialog, "Delete this message?");
     h.get_by_label("Cancel").click();
     h.run();
     assert!(fake.take().is_empty(), "cancelling deletes nothing");
@@ -203,7 +203,7 @@ fn message_details_show_when_it_was_sent_who_read_it_and_earlier_versions() {
     h.run();
     let sent = fake.take();
     assert!(matches!(&sent[..], [Command::Details { message, .. }] if message.0 == "2"), "{sent:?}");
-    h.get_by_label("Message details");
+    h.get_by_role_and_label(egui::accesskit::Role::Dialog, "Message details");
     h.get_by_label("Loading…");
     fake.tell([Event::Details {
         chat: ChatId("!book".into()),
@@ -222,7 +222,7 @@ fn message_details_show_when_it_was_sent_who_read_it_and_earlier_versions() {
     h.get_by_label_contains("Mei Tanaka "); // "Mei Tanaka 14:28", the read receipt
     h.get_by_label("Thursday is fine.");
     h.get_by_label("Encrypted between your server and you; the bridge reads it to pass it on");
-    h.get_by_label("Close").click();
+    super::click_in_footer(&mut h, "Close");
     h.run();
     assert!(h.state().state.open.as_ref().unwrap().details.is_none(), "closed in state");
     assert!(h.query_by_label("Message details").is_none());
@@ -252,7 +252,7 @@ fn several_messages_can_be_selected_copied_and_forwarded() {
     h.run();
     h.get_by_label("Forward").click();
     h.run();
-    h.get_by_label("Forward 2 messages");
+    h.get_by_role_and_label(egui::accesskit::Role::Dialog, "Forward 2 messages");
     h.get_by_role_and_label(egui::accesskit::Role::RadioButton, "Lars Holm, on Matrix").click();
     h.run();
     h.get_by_label("Forward").click();
@@ -306,7 +306,7 @@ fn deleting_several_of_your_messages_asks_once() {
     h.run();
     h.get_by_label("Delete").click();
     h.run();
-    h.get_by_label("Delete this message?");
+    h.get_by_role_and_label(egui::accesskit::Role::Dialog, "Delete this message?");
     h.get_by_label("Delete").click();
     h.run();
     let sent = fake.take();

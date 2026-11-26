@@ -376,7 +376,7 @@ pub fn delete_sheet(ctx: &egui::Context, messages: &[Message], cx: &Cx<'_>, chat
         [_] => tl!("Delete this message?").to_owned(),
         _ => fmt(tl!("Delete {n} messages?"), &[("n", &messages.len().to_string())]),
     };
-    crate::widgets::sheet(
+    let dismissed = crate::widgets::sheet(
         ctx,
         "delete-message",
         560.0,
@@ -405,6 +405,7 @@ pub fn delete_sheet(ctx: &egui::Context, messages: &[Message], cx: &Cx<'_>, chat
             });
         },
     );
+    close |= dismissed;
     close
 }
 

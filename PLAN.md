@@ -687,9 +687,14 @@ craft-ui's dialog host, the i18n swap, the automation interface and colour theme
   output), check boxes `Checkbox`es, the header's tabs `ToggleButton`s, the ALL / UNREAD / ARCHIVED filter a
   `Segmented`, the unread count a count `Badge`, the encryption state a `Badge`, the risk scale `Badge`s, labels and
   notes `Text` in the caption and body roles, and the avatar a round mark in the accent's soft fill. Labels are in
-  sentence case now ("Sign in", not "SIGN IN"); the tests find them so. The sheets stay egui `Modal`s on the theme's
-  raised surface until the dialogs move onto craft-ui's dialog host (read here as part of the later "dialogs" work;
-  `DialogFrame` would put PingCraft's egui content inside a craft-ui container). Still egui, with a reason each: the
+  sentence case now ("Sign in", not "SIGN IN"); the tests find them so. The sheets are craft-ui `Dialog`s (`Dialog::prompt`,
+  `widgets::sheet`): under an egui `Modal`, Tab reached nothing once the sheets' controls were craft-ui components, so
+  they moved to craft-ui's own dialog, which keeps Tab inside and closes on Escape or its close action; that is the
+  sheet's Cancel wherever it has one (the sign-in, unlock, recovery key, verification, waiting and "already open"
+  sheets have none, so Escape leaves them open). Their logo and orchid hero are gone; their footer is PingCraft's
+  row of craft-ui buttons, not the dialog's own `FooterButton`s, and running them on craft-ui's `DialogHost` is the
+  later "dialogs" work. Tests: Tab stays in the risk sheet and Escape cancels it; Enter in the password signs in and
+  Enter in the composer sends. The reaction picker is still an egui `Modal` (its content is the egui emoji picker). Still egui, with a reason each: the
   composer and the inbox search (`TextField` cannot lay its text out with PingCraft's emoji layout), the emoji
   chips, quick reactions and picker cells (a craft-ui button's label is plain text, not a layout job), the message
   list and inbox rows, and the menus' rows (step 4). Network colours stay data (`theme.rs`), a dot beside the

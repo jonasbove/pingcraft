@@ -345,7 +345,7 @@ fn details_sheet(ctx: &egui::Context, open: &mut OpenChat, chat: Option<&Chat>) 
     let mut close = false;
     let network = chat.map(|c| &c.network);
     let caption = format!("{} · {}", if message.own { tl!("You") } else { &message.sender }, chat.map(|c| c.name.as_str()).unwrap_or_default());
-    crate::widgets::sheet(
+    let dismissed = crate::widgets::sheet(
         ctx,
         // A new id once the details are in: egui keeps a sheet where it first was, and the loaded one is taller.
         if details.is_some() { "message-details" } else { "message-details-loading" },
@@ -406,6 +406,7 @@ fn details_sheet(ctx: &egui::Context, open: &mut OpenChat, chat: Option<&Chat>) 
             });
         },
     );
+    close |= dismissed;
     if close {
         open.details = None;
     }
@@ -665,7 +666,7 @@ fn divider(ui: &mut Ui, label: &str) {
 fn encrypt_sheet(ctx: &egui::Context, open: &mut OpenChat, name: &str, out: &mut Out) {
     let mut close = false;
     let mut turn_on = false;
-    crate::widgets::sheet(
+    let dismissed = crate::widgets::sheet(
         ctx,
         "encrypt-chat",
         520.0,
@@ -691,6 +692,7 @@ fn encrypt_sheet(ctx: &egui::Context, open: &mut OpenChat, name: &str, out: &mut
             });
         },
     );
+    close |= dismissed;
     if turn_on {
         out.push(Command::EnableEncryption(open.id.clone()));
     }

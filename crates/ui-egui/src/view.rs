@@ -275,7 +275,7 @@ pub fn already_running(ctx: &egui::Context) {
 fn confirm_forget(ctx: &egui::Context, state: &mut State, out: &mut Out) {
     let mut cancel = false;
     let mut clear = false;
-    crate::widgets::sheet(
+    let dismissed = crate::widgets::sheet(
         ctx,
         "unlock",
         520.0,
@@ -299,6 +299,7 @@ fn confirm_forget(ctx: &egui::Context, state: &mut State, out: &mut Out) {
             });
         },
     );
+    cancel |= dismissed;
     if cancel {
         state.unlock.confirm_forget = false;
     } else if clear {
@@ -364,7 +365,7 @@ fn forward_sheet(ctx: &egui::Context, state: &mut State, out: &mut Out) {
         .collect();
     let (mut close, mut send) = (false, false);
     let chosen = forwarding.to.is_some();
-    crate::widgets::sheet(
+    let dismissed = crate::widgets::sheet(
         ctx,
         "forward",
         600.0,
@@ -395,6 +396,7 @@ fn forward_sheet(ctx: &egui::Context, state: &mut State, out: &mut Out) {
             });
         },
     );
+    close |= dismissed;
     if send && let Some(to) = forwarding.to.clone() {
         out.push(Command::Forward { from, messages: forwarding.messages.clone(), to });
         open.selected = None;
@@ -697,7 +699,7 @@ pub fn enter_recovery_key(ctx: &egui::Context, state: &mut State, out: &mut Out)
     let mut cancel = false;
     let mut submit = false;
     let ready = !forms.typed.trim().is_empty();
-    crate::widgets::sheet(
+    let dismissed = crate::widgets::sheet(
         ctx,
         "enter-recovery-key",
         560.0,
@@ -721,6 +723,7 @@ pub fn enter_recovery_key(ctx: &egui::Context, state: &mut State, out: &mut Out)
             });
         },
     );
+    cancel |= dismissed;
     if cancel {
         forms.entering = false;
         forms.typed = Zeroizing::default();

@@ -2,14 +2,15 @@
 //! roles, icons) wherever one fits, and a few small pieces of PingCraft's own (the avatar, the sheet's frame) drawn
 //! from the theme's tokens. Every control has an accessible name that starts with its visible label.
 
-use egui::{Align2, CornerRadius, FontId, Frame, Margin, Response, Sense, Stroke, TextureHandle, Ui, Vec2};
+use egui::{Align2, CornerRadius, FontId, Response, Sense, Stroke, TextureHandle, Ui, Vec2};
 use pingcraft_core::{Accent, Alerts, Network};
 
 use craft_behavior::IconId;
 use craft_theme::variant::{Emphasis, Tone};
 use craft_ui::buttons::{Button, ButtonOutput, IconButton};
 use craft_ui::choice::Checkbox;
-use craft_ui::contract::{Bind, EditResponse, PopupKind, Props as _, Show as _, Sizing};
+use craft_ui::contract::{Bind, EditResponse, PopupKind, Props as _, Show as _, ShowContainer as _, Sizing};
+use craft_ui::dialog::Dialog;
 use craft_ui::display::{Badge, Icon, Shade, Text};
 use craft_ui::primitives::IconSpec;
 use craft_ui::style::{TypeRole, Variant};
@@ -258,40 +259,39 @@ pub fn mark(ui: &mut Ui, size: f32) {
     }
 }
 
-/// A sheet over the dimmed window, on the theme's raised surface: the logo with a title and a caption, then the body,
-/// then a row of actions with the secondary one on the left and the primary on the right. An egui `Modal` until the
-/// dialogs move onto craft-ui's dialog host (later).
-pub fn sheet(ctx: &egui::Context, id: &str, width: f32, (title, caption): (&str, &str), body: impl FnOnce(&mut Ui), actions: impl FnOnce(&mut Ui)) {
-    let t = Tokens::get(ctx);
-    let pad = t.body * 1.5;
-    let frame =
-        Frame::new().fill(t.raised).stroke(Stroke::new(1.0, t.line)).corner_radius(CornerRadius::from(t.radius_surface)).inner_margin(Margin::ZERO);
-    egui::Modal::new(egui::Id::unique(id)).frame(frame).backdrop_color(t.scrim).show(ctx, |ui| {
-        ui.set_width(width);
-        ui.spacing_mut().item_spacing.y = 0.0;
-        let margin = Margin::same(pad as i8);
-        Frame::new().inner_margin(margin).show(ui, |ui| {
-            ui.horizontal(|ui| {
-                mark(ui, t.heading * 2.0);
-                ui.vertical(|ui| {
-                    Text::new(title.to_owned()).role(TypeRole::Heading).show(ui);
-                    Text::new(caption.to_owned()).role(TypeRole::Caption).shade(Shade::Muted).show(ui);
+/// A sheet over the window: craft-ui's modal `Dialog` titled `title`, with `caption` and then the body, and the row of
+/// actions under them (the secondary one on the left, the primary on the right). The dialog keeps the keyboard inside
+/// it (Tab), and its close action or Escape dismisses it: returns true then, for the caller to treat as its own
+/// Cancel. `width` is the body's width. craft-ui runs a container's body twice in a pass (a measuring run, then the
+/// real one), so `body` and `actions` may run twice; egui reports no click in the measuring run.
+pub fn sheet(
+    ctx: &egui::Context,
+    id: &str,
+    width: f32,
+    (title, caption): (&str, &str),
+    mut body: impl FnMut(&mut Ui),
+    mut actions: impl FnMut(&mut Ui),
+) -> bool {
+    let mut open = true;
+    egui::Area::new(egui::Id::unique(id)).show(ctx, |ui| {
+        Dialog::prompt(title.to_owned())
+            .id_salt(id)
+            .opened(Bind::bound(&mut open))
+            .footer(|ui, _| {
+                ui.horizontal(|ui| {
+                    ui.set_width(width);
+                    actions(ui);
                 });
+            })
+            .show(ui, |ui, _| {
+                ui.set_width(width);
+                if !caption.is_empty() {
+                    Text::new(caption.to_owned()).role(TypeRole::Caption).shade(Shade::Muted).show(ui);
+                }
+                body(ui);
             });
-        });
-        Frame::new().inner_margin(Margin { top: 0, ..margin }).show(ui, |ui| {
-            ui.spacing_mut().item_spacing.y = t.body * 0.75;
-            body(ui);
-        });
-        let row = Frame::new().inner_margin(margin).show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.set_width(ui.available_width());
-                actions(ui);
-            });
-        });
-        let r = row.response.rect;
-        ui.painter().hline(r.x_range(), r.top(), t.hairline());
     });
+    !open
 }
 
 #[cfg(test)]

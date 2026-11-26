@@ -78,7 +78,16 @@ pub(super) fn context() -> egui::Context {
 
 /// A harness builder over [`context`], at the window's size.
 pub(super) fn builder() -> egui_kittest::HarnessBuilder<PingCraftApp> {
-    Harness::builder().with_context(context()).with_size(egui::vec2(1200.0, 760.0))
+    // Sheets are craft-ui dialogs, which take a few frames to open.
+    Harness::builder().with_context(context()).with_size(egui::vec2(1200.0, 760.0)).with_max_steps(12)
+}
+
+/// Clicks the button labelled `label` in a sheet's footer: the lowest of the nodes with that label, since a craft-ui
+/// dialog's own close action in its title band is labelled "Close" too.
+pub(super) fn click_in_footer(h: &mut Harness<'static, PingCraftApp>, label: &str) {
+    let y = |n: &egui_kittest::Node<'_>| n.accesskit_node().raw_bounds().map_or(f64::MIN, |b| b.y0);
+    let lowest = h.get_all_by_label(label).max_by(|a, b| y(a).total_cmp(&y(b)));
+    lowest.unwrap_or_else(|| panic!("no {label} in the footer")).click();
 }
 
 /// Focuses the text field with this accessible name and types into it, as a user would.
@@ -177,7 +186,7 @@ fn a_second_pingcraft_says_one_is_already_open_and_offers_nothing_to_type() {
     let mut h = harness(&fake);
     fake.tell([Event::AlreadyRunning]);
     h.run();
-    h.get_by_label("PingCraft is already open");
+    h.get_by_role_and_label(egui::accesskit::Role::Dialog, "PingCraft is already open");
     h.get_by_label("Another PingCraft window is using your messages on this computer.");
     h.get_by_label("Already open");
     use egui::accesskit::Role;
@@ -215,10 +224,10 @@ fn a_wrong_unlock_passphrase_is_said_and_signing_out_is_offered() {
     h.get_by_label("Sign out").click();
     h.run();
     assert!(fake.take().is_empty(), "nothing is cleared on the first click");
-    h.get_by_label("Sign out on this computer?");
+    h.get_by_role_and_label(egui::accesskit::Role::Dialog, "Sign out on this computer?");
     h.get_by_label("Cancel").click();
     h.run();
-    h.get_by_label("Unlock PingCraft");
+    h.get_by_role_and_label(egui::accesskit::Role::Dialog, "Unlock PingCraft");
     h.get_by_label("Sign out").click();
     h.run();
     h.get_by_label("Clear and sign out").click();
@@ -299,7 +308,7 @@ fn the_recovery_key_must_be_saved_before_continuing() {
     let key = "EsTc 8Jq2 Lm4P vR7x Wn3K hY6d Qa9B tF2s Zp5G kU8e Nr4V jD7w";
     fake.tell([Event::NewRecoveryKey(RecoveryKey::new(key))]);
     h.run();
-    h.get_by_label("Save your recovery key");
+    h.get_by_role_and_label(egui::accesskit::Role::Dialog, "Save your recovery key");
     h.get_by_label("EsTc 8Jq2 Lm4P vR7x Wn3K hY6d");
     h.get_by_label("Qa9B tF2s Zp5G kU8e Nr4V jD7w");
     assert!(h.get_by_label("Continue").accesskit_node().is_disabled());
@@ -377,7 +386,7 @@ fn verifying_compares_seven_named_symbols() {
     h.get_by_label("Stopped: the symbols didn't match. Nothing was shared.");
     // The sheet re-centres a frame after it changes size (see verifying_compares_seven_named_symbols).
     h.step();
-    h.get_by_label("Close").click();
+    click_in_footer(&mut h, "Close");
     h.run();
     assert!(matches!(&fake.take()[..], [Command::CancelVerification]));
 }
@@ -465,7 +474,7 @@ fn an_unencrypted_chat_offers_to_turn_encryption_on() {
     fake.take();
     h.get_by_label("Not encrypted: turn on encryption").click();
     h.run();
-    h.get_by_role_and_label(egui::accesskit::Role::Label, "Turn on encryption");
+    h.get_by_role_and_label(egui::accesskit::Role::Dialog, "Turn on encryption");
     h.get_by_label("Cancel").click();
     h.run();
     assert!(fake.take().is_empty(), "cancelling changes nothing");
@@ -510,4 +519,22 @@ fn a_new_message_notifies_and_clicking_the_notification_opens_its_chat() {
     let sent = fake.take();
     assert!(matches!(&sent[..], [Command::OpenChat(chat)] if chat.0 == "!book"), "{sent:?}");
     assert_eq!(h.state().state.tab, crate::Tab::Inbox);
+}
+
+/// Enter in the password field signs in, as the button does, and the password is in no node's name or value.
+#[test]
+fn enter_in_the_password_signs_in() {
+    let fake = Fake::default();
+    let mut h = harness(&fake);
+    fake.tell([Event::SignedOut]);
+    h.run();
+    type_into(&mut h, "Server address", "example.org");
+    type_into(&mut h, "Username", "ana");
+    type_into(&mut h, "Password", "hunter2");
+    let shown = h.query_all_by(|n| n.label().is_some_and(|l| l.contains("hunter2")) || n.value().is_some_and(|v| v.contains("hunter2"))).count();
+    assert_eq!(shown, 0, "the password is never in the tree");
+    h.key_press(egui::Key::Enter);
+    h.run();
+    let sent = fake.take();
+    assert!(matches!(&sent[..], [Command::SignIn { password, .. }] if **password == "hunter2"), "{sent:?}");
 }

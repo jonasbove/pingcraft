@@ -450,3 +450,16 @@ fn a_networks_sound_and_colour_are_set_on_the_accounts_tab() {
     let sent = fake.take();
     assert!(matches!(&sent[..], [Command::NetworkAlerts { alerts: Alerts { accent: Some(Accent::WhatsApp), .. }, .. }]), "{sent:?}");
 }
+
+/// Enter in the composer sends what was typed.
+#[test]
+fn enter_in_the_composer_sends() {
+    let fake = Fake::default();
+    let mut h = super::messages::book_club(&fake);
+    fake.take();
+    super::type_into(&mut h, "Message Book club", "on my way");
+    h.key_press(egui::Key::Enter);
+    h.run();
+    let sent = fake.take();
+    assert!(sent.iter().any(|c| matches!(c, Command::SendText { text, .. } if text == "on my way")), "{sent:?}");
+}

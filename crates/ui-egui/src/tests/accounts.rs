@@ -72,7 +72,7 @@ fn connecting_shows_the_risk_first_and_waits_for_the_tick() {
     let mut h = on_accounts(&fake, vec![]);
     h.get_by_label("Connect WhatsApp").click();
     h.run();
-    h.get_by_label("Before you connect WhatsApp");
+    h.get_by_role_and_label(egui::accesskit::Role::Dialog, "Before you connect WhatsApp");
     h.get_by_label("Risk level · Medium-high");
     // The card behind the sheet says Medium-high too; the scale's badge is the selected one.
     let level = |label: &str| -> Vec<Option<String>> { h.get_all_by_label(label).map(|n| n.accesskit_node().description()).collect() };
@@ -106,7 +106,7 @@ fn cancelling_the_risk_screen_sends_nothing() {
     let mut h = on_accounts(&fake, vec![]);
     h.get_by_label("Connect Telegram").click();
     h.run();
-    h.get_by_label("Before you connect Telegram");
+    h.get_by_role_and_label(egui::accesskit::Role::Dialog, "Before you connect Telegram");
     h.get_by_label("Risk level · Low");
     h.get_by_label("Cancel").click();
     h.run();
@@ -191,7 +191,7 @@ fn a_failed_login_says_why() {
     h.get_by_label_contains("could not confirm who you are");
     // The sheet re-centres a frame after it changes size (see verifying_compares_seven_named_symbols).
     h.step();
-    h.get_by_label("Close").click();
+    super::click_in_footer(&mut h, "Close");
     h.run();
     assert!(h.query_by_label_contains("could not confirm who you are").is_none());
 }
@@ -206,7 +206,7 @@ fn removing_an_account_asks_first() {
     h.get_by_label("+45 12 34 56 78");
     h.get_by_label("Remove +45 12 34 56 78").click();
     h.run();
-    h.get_by_label("Remove this account?");
+    h.get_by_role_and_label(egui::accesskit::Role::Dialog, "Remove this account?");
     assert!(fake.take().is_empty(), "nothing is removed before it is confirmed");
     h.get_by_label("Cancel").click();
     h.run();
@@ -250,7 +250,7 @@ fn the_cards_and_the_risk_sheet_fit_the_window() {
     h.get_by_label("Connect WhatsApp").click();
     h.run();
     let go = h.get_by_label("→ Connect WhatsApp").accesskit_node().raw_bounds().unwrap();
-    let title = h.get_by_label("Before you connect WhatsApp").accesskit_node().raw_bounds().unwrap();
+    let title = h.get_by_role_and_label(egui::accesskit::Role::Dialog, "Before you connect WhatsApp").accesskit_node().raw_bounds().unwrap();
     assert!(title.y0 >= 0.0 && go.y1 <= 760.0, "the whole risk sheet is in the window: {title:?} to {go:?}");
 }
 
@@ -350,4 +350,39 @@ fn refresh_is_on_every_tab() {
     h.get_by_label("Refresh").click();
     h.run();
     assert!(matches!(&fake.take()[..], [Command::Refresh]));
+}
+
+/// With the risk sheet open over the ACCOUNTS tab, Tab moves among the sheet's controls only: never to the header's
+/// tabs, Refresh or the cards behind it; and Escape cancels it.
+#[test]
+fn tab_stays_inside_the_risk_sheet_and_escape_cancels_it() {
+    let fake = Fake::default();
+    let mut h = on_accounts(&fake, vec![]);
+    h.get_by_label("Connect Telegram").click();
+    h.run();
+    h.step();
+    let sheet = h.get_by_role_and_label(egui::accesskit::Role::Dialog, "Before you connect Telegram").accesskit_node().raw_bounds().unwrap();
+    h.get_by_label("Cancel").focus();
+    h.run();
+    let mut reached = 0;
+    for _ in 0..6 {
+        h.key_press(egui::Key::Tab);
+        h.run();
+        let focused: Vec<(Option<String>, egui::accesskit::Rect)> =
+            h.query_all_by(|n| n.is_focused()).filter_map(|n| Some((n.accesskit_node().label(), n.accesskit_node().raw_bounds()?))).collect();
+        reached += focused.len();
+        for (label, b) in &focused {
+            for behind in ["Inbox", "Accounts", "Refresh", "Connect Signal", "Connect WhatsApp"] {
+                assert_ne!(label.as_deref(), Some(behind), "Tab reached {behind} behind the sheet");
+            }
+            assert!(b.x0 >= sheet.x0 - 40.0, "focus at {b:?} is inside the sheet starting at {sheet:?}");
+        }
+    }
+    assert!(reached > 0, "Tab focuses the sheet's controls");
+    // Escape is the sheet's Cancel: it closes, and nothing is sent.
+    fake.take();
+    h.key_press(egui::Key::Escape);
+    h.run();
+    assert!(h.query_by_role_and_label(egui::accesskit::Role::Dialog, "Before you connect Telegram").is_none(), "Escape closes the sheet");
+    assert!(fake.take().is_empty());
 }

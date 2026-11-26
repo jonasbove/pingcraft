@@ -4,8 +4,7 @@
 //! [`install_headless`].
 //!
 //! The runtime takes Tab, F6 and Escape from egui for the whole window: Tab moves over one order of every focusable
-//! control, and an Escape that none of PingCraft's own widgets had focus for arrives as the window's cancel
-//! ([`take_window_cancel`]).
+//! control, and a sheet (a craft-ui dialog) keeps Tab inside it and closes on Escape.
 
 use std::sync::{Arc, LazyLock};
 
@@ -14,10 +13,9 @@ use craft_host::{AppInfo, Host};
 use craft_ui::InstallSpec;
 use craft_ui::runtime::env::RootEnv;
 use craft_ui::runtime::frame::{FrameInput, set_input};
-use craft_ui::runtime::keys::{Intent, with_window_intents};
 use craft_ui::shell::embed::{self, CloseDecision};
 use craft_window::system::{NoWindows, WindowSystem};
-use egui::{Context, Key, Modifiers};
+use egui::Context;
 
 /// The app's name and version for the runtime's dialogs and words. PingCraft's words are not craft-i18n's yet
 /// (PLAN.md, M2 ticket 9), so the host carries no catalogs and the framework's own words are English.
@@ -72,10 +70,4 @@ pub use craft_ui::shell::embed::before_ui;
 /// does), so the window closes.
 pub fn close_path(ctx: &Context) {
     embed::logic(ctx, || CloseDecision::Close);
-}
-
-/// Takes this pass's Escape: egui's, while one of PingCraft's own widgets has focus, else the window's cancel that no
-/// craft-ui component took. Whether there was one.
-pub fn take_window_cancel(ctx: &Context) -> bool {
-    ctx.input_mut(|input| input.consume_key(Modifiers::NONE, Key::Escape)) || with_window_intents(ctx, false, |intents| intents.take(Intent::Cancel))
 }

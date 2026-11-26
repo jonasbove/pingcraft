@@ -357,7 +357,7 @@ pub fn remove_sheet(ctx: &egui::Context, state: &mut State, out: &mut Out) {
     let name = network_name(&account.network);
     let mut cancel = false;
     let mut remove = false;
-    crate::widgets::sheet(
+    let dismissed = crate::widgets::sheet(
         ctx,
         "remove-account",
         560.0,
@@ -379,6 +379,7 @@ pub fn remove_sheet(ctx: &egui::Context, state: &mut State, out: &mut Out) {
             });
         },
     );
+    cancel |= dismissed;
     if cancel {
         state.accounts.removing = None;
     } else if remove {
@@ -407,7 +408,7 @@ fn risk_sheet(ctx: &egui::Context, state: &State, network: Network, understood: 
     let mut cancel = false;
     let mut go = false;
     let ticked = std::cell::Cell::new(understood);
-    crate::widgets::sheet(
+    let dismissed = crate::widgets::sheet(
         ctx,
         "connect-risk",
         700.0,
@@ -445,6 +446,7 @@ fn risk_sheet(ctx: &egui::Context, state: &State, network: Network, understood: 
             });
         },
     );
+    cancel |= dismissed;
     let understood = ticked.get();
     if cancel {
         return None;
@@ -474,7 +476,7 @@ fn choose_sheet(ctx: &egui::Context, state: &State, network: Network, out: &mut 
     };
     let mut chosen = None;
     let mut cancel = false;
-    crate::widgets::sheet(
+    let dismissed = crate::widgets::sheet(
         ctx,
         "connect-choose",
         560.0,
@@ -494,6 +496,7 @@ fn choose_sheet(ctx: &egui::Context, state: &State, network: Network, out: &mut 
             cancel = button(ui, tl!("Cancel"), Kind::Secondary, true).clicked();
         },
     );
+    cancel |= dismissed;
     if cancel {
         return None;
     }
@@ -540,7 +543,7 @@ fn step_sheet(
         LoginStep::Ask { fields, .. } => !sent && fields.iter().all(|f| f.optional || typed.get(&f.id).is_some_and(|v| !v.trim().is_empty())),
         _ => false,
     };
-    crate::widgets::sheet(
+    let dismissed = crate::widgets::sheet(
         ctx,
         "connect-step",
         600.0,
@@ -598,6 +601,7 @@ fn step_sheet(
             }
         },
     );
+    cancel |= dismissed;
     if cancel {
         out.push(Command::CancelLogin(at));
         return None;
@@ -621,7 +625,7 @@ fn step_sheet(
 fn failed_sheet(ctx: &egui::Context, network: Network, error: BridgeError) -> Option<Connect> {
     let name = network_name(&network);
     let mut close = false;
-    crate::widgets::sheet(
+    let dismissed = crate::widgets::sheet(
         ctx,
         "connect-step",
         560.0,
@@ -635,6 +639,7 @@ fn failed_sheet(ctx: &egui::Context, network: Network, error: BridgeError) -> Op
             });
         },
     );
+    close |= dismissed;
     if close { None } else { Some(Connect::Failed { network, error }) }
 }
 
