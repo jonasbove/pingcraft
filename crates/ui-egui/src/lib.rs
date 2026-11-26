@@ -42,23 +42,51 @@ pub struct PingCraftApp {
     styled: bool,
     /// Shows desktop notifications; without one, none are shown.
     notifier: Option<Box<dyn Notifier>>,
-    /// The skin tone for emoji, as the user last chose it in the picker.
+    /// The skin tone for emoji, as the user last chose it in the picker or the account last said.
     skin_tone: SkinTone,
+    /// Whether the account has answered which tone it keeps, so a tone kept on this computer from before has been
+    /// moved up to it (or set aside). The app saves this with its local copy of the tone.
+    skin_tone_migrated: bool,
 }
 
 impl PingCraftApp {
     pub fn new(backend: Box<dyn Backend>) -> Self {
-        Self { backend, state: State::default(), styled: false, notifier: None, skin_tone: SkinTone::default() }
+        Self { backend, state: State::default(), styled: false, notifier: None, skin_tone: SkinTone::default(), skin_tone_migrated: false }
     }
 
-    /// The skin tone for emoji the user chose in the picker, for the app to save (it is a setting of this computer).
+    /// The skin tone for emoji in use, for the app to keep a local copy of. The account keeps the real one.
     pub fn skin_tone(&self) -> SkinTone {
         self.skin_tone
     }
 
-    /// Uses this skin tone for emoji, as saved from an earlier run.
+    /// Uses this skin tone for emoji until the account says otherwise.
     pub fn set_skin_tone(&mut self, tone: SkinTone) {
         self.skin_tone = tone;
+    }
+
+    /// Starts from the local copy of the skin tone, kept from an earlier run. `migrated` when an account has
+    /// already answered since (see [`Self::skin_tone_migrated`]); until then, the account is given this tone if it
+    /// keeps none.
+    pub fn set_local_skin_tone(&mut self, tone: SkinTone, migrated: bool) {
+        self.skin_tone = tone;
+        self.skin_tone_migrated = migrated;
+    }
+
+    /// Whether an account has said which skin tone it keeps, so the local copy has been moved up to it once. The
+    /// app saves this next to the tone.
+    pub fn skin_tone_migrated(&self) -> bool {
+        self.skin_tone_migrated
+    }
+
+    /// The account said which skin tone it keeps (or that it keeps none).
+    fn account_skin_tone(&mut self, ctx: &egui::Context, account: Option<&str>, out: &mut view::Out) {
+        let (tone, send) = picker::account_tone(account.map(SkinTone::from_id), self.skin_tone, self.skin_tone_migrated);
+        self.skin_tone_migrated = true;
+        self.skin_tone = tone;
+        picker::set_tone(ctx, tone);
+        if send {
+            out.push(Command::SaveSkinTone(tone.id().to_owned()));
+        }
     }
 
     /// Shows desktop notifications through this notifier.
@@ -91,8 +119,10 @@ impl PingCraftApp {
         let ctx = ui.ctx().clone();
         picker::set_tone(&ctx, self.skin_tone);
         self.state.focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
+        let mut out = Vec::new();
         for event in self.backend.poll() {
             match &event {
+                Event::SkinTone(account) => self.account_skin_tone(&ctx, account.as_deref(), &mut out),
                 Event::RecentEmoji(recent) => picker::set_recent(&ctx, recent),
                 // The next one to sign in does not see this account's.
                 Event::SignedOut | Event::Locked { .. } | Event::AlreadyRunning => picker::set_recent(&ctx, &[]),
@@ -101,7 +131,6 @@ impl PingCraftApp {
             self.state.apply(event);
         }
         let t = Tokens::get(&ctx);
-        let mut out = Vec::new();
         self.notifications(&ctx, &mut out);
         egui::Panel::top("header").exact_size(48.0).frame(Frame::new().fill(t.bg)).show(ui, |ui| view::header(ui, &mut self.state, &mut out));
         egui::Panel::bottom("footer").exact_size(34.0).frame(Frame::new().fill(t.bg)).show(ui, |ui| view::footer(ui, &self.state));
@@ -125,7 +154,12 @@ impl PingCraftApp {
                 }
             }
         });
-        self.skin_tone = picker::tone(&ctx);
+        // Chosen in the picker this frame: kept with the account.
+        let picked = picker::tone(&ctx);
+        if picked != self.skin_tone {
+            self.skin_tone = picked;
+            out.push(Command::SaveSkinTone(picked.id().to_owned()));
+        }
         out.extend(picker::take_used(&ctx).into_iter().map(Command::EmojiUsed));
         for command in out {
             self.backend.send(command);

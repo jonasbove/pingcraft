@@ -372,17 +372,30 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
      engine). Typing a whole `:name:` (not picking the suggestion) does not count as a
      use, as before.
    - Emoji names and search are English.
-   - **Skin tone: one saved default** (maintainer, 2026-11-26). A SKIN TONE row in the picker (a raised hand in
-     each of the six tones, radio buttons to a screen reader) sets the tone for every emoji that has skin tones: the
-     picker's grid, the fixed quick reactions and `:name:` shortcodes and their suggestions (emoji of two people
-     take it for both; an emoji that already has a tone, such as a recently used one, keeps its own). Stored in the
-     desktop app's **local settings** (craft-settings' `config.toml`, `[emoji] skin_tone = "medium"`), not with the
-     recent emoji: `m.recent_emoji`'s content has only `recent_emoji` in the specification, and apps that read it
-     into a typed struct (ruma's, for one) would drop an extra key the next time they write. So the tone does not
-     follow the user to another device; a key of PingCraft's own (`io.github.jonasbove.pingcraft.…` account data)
-     could carry it, for the maintainer to decide. The web build has no settings store yet, so there it lasts for
-     the session. Tests: the row's marked tone and the picker in that tone (AccessKit), a saved tone in the quick
-     reactions and shortcodes, the tone names and how a tone applies (unit), and saving and reading it back.
+   - **Skin tone: one saved default, kept with the account** (maintainer, 2026-11-26). A SKIN TONE row in the
+     picker (a raised hand in each of the six tones, radio buttons to a screen reader) sets the tone for every emoji
+     that has skin tones: the picker's grid, the fixed quick reactions and `:name:` shortcodes and their suggestions
+     (emoji of two people take it for both; an emoji that already has a tone, such as a recently used one, keeps its
+     own). **Synced between devices** (maintainer, 2026-11-26): it is PingCraft's own global account data,
+     `io.github.jonasbove.pingcraft.emoji` with `{"skin_tone": "medium"}` (`crates/matrix/src/emoji_settings.rs`),
+     not a key in `m.recent_emoji` (that content has only `recent_emoji` in the specification, and apps that read it
+     into a typed struct, ruma's for one, would drop an extra key the next time they write). Once signed in, the
+     engine asks the server itself which tone the account keeps (never concluding "none" from a sync that has not
+     arrived), then watches the synced copy for another device's change; a tone chosen here is sent within a second,
+     on top of the server's copy (other keys kept, through the shared `account_data.rs` helper that
+     `m.recent_emoji` now uses too), again 30 seconds after a failure, and at once when PingCraft closes or signs out.
+     Requests give up after 5 seconds (12 in all). The desktop app keeps a **local copy** in craft-settings'
+     `config.toml` (`[emoji] skin_tone`), as the start-up value and for when the server cannot be reached.
+     **Migration:** the first time an account answers, a local tone from before (set on this computer, account has
+     none) is sent up once; `[emoji] skin_tone_migrated = true` then records that, so a later account signed in on
+     this computer that keeps no tone starts from the default instead of inheriting it. Tests: the decision (pure,
+     every case), the engine's state machine (ask first, retry, tell another device's change once, never echo
+     its own choice, a choice made before the server answered wins), the interface through the AccessKit tree (an
+     account's tone is marked in the picker and not sent back; a picked one is sent once; the move-up happens once),
+     the settings file (the flag, and an older file without it), and a live test with one user on two devices
+     (`tests/skin_tone.rs`), which **was not run against a server**: the test server's variables were not set in
+     this session, so it skipped. Not tried by hand. The web build has no settings store and no engine yet, so there
+     the tone lasts for the session.
    - **Frames as built** (2026-11-26): `emoji-picker`, `emoji-react` and `emoji-shortcode` on page "Messages ·
      Draft" in `design/pingcraft.figcraft` (`design/tools/messages.py`, exports at 1x and 2x), for the maintainer's
      review. Emoji are placeholder squares there and the tones swatches: FigCraft cannot paint the COLRv1 font.

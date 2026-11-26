@@ -95,6 +95,9 @@ pub enum Command {
     /// The user used this emoji (sent it, reacted with it, or picked it). It joins the account's recently used emoji
     /// on the server, which the user's other devices share; uses are sent together a few seconds after the last.
     EmojiUsed(String),
+    /// The user chose this skin tone for emoji (by its saved name, such as `medium`). It is kept with the account,
+    /// in PingCraft's own account data, so the user's other devices use it too.
+    SaveSkinTone(String),
     /// The user saved the recovery key they were shown.
     RecoveryKeySaved,
     /// The user typed the account's recovery key on this device.
@@ -163,6 +166,8 @@ impl std::fmt::Debug for Command {
             Self::LoadOlder(c) => f.debug_tuple("LoadOlder").field(c).finish(),
             // Which emoji someone uses is as private as what they write.
             Self::EmojiUsed(_) => f.write_str("EmojiUsed(..)"),
+            // Says something about the person, so it stays out of logs too.
+            Self::SaveSkinTone(_) => f.write_str("SaveSkinTone(..)"),
             Self::RecoveryKeySaved => f.write_str("RecoveryKeySaved"),
             Self::Recover(key) => f.debug_tuple("Recover").field(key).finish(),
             Self::VerifyThisDevice => f.write_str("VerifyThisDevice"),
@@ -243,6 +248,10 @@ pub enum Event {
     /// The account's recently used emoji, most recent first: what the server has (shared with the user's other
     /// devices), with this device's uses not sent yet on top. Sent when signed in and whenever it changes.
     RecentEmoji(Vec<String>),
+    /// The skin tone for emoji saved with the account (by its saved name), or (`None`) that the account has none:
+    /// that is asked of the server itself, never assumed from a sync that has not arrived yet. Sent once signed in
+    /// and whenever another device changes it.
+    SkinTone(Option<String>),
     /// The first sign-in made a recovery key: show it until the user has saved it.
     NewRecoveryKey(RecoveryKey),
     Recovery(RecoveryStatus),
@@ -302,6 +311,7 @@ mod tests {
             Command::React { chat: crate::ChatId("!a".into()), message: crate::MessageId("m".into()), key: "🫣".into() },
             Command::SaveDraft { chat: crate::ChatId("!a".into()), text: "unsent draft".into() },
             Command::EmojiUsed("🫥".into()),
+            Command::SaveSkinTone("medium-dark".into()),
             Command::AnswerLogin {
                 step: crate::bridge::StepRef {
                     network: crate::Network::from_id("telegram"),
@@ -330,6 +340,7 @@ mod tests {
             "🫣",
             "unsent draft",
             "🫥",
+            "medium-dark",
         ] {
             assert!(!shown.contains(secret), "{shown}");
         }

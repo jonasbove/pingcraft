@@ -18,11 +18,16 @@ macro_rules! namespaced {
 }
 pub(crate) use namespaced;
 
+// Native only, like the engine that uses it (its timeouts use tokio's timer).
+#[cfg(not(target_arch = "wasm32"))]
+mod account_data;
 mod bridge_info;
 mod chat_settings;
 #[cfg(not(target_arch = "wasm32"))]
 mod connect;
 pub mod connection;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod emoji_settings;
 pub mod encryption;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod engine;

@@ -274,3 +274,83 @@ fn a_saved_skin_tone_applies_to_quick_reactions_and_shortcodes() {
     h.run();
     assert_eq!(sent_texts(&fake), ["text ok 👍🏿 👋🏿 😄"]);
 }
+
+/// The skin tones the interface asked the backend to save with the account, since the last call.
+fn saved_tones(fake: &super::Fake) -> Vec<String> {
+    use pingcraft_core::app::Command;
+    fake.take()
+        .into_iter()
+        .filter_map(|c| match c {
+            Command::SaveSkinTone(tone) => Some(tone),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The skin tone is kept with the account: one another device chose is taken (and marked in the picker) without
+/// being sent back, and one chosen here is sent to be saved.
+#[test]
+#[cfg_attr(not(color_emoji), ignore = "the picker shows emoji egui's monochrome face lacks: cargo xtask fonts")]
+fn the_skin_tone_follows_the_account() {
+    use egui::accesskit::{Role, Toggled};
+    use egui_kittest::kittest::{NodeT, Queryable};
+    use pingcraft_core::app::Event;
+    let fake = super::Fake::default();
+    let mut h = super::messages::book_club(&fake);
+    fake.tell([Event::SkinTone(Some("dark".into()))]);
+    h.run();
+    h.run();
+    assert_eq!(h.state().skin_tone(), crate::SkinTone::Dark);
+    assert!(saved_tones(&fake).is_empty(), "the account's own tone is not sent back");
+    h.get_by_label("Emoji").click();
+    h.run();
+    let toggled = |h: &egui_kittest::Harness<'_, crate::PingCraftApp>, label: &str| {
+        h.get_by_role_and_label(Role::RadioButton, label).accesskit_node().toggled()
+    };
+    assert_eq!(toggled(&h, "Dark skin tone"), Some(Toggled::True));
+    h.get_by_role_and_label(Role::RadioButton, "Medium skin tone").click();
+    h.run();
+    h.run();
+    assert_eq!(saved_tones(&fake), ["medium"], "sent once");
+    assert_eq!(toggled(&h, "Medium skin tone"), Some(Toggled::True));
+}
+
+/// A tone saved on this computer before the account kept one moves up to an account that has none, once; after
+/// that, an account without one (another account on this computer, say) starts from the default.
+#[test]
+fn a_local_skin_tone_moves_up_to_an_account_without_one_once() {
+    use pingcraft_core::app::Event;
+    let fake = super::Fake::default();
+    let mut h = super::messages::book_club(&fake);
+    h.state_mut().set_local_skin_tone(crate::SkinTone::MediumDark, false);
+    h.run();
+    assert!(saved_tones(&fake).is_empty(), "nothing until the account has answered");
+    fake.tell([Event::SkinTone(None)]);
+    h.run();
+    h.run();
+    assert_eq!(saved_tones(&fake), ["medium-dark"]);
+    assert!(h.state().skin_tone_migrated(), "the app remembers it was moved up");
+    assert_eq!(h.state().skin_tone(), crate::SkinTone::MediumDark);
+
+    let fake = super::Fake::default();
+    let mut h = super::messages::book_club(&fake);
+    h.state_mut().set_local_skin_tone(crate::SkinTone::MediumDark, true);
+    fake.tell([Event::SkinTone(None)]);
+    h.run();
+    h.run();
+    assert!(saved_tones(&fake).is_empty(), "moved up once only");
+    assert_eq!(h.state().skin_tone(), crate::SkinTone::Default);
+}
+
+/// What the interface does when the account says which tone it has: a pure decision, so each case is checked.
+#[test]
+fn the_account_tone_decides_over_the_local_one() {
+    use crate::SkinTone::{Dark, Default, Medium};
+    use crate::picker::account_tone;
+    // (account, local, migrated) -> (tone to use, send it up)
+    assert_eq!(account_tone(Some(Dark), Medium, false), (Dark, false));
+    assert_eq!(account_tone(Some(Dark), Medium, true), (Dark, false));
+    assert_eq!(account_tone(None, Medium, false), (Medium, true));
+    assert_eq!(account_tone(None, Default, false), (Default, false), "nothing to move up");
+    assert_eq!(account_tone(None, Medium, true), (Default, false));
+}

@@ -4,8 +4,9 @@
 //! or in `PINGCRAFT_DATA_DIR` when that is set. `PINGCRAFT_NO_KEYCHAIN=1` makes it use the unlock passphrase even
 //! where a keychain works, to try that path.
 //!
-//! Its settings on this computer (for now the emoji skin tone) are craft-settings' `config.toml` in the platform's
-//! configuration folder, or in `PINGCRAFT_CONFIG_DIR`.
+//! Its settings on this computer are craft-settings' `config.toml` in the platform's configuration folder, or in
+//! `PINGCRAFT_CONFIG_DIR`. For now that is a copy of the emoji skin tone, which the account keeps: the copy is what
+//! PingCraft starts with, and moved up once to an account that keeps none.
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable))]
 // A Windows GUI program: no console window opens with it (packaging/windows/package.ps1 checks this).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
@@ -25,7 +26,8 @@ use pingcraft_ui_egui::{PingCraftApp, SkinTone};
 /// The folder name under the platform's data folder.
 const APP_ID: &str = "pingcraft";
 
-/// PingCraft's settings on this computer. What belongs to the account (recently used emoji, say) is on the server.
+/// PingCraft's settings on this computer. What belongs to the account (recently used emoji, the skin tone) is on the
+/// server.
 #[derive(Serialize, Deserialize, Default, Clone, PartialEq)]
 #[serde(default)]
 struct Prefs {
@@ -35,8 +37,12 @@ struct Prefs {
 #[derive(Serialize, Deserialize, Default, Clone, PartialEq)]
 #[serde(default)]
 struct EmojiPrefs {
-    /// The skin tone chosen in the emoji picker, by [`SkinTone::id`].
+    /// The skin tone last used, by [`SkinTone::id`]: a copy of the account's, to start with and for when the server
+    /// cannot be reached.
     skin_tone: String,
+    /// An account has said which tone it keeps since, so this copy was moved up to it once (or set aside) and is
+    /// never moved up again, to this or another account.
+    skin_tone_migrated: bool,
 }
 
 impl craft_settings::Settings for Prefs {
@@ -49,17 +55,21 @@ struct Window {
     settings: SettingsStore<Prefs>,
 }
 
-/// Puts the skin tone the user chose into the settings, which save it a moment later.
-fn keep_skin_tone(tone: SkinTone, settings: &mut SettingsStore<Prefs>) {
-    if SkinTone::from_id(&settings.get().emoji.skin_tone) != tone {
-        settings.update(|p| p.emoji.skin_tone = tone.id().to_owned());
+/// Keeps a copy of the skin tone in use in the settings, which save it a moment later.
+fn keep_skin_tone(tone: SkinTone, migrated: bool, settings: &mut SettingsStore<Prefs>) {
+    let kept = &settings.get().emoji;
+    if SkinTone::from_id(&kept.skin_tone) != tone || kept.skin_tone_migrated != migrated {
+        settings.update(|p| {
+            p.emoji.skin_tone = tone.id().to_owned();
+            p.emoji.skin_tone_migrated = migrated;
+        });
     }
 }
 
 impl eframe::App for Window {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.app.ui(ui);
-        keep_skin_tone(self.app.skin_tone(), &mut self.settings);
+        keep_skin_tone(self.app.skin_tone(), self.app.skin_tone_migrated(), &mut self.settings);
         self.settings.tick(Instant::now());
     }
 
@@ -119,7 +129,8 @@ fn main() -> ExitCode {
             let engine = Engine::start(data, secrets, Arc::new(move || ctx.request_repaint()))?;
             let mut app = PingCraftApp::new(Box::new(engine));
             let (settings, _) = SettingsStore::<Prefs>::open(Location::Auto);
-            app.set_skin_tone(SkinTone::from_id(&settings.get().emoji.skin_tone));
+            let kept = &settings.get().emoji;
+            app.set_local_skin_tone(SkinTone::from_id(&kept.skin_tone), kept.skin_tone_migrated);
             let ctx = cc.egui_ctx.clone();
             app.set_notifier(pingcraft_notify::desktop(Arc::new(move || ctx.request_repaint())));
             Ok(Box::new(Window { app, settings }))
@@ -141,16 +152,34 @@ mod tests {
 
     use super::{Prefs, keep_skin_tone};
 
-    /// The skin tone chosen in the picker is saved, and comes back on the next start.
+    /// The local copy of the skin tone, and whether it was moved up to the account, are saved and come back on the
+    /// next start.
     #[test]
     fn the_skin_tone_is_saved_and_comes_back() {
         let dir = tempfile::tempdir().unwrap();
         let (mut settings, _) = SettingsStore::<Prefs>::open_at(dir.path());
         assert_eq!(SkinTone::from_id(&settings.get().emoji.skin_tone), SkinTone::Default, "nothing saved yet");
-        keep_skin_tone(SkinTone::MediumDark, &mut settings);
+        assert!(!settings.get().emoji.skin_tone_migrated);
+        keep_skin_tone(SkinTone::MediumDark, false, &mut settings);
         settings.flush().unwrap();
-        let (again, _) = SettingsStore::<Prefs>::open_at(dir.path());
+        let (mut again, _) = SettingsStore::<Prefs>::open_at(dir.path());
         assert_eq!(again.get().emoji.skin_tone, "medium-dark");
         assert_eq!(SkinTone::from_id(&again.get().emoji.skin_tone), SkinTone::MediumDark);
+        assert!(!again.get().emoji.skin_tone_migrated);
+        keep_skin_tone(SkinTone::MediumDark, true, &mut again);
+        again.flush().unwrap();
+        let (third, _) = SettingsStore::<Prefs>::open_at(dir.path());
+        assert!(third.get().emoji.skin_tone_migrated, "moved up once, never again");
+    }
+
+    /// A settings file from before the account kept the tone has no `skin_tone_migrated`: it reads as not moved up
+    /// yet, so its tone moves up once.
+    #[test]
+    fn an_older_settings_file_has_not_moved_its_tone_up() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(craft_settings::store::CONFIG_FILE), "schema_version = 1\n\n[emoji]\nskin_tone = \"dark\"\n").unwrap();
+        let (again, _) = SettingsStore::<Prefs>::open_at(dir.path());
+        assert_eq!(again.get().emoji.skin_tone, "dark");
+        assert!(!again.get().emoji.skin_tone_migrated);
     }
 }

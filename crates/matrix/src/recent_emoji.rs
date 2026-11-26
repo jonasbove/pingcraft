@@ -11,13 +11,9 @@
 
 use std::time::{Duration, Instant};
 
-use matrix_sdk::config::RequestConfig;
-use matrix_sdk::ruma::api::client::config::{get_global_account_data, set_global_account_data};
-use matrix_sdk::ruma::api::error::ErrorKind;
-use matrix_sdk::ruma::events::GlobalAccountDataEventType;
-use matrix_sdk::ruma::serde::Raw;
 use serde_json::{Map, Value, json};
 
+use crate::account_data::synced;
 use crate::connection::Connection;
 
 /// The event type in the specification.
@@ -30,9 +26,6 @@ pub const MAX: usize = 100;
 pub const QUIET: Duration = Duration::from_secs(3);
 /// How long to wait before trying again when sending them failed (offline, say).
 const RETRY: Duration = Duration::from_secs(30);
-/// How long one request may take, without retrying: sending happens on the engine's loop, which must not stall
-/// (nor the window's closing wait) on a network that does not answer.
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 /// How long sending may take in all (two reads and a write).
 pub const SAVE_TIMEOUT: Duration = Duration::from_secs(12);
 
@@ -148,18 +141,7 @@ fn problem(e: impl std::fmt::Display) -> String {
 
 /// The synced copies of both events, and a text that changes when either does (compared, never shown or logged).
 async fn stored(account: &matrix_sdk::Account) -> (Option<Value>, Option<Value>, String) {
-    let read = |kind: &'static str| {
-        let account = account.clone();
-        async move {
-            account
-                .account_data_raw(GlobalAccountDataEventType::from(kind))
-                .await
-                .ok()
-                .flatten()
-                .and_then(|raw| raw.deserialize_as_unchecked::<Value>().ok())
-        }
-    };
-    let (current, legacy) = (read(RECENT_EMOJI).await, read(LEGACY_RECENT_EMOJI).await);
+    let (current, legacy) = (synced(account, RECENT_EMOJI).await, synced(account, LEGACY_RECENT_EMOJI).await);
     let text = |v: &Option<Value>| v.as_ref().map(Value::to_string).unwrap_or_default();
     let seen = format!("{}\n{}", text(&current), text(&legacy));
     (current, legacy, seen)
@@ -175,28 +157,12 @@ fn shown(current: Option<Value>, legacy: Option<Value>, seen: &str, pending: &Pe
     emoji(&with_uses(synced, pending.uses()))
 }
 
-/// One request's settings: a short timeout and no retries (the next attempt is [`RETRY`] later).
-fn once() -> RequestConfig {
-    RequestConfig::new().timeout(REQUEST_TIMEOUT).disable_retry()
-}
-
 impl Connection {
     /// The account's recently used emoji as this device last synced them (no request to the server), with the uses
     /// not sent yet on top, most recent first. With a text that changes when the synced copy does.
     pub async fn recent_emoji(&self, pending: &Pending) -> (Vec<String>, String) {
         let (current, legacy, seen) = stored(&self.client().account()).await;
         (shown(current, legacy, &seen, pending), seen)
-    }
-
-    /// The server's copy of one event, asked for now (not the synced one). `None` when the account has none.
-    async fn fetch(&self, kind: &str) -> Result<Option<Value>, matrix_sdk::HttpError> {
-        let Some(user) = self.client().user_id() else { return Ok(None) };
-        let request = get_global_account_data::v3::Request::new(user.to_owned(), GlobalAccountDataEventType::from(kind));
-        match self.client().send(request).with_request_config(once()).await {
-            Ok(response) => Ok(response.account_data.deserialize_as_unchecked::<Value>().ok()),
-            Err(e) if e.client_api_error_kind() == Some(&ErrorKind::NotFound) => Ok(None),
-            Err(e) => Err(e),
-        }
     }
 
     /// Sends the pending uses, on top of what the server has now, and returns the list as it then is. On failure,
@@ -221,14 +187,11 @@ impl Connection {
     }
 
     async fn try_save(&self, uses: &[String]) -> Result<(Value, String), String> {
-        let current = self.fetch(RECENT_EMOJI).await.map_err(problem)?;
-        let legacy = if current.is_some() { None } else { self.fetch(LEGACY_RECENT_EMOJI).await.map_err(problem)? };
+        let current = self.fetch_global(RECENT_EMOJI).await.map_err(problem)?;
+        let legacy = if current.is_some() { None } else { self.fetch_global(LEGACY_RECENT_EMOJI).await.map_err(problem)? };
         let content = with_uses(base(current, legacy), uses);
-        let Some(user) = self.client().user_id() else { return Err(problem("not signed in")) };
-        let raw = Raw::new(&content).map_err(problem)?.cast_unchecked();
         let (_, _, seen) = stored(&self.client().account()).await;
-        let request = set_global_account_data::v3::Request::new_raw(user.to_owned(), GlobalAccountDataEventType::from(RECENT_EMOJI), raw);
-        self.client().send(request).with_request_config(once()).await.map_err(problem)?;
+        self.put_global(RECENT_EMOJI, &content).await.map_err(problem)?;
         Ok((content, seen))
     }
 }

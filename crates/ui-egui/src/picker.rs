@@ -18,8 +18,9 @@ const PER_ROW: usize = 8;
 const SUGGESTIONS: usize = 6;
 
 /// A skin tone for the emoji that have them (people, hands): one saved default, applied in the picker, the quick
-/// reactions and `:name:` shortcodes. Emoji that already carry a tone (a recently used one, say) keep theirs. The
-/// desktop app saves it in its local settings (PLAN.md, "Messages and chats" 1).
+/// reactions and `:name:` shortcodes. Emoji that already carry a tone (a recently used one, say) keep theirs. It is
+/// kept with the account, so it follows the user between devices; the desktop app also keeps a copy in its local
+/// settings, to start with and for when the server cannot be reached (PLAN.md, "Messages and chats" 1).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum SkinTone {
     #[default]
@@ -84,6 +85,18 @@ impl SkinTone {
             }
             _ => emoji.to_owned(),
         }
+    }
+}
+
+/// What to do when the account says which tone it keeps (`account`, `None` when it keeps none): the tone to use,
+/// and whether to send `local` up to the account. A tone chosen on this computer before the account kept one
+/// (`migrated` false) moves up once; after that, an account without one starts from the default, so another
+/// account signed in on this computer does not inherit it.
+pub fn account_tone(account: Option<SkinTone>, local: SkinTone, migrated: bool) -> (SkinTone, bool) {
+    match account {
+        Some(tone) => (tone, false),
+        None if !migrated && local != SkinTone::Default => (local, true),
+        None => (SkinTone::Default, false),
     }
 }
 

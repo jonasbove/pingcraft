@@ -129,6 +129,8 @@ struct SignedIn {
     emoji_uses: crate::recent_emoji::Pending,
     /// The recently used emoji as last told to the interface (raw, to tell when another device changed them).
     shown_emoji: Option<String>,
+    /// The skin tone kept with the account, between this device and the server.
+    skin_tone: crate::emoji_settings::ToneSync,
 }
 
 struct Worker {
@@ -219,11 +221,14 @@ impl Worker {
                     self.end_mutes().await;
                     self.save_recent_emoji(false).await;
                     self.recent_emoji().await;
+                    self.skin_tone(false).await;
                 }
             }
         }
-        // Closing: the emoji used in the last few seconds are sent now, or they would be lost.
+        // Closing: the emoji used in the last few seconds, and a skin tone just chosen, are sent now, or they would be
+        // lost.
         self.save_recent_emoji(true).await;
+        self.skin_tone(true).await;
         if let Some(s) = self.signed_in.take() {
             s.connection.stop().await;
         }
@@ -355,9 +360,11 @@ impl Worker {
             mute_ends: HashMap::new(),
             emoji_uses: crate::recent_emoji::Pending::default(),
             shown_emoji: None,
+            skin_tone: crate::emoji_settings::ToneSync::default(),
         });
         self.tick();
         self.recent_emoji().await;
+        self.skin_tone(false).await;
     }
 
     /// Tells the interface when the connection or the recovery state changed.
@@ -447,6 +454,47 @@ impl Worker {
         let _ = s.connection.save_recent_emoji(&mut s.emoji_uses).await;
     }
 
+    /// Keeps the skin tone in step with the account: asks the server which one it keeps once signed in, sends one
+    /// chosen here, and tells the interface when another device changed it. While closing (`closing`), only sends a
+    /// choice not sent yet.
+    async fn skin_tone(&mut self, closing: bool) {
+        use crate::emoji_settings::Next;
+        let Some(s) = self.signed_in.as_mut() else { return };
+        // Not while the server cannot be reached: the next tick after it can tries.
+        if s.connection.state() != ConnectionState::Online {
+            return;
+        }
+        let now = std::time::Instant::now();
+        let next = match (closing, s.skin_tone.pending()) {
+            // Closing: there is no later, so a choice not sent yet goes now, whatever the retry time.
+            (true, Some(tone)) => Next::Save(tone),
+            (true, None) => Next::Wait,
+            (false, _) => s.skin_tone.next(now),
+        };
+        match next {
+            // A failure is quiet and tried again later: the header already says when the server cannot be reached.
+            Next::Save(tone) => match s.connection.save_skin_tone(&tone).await {
+                Ok(()) => s.skin_tone.saved(),
+                Err(_) => s.skin_tone.failed(now),
+            },
+            Next::Fetch if !closing => match s.connection.fetch_skin_tone().await {
+                Ok(tone) => {
+                    if let Some(tell) = s.skin_tone.fetched(tone) {
+                        self.emit.send(Event::SkinTone(tell));
+                    }
+                }
+                Err(_) => s.skin_tone.failed(now),
+            },
+            Next::Watch if !closing => {
+                let synced = s.connection.synced_skin_tone().await;
+                if let Some(tone) = s.skin_tone.synced(synced) {
+                    self.emit.send(Event::SkinTone(Some(tone)));
+                }
+            }
+            Next::Fetch | Next::Watch | Next::Wait => {}
+        }
+    }
+
     fn pinned(&mut self, pinned: Vec<pingcraft_core::Quote>) {
         let Some((chat, _)) = self.signed_in.as_ref().and_then(|s| s.chat.as_ref()) else { return };
         self.emit.send(Event::Pinned { chat: chat.clone(), pinned });
@@ -482,6 +530,7 @@ impl Worker {
             return self.forget_this_computer();
         }
         self.save_recent_emoji(true).await;
+        self.skin_tone(true).await;
         let Some(s) = self.signed_in.take() else { return self.emit.send(Event::SignedOut) };
         s.connection.stop().await;
         drop(s.chat);
@@ -597,6 +646,11 @@ impl Worker {
                 let (emoji, seen) = s.connection.recent_emoji(&s.emoji_uses).await;
                 s.shown_emoji = Some(seen);
                 self.emit.send(Event::RecentEmoji(emoji));
+                Ok(())
+            }
+            // Sent at the next tick (within a second), quietly; on failure, again later.
+            Command::SaveSkinTone(tone) => {
+                s.skin_tone.chosen(tone);
                 Ok(())
             }
             command @ (Command::LoadNetworks
