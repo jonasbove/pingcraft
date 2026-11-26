@@ -644,6 +644,19 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
       watches the sync's room account data, 2026-11-26), but no live test has two devices for it yet; not tried by
       hand. **Needs a frame** on page "Messages · Draft" (the filter and the
       menu items), not drawn in this change.
+    - **On craft-ui's menu (craft-libs update, part 1, 2026-11-26), shortcuts still not done.** The message's menu is
+      craft-ui's `Menu` (`MenuItem` rows, a `Divider`), opened from its "more" button or a right-click on the message
+      or its text; rows a message does not allow are left out, as before. The quick reactions stay egui buttons in
+      the menu's body (a menu row takes catalogue icons, not emoji; `MenuIconRow`), and close the menu through its
+      body (`request_close`). Each row's label marks the design's letter as its mnemonic (`&Reply`, `Deta&ils`;
+      Edit and Delete take T and D, since Up moves among the rows and Delete is no letter), which craft-ui's open
+      menu runs a row from. **Not shown to work:** in the test harness an open menu never holds craft-ui's focus and
+      a typed R ran nothing, whether the menu was opened by a click or by Enter, so no row shows a shortcut and the
+      letters are untested; Ctrl+C, Up and Delete are not bound. Not tried in the running app. Next: a scoped
+      `CommandSet` with `take_command` in the menu's body (craft-ui's keys trial), and the harness running
+      `embed::before_input` each frame, then the app menu (craft-menu), which this part did not start. The chat's
+      "…" menu is still an egui popup. (The note above that craft-libs `menu` is only the window's menu bar is out of
+      date: craft-menu has context menus, `craft_menu::context`.)
     - **Context menu: done, without shortcuts.** A message's menu opens from its "…" button or a right-click;
       the keyboard shortcuts in the design (through `craft-keymap`) are still to come. **They come with the
       craft-libs update** (maintainer, 2026-11-26): the bump from `cdee9b8` (done 2026-11-26, now `a6103343`) brings craft-keymap's and
@@ -711,6 +724,11 @@ craft-ui's dialog host, the i18n swap, the automation interface and colour theme
     sentence-case labels, buttons, tabs, badges, icons and the sheets' hero (no orchid band or rule). It is to be
     redrawn later.
   - **Not looked at by eye:** no screenshot was taken; the tests check the AccessKit tree and some geometry only.
+- **Keyboard shortcuts and menus** (step 4): the message menu is craft-ui's `Menu`; its shortcuts and the app menu
+  are not done ("Messages and chats" 12).
+- **The Settings screen** (maintainer, 2026-11-26, added as step 5, on craft-ui-patterns' preferences pattern):
+  **not started.** It needs step 4's commands (rule 14) and its Security part crosses core, matrix and keychain
+  with live tests; the SETTINGS tab stays disabled.
 
 ## craft-libs: what PingCraft lacks
 
