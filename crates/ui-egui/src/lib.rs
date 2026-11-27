@@ -17,6 +17,7 @@ mod picker;
 mod settings;
 mod state;
 mod theme;
+mod theme_import;
 mod themes;
 mod time;
 mod view;
@@ -69,6 +70,8 @@ pub struct PingCraftApp {
     dialogs: DialogHost,
     /// The Craft suite's theme choice and library.
     suite: SuiteClient,
+    /// A theme import the library has not answered yet: its request, and the theme sent.
+    importing: Option<(u64, theme_import::Converted)>,
 }
 
 impl PingCraftApp {
@@ -84,6 +87,7 @@ impl PingCraftApp {
             menu: commands::laid_out(),
             dialogs: DialogHost::new(),
             suite: SuiteClient::memory(),
+            importing: None,
         }
     }
 
@@ -106,6 +110,10 @@ impl PingCraftApp {
         if let Some(catalog) = &self.catalog {
             input = input.catalog(catalog.clone());
         }
+        // PingCraft's own choice may name a library theme: the suite loads it only when asked.
+        self.suite.set_app_theme(
+            self.state.prefs.look.theme.clone().filter(|pair| themes::own_theme(&pair.light).is_none() && themes::own_theme(&pair.dark).is_none()),
+        );
         let selection = self.state.selection();
         // The theme of the mode shown: with "the system's", the mode the last frame resolved.
         let dark = match selection.mode {
@@ -133,6 +141,55 @@ impl PingCraftApp {
         match self.suite.theme(&id) {
             Some(def) => framework::ThemeSource::Held(std::sync::Arc::new(def)),
             None => framework::ThemeSource::BuiltIn(ThemeId::suite_default()),
+        }
+    }
+
+    /// Reads a theme file, makes it a Craft theme and asks the suite library to keep it (as a copy when its id is
+    /// taken). Settings says how it went.
+    fn import_theme(&mut self, path: &str) {
+        let name = std::path::Path::new(path).file_name().and_then(|n| n.to_str()).unwrap_or(path).to_owned();
+        let read = std::fs::metadata(path)
+            .map_err(|e| e.to_string())
+            .and_then(|m| if m.len() > theme_import::MAX_FILE as u64 { Err(theme_import::ImportError::TooLarge.to_string()) } else { Ok(()) })
+            .and_then(|()| std::fs::read(path).map_err(|e| e.to_string()));
+        let converted = read.and_then(|bytes| theme_import::convert(&name, &bytes).map_err(|e| e.to_string()));
+        match converted {
+            Ok(theme) => {
+                let bytes: std::sync::Arc<[u8]> = std::sync::Arc::from(theme.file.clone().into_bytes());
+                let request = self.suite.watch().request(craft_theme_store::Op::Import { bytes, as_copy: true });
+                self.importing = Some((request, theme));
+            }
+            Err(why) => {
+                self.state.settings.notice = Some(i18n::fmt(tl!("{file} was not imported: {why}"), &[("file", &name), ("why", &why)]));
+            }
+        }
+    }
+
+    /// Says how an import went once the library answers, and chooses the theme for its mode.
+    fn imported(&mut self) {
+        let Some((request, theme)) = &self.importing else { return };
+        let Some(result) = self.suite.snapshot().result(*request).cloned() else { return };
+        let theme = theme.clone();
+        self.importing = None;
+        match result {
+            Ok(craft_theme_store::OpOutput::Imported(id)) => {
+                let mut notice = i18n::fmt(tl!("{theme} was imported and chosen."), &[("theme", &theme.name)]);
+                if !theme.unmapped.is_empty() {
+                    let missing = theme.unmapped.join(", ");
+                    notice.push(' ');
+                    notice.push_str(&i18n::fmt(tl!("The file had no colours for: {missing}; the theme works them out."), &[("missing", &missing)]));
+                }
+                self.state.settings.notice = Some(notice);
+                self.state.settings.import_path.clear();
+                let dark =
+                    craft_theme::format::parse(theme.file.as_bytes()).map(|f| f.theme.variants != craft_theme::Variants::LightOnly).unwrap_or(true);
+                self.state.look_changes.push(LookChange::Theme { id, dark });
+            }
+            Ok(_) => {}
+            Err(e) => {
+                self.state.settings.notice =
+                    Some(i18n::fmt(tl!("{theme} was not imported: {why}"), &[("theme", &theme.name), ("why", &e.to_string())]))
+            }
         }
     }
 
@@ -342,7 +399,7 @@ impl PingCraftApp {
             } else if let Some(action) = SettingAction::from_ref(&fired)
                 && self.state.screen == Screen::Inbox
             {
-                settings::run_action(&ctx, &mut self.state, &mut out, action);
+                self.state.actions.push(action);
             }
         }
         egui::Panel::top("menu").frame(Frame::new().fill(t.bg)).show(ui, |ui| {
@@ -391,8 +448,12 @@ impl PingCraftApp {
             self.run(command, &mut out);
         }
         for action in std::mem::take(&mut self.state.actions) {
-            settings::run_action(&ctx, &mut self.state, &mut out, action);
+            match action {
+                SettingAction::ImportTheme(path) => self.import_theme(&path),
+                action => settings::run_action(&ctx, &mut self.state, &mut out, action),
+            }
         }
+        self.imported();
         for change in std::mem::take(&mut self.state.look_changes) {
             self.change_look(change);
         }

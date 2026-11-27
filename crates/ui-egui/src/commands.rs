@@ -263,11 +263,13 @@ pub enum SettingAction {
     VerifyDevice(String),
     /// Opens the sheet that signs another device, by its ID, out.
     SignOutDevice(String),
+    /// Imports the theme file at this path into the suite library.
+    ImportTheme(String),
 }
 
 impl SettingAction {
     /// The ids, with their names in the command palette.
-    pub const IDS: [(&'static str, &'static str); 7] = [
+    pub const IDS: [(&'static str, &'static str); 8] = [
         ("notifications.previews", "Show message text in notifications"),
         ("notifications.network_sound", "Network notification sound"),
         ("notifications.network_accent", "Network accent colour"),
@@ -275,6 +277,7 @@ impl SettingAction {
         ("security.rename_device", "Rename this device"),
         ("security.verify_device", "Verify a device"),
         ("security.sign_out_device", "Sign a device out…"),
+        ("appearance.import_theme", "Import a theme"),
     ];
 
     /// The reference it fires as: its id and its value.
@@ -287,6 +290,7 @@ impl SettingAction {
             Self::RenameDevice(name) => ("security.rename_device", json!({ "name": name })),
             Self::VerifyDevice(device) => ("security.verify_device", json!({ "device": device })),
             Self::SignOutDevice(device) => ("security.sign_out_device", json!({ "device": device })),
+            Self::ImportTheme(path) => ("appearance.import_theme", json!({ "path": path })),
         };
         CommandRef::with_params(id, params)
     }
@@ -304,6 +308,7 @@ impl SettingAction {
             "security.rename_device" => Self::RenameDevice(text("name")?),
             "security.verify_device" => Self::VerifyDevice(text("device")?),
             "security.sign_out_device" => Self::SignOutDevice(text("device")?),
+            "appearance.import_theme" => Self::ImportTheme(text("path")?),
             _ => return None,
         })
     }
@@ -345,6 +350,7 @@ mod tests {
             SettingAction::RenameDevice("Laptop".into()),
             SettingAction::VerifyDevice("PHONE".into()),
             SettingAction::SignOutDevice("PHONE".into()),
+            SettingAction::ImportTheme("/tmp/theme.yaml".into()),
         ] {
             assert_eq!(SettingAction::from_ref(&a.to_ref()), Some(a.clone()), "{a:?}");
         }

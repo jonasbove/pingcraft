@@ -374,7 +374,17 @@ Starts when mautrix-discord releases its bridgev2 rewrite (ADR 0008).
    - **Every theme looks right:** PingCraft's painted surfaces take the theme's tokens; the network colours are moved
      in lightness as little as needed (craft-theme's `ensure_contrast`) to reach 3:1 on each theme's panels and
      background, tested for every built-in and own theme in each mode it has. Screenshots of each own theme
-     (`tests/shots.rs`). Not done: theme import (base16/base24, VS Code, craft JSON), next.
+     (`tests/shots.rs`).
+   - **Import (done 2026-11-27):** Settings, Appearance, "Import a theme": a path typed in (PingCraft's host has no
+     file picker service yet) to a Craft theme (JSON, taken as it is), a base16 or base24 scheme (YAML, read by a
+     small reader of flat `key: value` lines, no YAML library) or a VS Code colour theme (JSON with comments, through
+     craft-libs' `craft-jsonc`). base16 maps base00 to the window, base01 fields, base02 lines and hover, base03 faint
+     text and edges, base04 muted text, base05 text, base08/0A/0B/0C the statuses and base0D the accent; a VS Code
+     theme's workbench colours map best-effort, and what it lacks is left to craft-theme (the notice names it). The
+     result goes to the suite library (craft-theme-store's import, as a copy when the id is taken), id
+     `imported.<name>` for a converted one, where every Craft app finds it, and is chosen for its mode. Tests: the
+     conversions (unit), importing each format through Settings and a file that is no theme (AccessKit), and
+     screenshots of one of each.
    The original plan:
    - **PingCraft opens in craft-libs' default theme** (maintainer, 2026-11-26): the orchid look is dropped, not
      kept as a theme, under the rule that craft-libs dictates the look. Network colours stay the networks' own in

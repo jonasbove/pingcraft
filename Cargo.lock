@@ -1363,6 +1363,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "craft-jsonc"
+version = "0.1.0"
+source = "git+https://github.com/storytold/craft-libs?rev=a6103343f9bb89703f933342563f47a783529eb6#a6103343f9bb89703f933342563f47a783529eb6"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "craft-keymap"
 version = "0.1.0"
 source = "git+https://github.com/storytold/craft-libs?rev=a6103343f9bb89703f933342563f47a783529eb6#a6103343f9bb89703f933342563f47a783529eb6"
@@ -5794,6 +5802,7 @@ dependencies = [
  "craft-behavior",
  "craft-color-ui",
  "craft-host",
+ "craft-jsonc",
  "craft-menu",
  "craft-theme",
  "craft-theme-store",

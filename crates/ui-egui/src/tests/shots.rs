@@ -155,3 +155,64 @@ fn screenshots_of_each_theme() {
         }
     }
 }
+
+/// One imported theme of each format (base16, VS Code, Craft JSON), imported through Settings: the Appearance page
+/// after the import, and the inbox with a chat open.
+#[test]
+fn screenshots_of_imported_themes() {
+    use egui_kittest::kittest::Queryable;
+    let Some(dir) = std::env::var_os("PINGCRAFT_SHOTS").map(|d| std::path::PathBuf::from(d).join("imported")) else { return };
+    std::fs::create_dir_all(&dir).unwrap();
+    let files = [
+        ("base16", "harbour.yaml", "scheme: \"Harbour Night\"\nbase00: \"1b1d24\"\nbase01: \"23262f\"\nbase02: \"2e323d\"\nbase03: \"4b5263\"\nbase04: \"8b93a6\"\nbase05: \"d4d8e2\"\nbase08: \"e06c75\"\nbase0A: \"e5c07b\"\nbase0B: \"98c379\"\nbase0C: \"56b6c2\"\nbase0D: \"61afef\"\n".to_owned(), "Dark"),
+        ("vscode", "paper.json", r##"{ "name": "Paper Morning", "type": "light", "colors": { "editor.background": "#fbf8f1", "editor.foreground": "#2b2a27", "sideBar.background": "#f3efe4", "input.background": "#ffffff", "button.background": "#2f6fbf", "errorForeground": "#b3261e" } }"##.to_owned(), "Light"),
+        ("craft", "moss.json", include_str!("../../themes/gruvbox.json").replace("craft.gruvbox", "mine.moss").replace("\"Gruvbox\"", "\"Moss\""), "Dark"),
+    ];
+    for (format, file, text, mode) in files {
+        let path = dir.join(file);
+        std::fs::write(&path, text).unwrap();
+        let fake = Fake::default();
+        let mut h = app(&fake, Appearance::System, egui::vec2(1200.0, 800.0));
+        fake.tell([
+            Event::SignedIn { user: "@ana:example.org".into() },
+            Event::Connection(pingcraft_core::ConnectionState::Online),
+            Event::Recovery(pingcraft_core::encryption::RecoveryStatus::On),
+            Event::Inbox(InboxChange::Reset(chats())),
+        ]);
+        h.run();
+        h.get_by_label("Settings").click();
+        h.run();
+        h.get_by_label(mode).click();
+        h.run();
+        super::type_into(&mut h, "Theme file", &path.to_string_lossy());
+        h.get_by_label("Import theme").click();
+        h.run();
+        h.run();
+        save(&mut h, &dir, &format!("{format}-appearance"));
+        h.get_by_label("Inbox").click();
+        h.run();
+        h.get_by_label_contains("Book club, on Telegram").click();
+        h.run();
+        fake.tell([Event::Messages {
+            chat: ChatId("!book".into()),
+            messages: vec![
+                message(
+                    "1",
+                    "Lars",
+                    false,
+                    pingcraft_core::MessageBody::Text("Has everyone finished chapter 8?".into()),
+                    pingcraft_core::SendState::Sent,
+                ),
+                message(
+                    "2",
+                    "@ana:example.org",
+                    true,
+                    pingcraft_core::MessageBody::Text("Yes! What an ending.".into()),
+                    pingcraft_core::SendState::Sent,
+                ),
+            ],
+        }]);
+        h.run();
+        save(&mut h, &dir, &format!("{format}-chat"));
+    }
+}

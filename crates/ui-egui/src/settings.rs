@@ -63,6 +63,8 @@ pub struct SettingsState {
     pub notice: Option<String>,
     /// The name this device was last given, until the list says it has it (the field commits more than once).
     pub renamed: Option<String>,
+    /// The path typed into the theme import field.
+    pub import_path: String,
 }
 
 /// The passphrase sheet's fields, wiped when dropped.
@@ -250,6 +252,9 @@ impl<'a> Model<'a> {
                     .keywords("light dark system theme mode"),
                 RowSpec::new("appearance.light_theme", tl!("Light theme"), RowKind::Custom).keywords("theme colour color palette"),
                 RowSpec::new("appearance.dark_theme", tl!("Dark theme"), RowKind::Custom).keywords("theme colour color palette"),
+                RowSpec::new("appearance.import", tl!("Import a theme"), RowKind::Custom)
+                    .help(tl!("A Craft theme (JSON), a base16 or base24 scheme (YAML) or a VS Code colour theme (JSON). It is kept with your Craft themes, where every Craft app finds it."))
+                    .keywords("import base16 base24 vscode file"),
                 RowSpec::new("appearance.just_here", tl!("Just for PingCraft"), RowKind::Bool(self.state.prefs.just_here()))
                     .help(tl!("Off: PingCraft follows the theme and mode chosen in any Craft app, and a choice here changes them there too. On: PingCraft keeps its own. A theme only PingCraft has (Catppuccin, Dracula, Gruvbox, Nord, One Dark, Solarized Light, Tokyo Night) is always PingCraft's own."))
                     .keywords("suite shared craft apps"),
@@ -465,6 +470,19 @@ impl PreferencesModel for Model<'_> {
         match key {
             "appearance.light_theme" => self.theme_row(ui, false),
             "appearance.dark_theme" => self.theme_row(ui, true),
+            "appearance.import" => {
+                Row::new().show(ui, |ui, _| {
+                    let path = &mut self.state.settings.import_path;
+                    let entered = craft_ui::text::TextField::new(tl!("Theme file").to_owned(), Bind::bound(path))
+                        .placeholder(tl!("Path to a theme file").to_owned())
+                        .show(ui)
+                        .submitted;
+                    let pressed = button(ui, tl!("Import theme"), Kind::Secondary, !self.state.settings.import_path.trim().is_empty()).clicked();
+                    if (entered || pressed) && !self.state.settings.import_path.trim().is_empty() {
+                        self.state.actions.push(SettingAction::ImportTheme(self.state.settings.import_path.trim().to_owned()));
+                    }
+                });
+            }
             _ => return self.security_row(ui, key),
         }
         false
@@ -501,11 +519,14 @@ impl PreferencesModel for Model<'_> {
 pub fn settings(ui: &mut Ui, state: &mut State, out: &mut Out, themes: &[ThemeDef]) -> Option<ColorRequest> {
     let mut page_state = std::mem::take(&mut state.settings.page);
     if let Some(notice) = state.settings.notice.clone() {
-        Row::new().show(ui, |ui, _| {
-            note(ui, &notice);
-            if button(ui, tl!("Close"), Kind::Secondary, true).clicked() {
-                state.settings.notice = None;
-            }
+        // In line with the page under it.
+        egui::Frame::new().inner_margin(egui::Margin { left: 16, right: 16, top: 12, bottom: 0 }).show(ui, |ui| {
+            Row::new().show(ui, |ui, _| {
+                note(ui, &notice);
+                if button(ui, tl!("Close"), Kind::Secondary, true).clicked() {
+                    state.settings.notice = None;
+                }
+            });
         });
     }
     let mut model = Model::new(ui, state, out, themes);
@@ -553,6 +574,8 @@ pub fn run_action(ctx: &egui::Context, state: &mut State, out: &mut Out, action:
                 out.push(Command::VerifyDevice(DeviceId(id)));
             }
         }
+        // The app does this: it holds the suite library.
+        SettingAction::ImportTheme(_) => {}
         SettingAction::SignOutDevice(id) => {
             let device = state.settings.devices.as_ref().and_then(|d| d.iter().find(|d| d.id.0 == id && !d.this)).cloned();
             if let Some(device) = device {

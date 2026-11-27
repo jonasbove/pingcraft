@@ -419,3 +419,49 @@ fn tab_reaches_the_security_pages_buttons_and_enter_runs_them() {
     h.run();
     assert!(h.state().state.settings.passphrase.is_some(), "Enter runs it");
 }
+
+/// A theme file of each kind PingCraft reads, imported from the Appearance page: kept in the suite library, shown
+/// among the chips, chosen for its mode, and the window takes its colours.
+#[test]
+fn themes_are_imported_from_a_file_and_chosen() {
+    let dir = std::env::temp_dir().join(format!("pingcraft-import-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let files = [
+        ("harbour.yaml", "scheme: \"Harbour Night\"\nbase00: \"1b1d24\"\nbase01: \"23262f\"\nbase02: \"2e323d\"\nbase03: \"4b5263\"\nbase04: \"8b93a6\"\nbase05: \"d4d8e2\"\nbase08: \"e06c75\"\nbase0A: \"e5c07b\"\nbase0B: \"98c379\"\nbase0C: \"56b6c2\"\nbase0D: \"61afef\"\n".to_owned(), "imported.harbour-night"),
+        ("paper.json", r##"{ // comments as VS Code allows
+            "name": "Paper Morning", "type": "light",
+            "colors": { "editor.background": "#fbf8f1", "editor.foreground": "#2b2a27", "button.background": "#2f6fbf" } }"##.to_owned(), "imported.paper-morning"),
+        ("moss.json", include_str!("../../themes/gruvbox.json").replace("craft.gruvbox", "mine.moss").replace("\"Gruvbox\"", "\"Moss\""), "mine.moss"),
+    ];
+    let fake = Fake::default();
+    let mut h = on_page(&fake, "Appearance");
+    for (file, text, id) in files {
+        let path = dir.join(file);
+        std::fs::write(&path, text).unwrap();
+        // The mode the theme is for, so the window shows the slot it goes in.
+        h.get_by_label(if id == "imported.paper-morning" { "Light" } else { "Dark" }).click();
+        h.run();
+        h.run();
+        let before = crate::Tokens::get(&h.ctx).bg;
+        type_into(&mut h, "Theme file", &path.to_string_lossy());
+        h.get_by_role_and_label(Role::Button, "Import theme").click();
+        h.run();
+        h.run();
+        h.run();
+        h.get_by_label_contains("was imported and chosen");
+        let s = &h.state().state;
+        let shown = s.selection();
+        assert!(shown.theme.dark.as_str() == id || shown.theme.light.as_str() == id, "{file}: {shown:?}");
+        assert_ne!(crate::Tokens::get(&h.ctx).bg, before, "{file}: the window takes its colours");
+        h.get_by_label_contains("Close").click();
+        h.run();
+    }
+    // A file that is no theme says so and changes nothing.
+    let bad = dir.join("notes.txt");
+    std::fs::write(&bad, "hello").unwrap();
+    type_into(&mut h, "Theme file", &bad.to_string_lossy());
+    h.get_by_role_and_label(Role::Button, "Import theme").click();
+    h.run();
+    h.get_by_label_contains("was not imported");
+    let _ = std::fs::remove_dir_all(&dir);
+}
