@@ -67,6 +67,6 @@ sha2 = "0.10"
 sha2 = "0.10"
 # egui 0.37 no longer bundles its fallback faces by default; the tests install them.
 egui = { workspace = true, features = ["default_fonts"] }
-egui_kittest = { version = "0.37" }
+egui_kittest = { version = "0.37", features = ["wgpu"] }
 # The default theme's resolved tokens, for checking the network colours against its surfaces.
 craft-ui = { workspace = true, features = ["testing"] }

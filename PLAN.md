@@ -859,6 +859,27 @@ from craft-libs' own pieces and writes the gap down here, for a craft-libs chang
   "Notification sound" and "Accent colour"; the group (named by the network) is its context, which a screen reader
   says on entering it. Noted, not worked around.
 
+## Looked at by eye (2026-11-27)
+
+`tests/shots.rs` renders the inbox, an open chat, Accounts and each Settings page, dark and light, at 1200×800 and
+800×600, with wgpu, when `PINGCRAFT_SHOTS` names a folder (it renders nothing otherwise; CI has no GPU). Found and
+fixed: the inbox filter carried counts in its words ("All 5 · Unread 3 · Archived 0") on the same line as the search
+field, so the two fought for one row; it is now craft-ui's segmented control with words only, the search on its own
+line, and the counts on the line under them ("Inbox · 5 chats · 3 unread"). Chat rows were taller inside than out:
+craft-ui's badges (the network tag, the unread count) are taller than a line of text, so the count spilled over the
+rule under the row; each line now has half the row's height and centres in it. A network tag's colour dot came after
+its name in a row (the row runs right to left) and before it in the chat header; it is before it in both. The
+network cards' descriptions were justified (spread words); they are left-aligned. The chat area is painted on craft-ui's
+window background (`surface.background`) instead of the panel colour, the inbox list staying a panel.
+
+**Dark theme, for the maintainer:** craft-libs' default (ArtCraft) dark is mid-grey by design. Its surfaces:
+background `#424242`, canvas and page `#282828`, panel and chrome `#535353`, raised `#5c5c5c`, sunken (fields)
+`#454545`, control `#626262`, text `#eeeeee`, muted text `#d4d4d4`. PingCraft paints the header, footer, menu bar and
+inbox list with the panel (`#535353`), the chat area with the background (`#424242`, was `#535353`), message bubbles
+of others none and own messages the accent's soft fill, fields with egui's sunken (the background). Darker would
+need another theme (one of the planned built-ins, M6 ticket 7, such as Catppuccin Mocha or Tokyo Night) or a darker
+dark proposed to craft-libs; PingCraft does not change craft-libs' theme.
+
 ## Questions for the maintainer (Settings, 2026-11-26)
 
 Decided here the conservative way, each easy to change:

@@ -188,7 +188,10 @@ fn cards(ui: &mut Ui, state: &mut State) {
                     let name_color = if offered(&network) { t.ink_strong } else { t.muted };
                     let top = ui.cursor().top();
                     ui.label(RichText::new(network_name(&network)).size(t.heading).strong().color(name_color));
-                    ui.add(egui::Label::new(RichText::new(how_you_log_in(&network)).size(t.body).color(t.muted)).wrap());
+                    // Left-aligned: the columns are justified, which would spread the words.
+                    ui.with_layout(Layout::top_down(Align::Min), |ui| {
+                        ui.add(egui::Label::new(RichText::new(how_you_log_in(&network)).size(t.body).color(t.muted)).wrap())
+                    });
                     let text_height = ui.cursor().top() - top;
                     tallest_now = tallest_now.max(text_height);
                     ui.add_space(12.0 + (tallest - text_height).max(0.0));

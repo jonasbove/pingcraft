@@ -261,15 +261,14 @@ fn the_inbox_reads_each_chat_and_opens_one() {
     h.get_by_label("Connected");
     // The footer shows the Matrix ID as typed, not in capitals.
     h.get_by_label_contains("@Ana:example.org");
-    h.get_by_label("All 2");
-    h.get_by_label("Unread 1");
+    h.get_by_label("Inbox · 2 chats · 1 unread");
     let row = h.get_by_label("Book club, on Telegram, 2 unread. Lars: The ending of chapter 8");
     row.click();
     h.get_by_label("Lars Holm, on Matrix");
     h.run();
     assert!(matches!(&fake.take()[..], [Command::OpenChat(id)] if id.0 == "!book"));
 
-    h.get_by_label("Unread 1").click();
+    h.get_by_label("Unread").click();
     h.run();
     assert!(h.query_by_label("Lars Holm, on Matrix").is_none(), "read chats leave the unread filter");
 }
@@ -479,6 +478,7 @@ mod emoji;
 mod messages;
 mod settings;
 mod shortcuts;
+mod shots;
 
 #[test]
 fn an_unencrypted_chat_offers_to_turn_encryption_on() {

@@ -133,14 +133,25 @@ pub fn network_tag(ui: &mut Ui, network: &Network) -> Response {
 pub fn network_tag_in(ui: &mut Ui, network: &Network, accent: Option<Accent>) -> Response {
     let t = Tokens::get(ui.ctx());
     let colour = accent.map(|a| t.accent_colour(a)).or_else(|| t.network(network));
+    // The dot reads before the name whichever way the row runs: in a right-to-left row the badge goes in first.
+    let reversed = ui.layout().prefer_right_to_left();
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = t.caption / 3.0;
-        if let Some(colour) = colour {
-            let side = t.caption * 0.75;
-            let (rect, _) = ui.allocate_exact_size(Vec2::splat(side), Sense::hover());
-            ui.painter().circle_filled(rect.center(), side / 2.0, colour);
+        let dot = |ui: &mut Ui| {
+            if let Some(colour) = colour {
+                let side = t.caption * 0.75;
+                let (rect, _) = ui.allocate_exact_size(Vec2::splat(side), Sense::hover());
+                ui.painter().circle_filled(rect.center(), side / 2.0, colour);
+            }
+        };
+        if reversed {
+            let badge = Badge::new(network_name(network)).show(ui);
+            dot(ui);
+            badge
+        } else {
+            dot(ui);
+            Badge::new(network_name(network)).show(ui)
         }
-        Badge::new(network_name(network)).show(ui)
     })
     .inner
 }

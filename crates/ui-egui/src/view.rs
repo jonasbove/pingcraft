@@ -319,7 +319,8 @@ pub fn inbox(ui: &mut Ui, state: &mut State, out: &mut Out) {
         inbox_list(ui, state, out);
     });
     let mut leave = false;
-    egui::CentralPanel::default().frame(egui::Frame::new().fill(t.bg)).show(ui, |ui| match state.open.as_mut() {
+    // The chat is the window's content, on its background; the inbox list beside it is a panel (craft-ui's surfaces).
+    egui::CentralPanel::default().frame(egui::Frame::new().fill(t.sunken)).show(ui, |ui| match state.open.as_mut() {
         Some(open) => {
             let chat = state.inbox.get(&open.id).cloned();
             let network = chat.as_ref().and_then(|c| state.network_alerts.get(&c.network).copied()).unwrap_or_default();
@@ -438,11 +439,13 @@ fn inbox_list(ui: &mut Ui, state: &mut State, out: &mut Out) {
     let t = Tokens::get(ui.ctx());
     egui::Frame::new().inner_margin(Margin { left: 16, right: 16, top: 16, bottom: 8 }).show(ui, |ui| {
         ui.horizontal(|ui| {
-            let all = format!("{} {}", tl!("All"), state.inbox.in_inbox());
-            let unread = format!("{} {}", tl!("Unread"), state.inbox.unread_chats());
-            let archived = format!("{} {}", tl!("Archived"), state.inbox.archived());
-            let entries = [Entry::new(Filter::All, all), Entry::new(Filter::Unread, unread), Entry::new(Filter::Archived, archived)];
+            // craft-ui's segmented control takes words only: the counts are on the line under it and on each row.
+            let entries =
+                [Entry::new(Filter::All, tl!("All")), Entry::new(Filter::Unread, tl!("Unread")), Entry::new(Filter::Archived, tl!("Archived"))];
             Segmented::new(tl!("Show"), Bind::bound(&mut state.filter), &entries).show(ui);
+        });
+        ui.add_space(8.0);
+        ui.horizontal(|ui| {
             let search = egui::TextEdit::singleline(&mut state.search)
                 .hint_text(tl!("Search chats"))
                 .align(egui::Align2::LEFT_CENTER)
@@ -454,11 +457,16 @@ fn inbox_list(ui: &mut Ui, state: &mut State, out: &mut Out) {
             }
         });
         ui.add_space(8.0);
-        let (place, count) = match state.filter {
-            Filter::Archived => (tl!("Archive"), state.inbox.archived()),
-            Filter::All | Filter::Unread => (tl!("Inbox"), state.inbox.in_inbox()),
+        let line = match state.filter {
+            Filter::Archived => format!("{} · {}", tl!("Archive"), trn(state.inbox.archived() as u64, "{n} chat", "{n} chats")),
+            Filter::All | Filter::Unread => format!(
+                "{} · {} · {}",
+                tl!("Inbox"),
+                trn(state.inbox.in_inbox() as u64, "{n} chat", "{n} chats"),
+                trn(state.inbox.unread_chats() as u64, "{n} unread", "{n} unread")
+            ),
         };
-        hud(ui, &format!("{} · {}", place, trn(count as u64, "{n} chat", "{n} chats")), Shade::Muted);
+        hud(ui, &line, Shade::Muted);
         if state.recovery == RecoveryStatus::NeedsKey {
             needs_key(ui, state, out);
         }
@@ -595,13 +603,15 @@ fn chat_row(ui: &mut Ui, chat: &Chat, accent: Option<pingcraft_core::Accent>, se
     let two_lines = preview.is_some() || chat.is_unread();
     child.vertical(|ui| {
         let strong = chat.is_unread();
-        // Centre the one or two lines in the row by hand: a vertical block in a centred row starts at the top.
-        let name_h = ui.fonts_mut(|f| f.row_height(&egui::FontId::proportional(t.body)));
-        let preview_h = ui.fonts_mut(|f| f.row_height(&egui::FontId::proportional(t.label)));
-        let height = if two_lines { name_h + 4.0 + preview_h } else { name_h };
-        ui.add_space(((ui.available_height() - height) / 2.0).max(0.0));
+        // One or two lines of equal height, each centred: the network tag and the unread badge are craft-ui badges,
+        // taller than a line of text, so each line is given its height rather than taking the text's.
+        ui.spacing_mut().item_spacing.y = 0.0;
+        let line = if two_lines { ui.available_height() / 2.0 } else { ui.available_height() };
+        let line_size = Vec2::new(ui.available_width(), line);
         // Time and network tag first, from the right, so a long name truncates instead of pushing them down.
-        ui.horizontal(|ui| {
+        ui.allocate_ui_with_layout(line_size, Layout::left_to_right(Align::Center), |ui| {
+            // A nested row (the network tag's) starts as tall as this and centres in it.
+            ui.spacing_mut().interact_size.y = line;
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let when = chat.last_message.as_ref().map(|m| short_time(m.at)).unwrap_or_default();
                 ui.label(RichText::new(when).size(t.label).color(if strong { t.ink } else { t.muted }));
@@ -628,7 +638,9 @@ fn chat_row(ui: &mut Ui, chat: &Chat, accent: Option<pingcraft_core::Accent>, se
         if !two_lines {
             return;
         }
-        ui.horizontal(|ui| {
+        ui.allocate_ui_with_layout(line_size, Layout::left_to_right(Align::Center), |ui| {
+            // A nested row (the network tag's) starts as tall as this and centres in it.
+            ui.spacing_mut().interact_size.y = line;
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if chat.unread > 0 {
                     unread(ui, chat.unread, chat.muted.is_some());

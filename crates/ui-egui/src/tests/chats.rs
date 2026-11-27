@@ -22,7 +22,7 @@ fn the_inbox_says_which_chats_are_pinned_muted_or_marked_unread() {
     h.get_by_label("Lars Holm, on Matrix, pinned");
     h.get_by_label("Book club, on Telegram, muted, 2 unread. Lars: The ending of chapter 8");
     h.get_by_label("Mei Tanaka, on Telegram, marked unread");
-    h.get_by_label("Unread 2");
+    h.get_by_label("Inbox · 3 chats · 2 unread");
 }
 
 fn chat_menu(h: &mut egui_kittest::Harness<'static, crate::PingCraftApp>) {
@@ -205,10 +205,10 @@ fn a_chat_can_be_archived_and_found_under_archived() {
     fake.tell([Event::Inbox(InboxChange::Upsert(Box::new(book.clone())))]);
     h.run();
     assert!(h.query_by_label_contains("Book club, on Telegram").is_none(), "out of the inbox");
-    h.get_by_label("All 1");
-    h.get_by_label("Unread 0");
-    h.get_by_label("Archived 1").click();
+    h.get_by_label("Inbox · 1 chat · 0 unread");
+    h.get_by_label("Archived").click();
     h.run();
+    h.get_by_label("Archive · 1 chat");
     h.get_by_label_contains("Book club, on Telegram").click();
     h.run();
     fake.take();
@@ -219,7 +219,7 @@ fn a_chat_can_be_archived_and_found_under_archived() {
     assert!(matches!(&sent[..], [Command::Archive { chat, archive: false }] if chat.0 == "!book"), "{sent:?}");
 
     // A message after it was archived brings it back by itself.
-    h.get_by_label("All 1").click();
+    h.get_by_label("All").click();
     h.run();
     let mut newer = chat("!book", "Book club", "Telegram", 3, Some(("Lars", "Chapter 9 now")));
     newer.archived = book.archived;
@@ -227,7 +227,7 @@ fn a_chat_can_be_archived_and_found_under_archived() {
     fake.tell([Event::Inbox(InboxChange::Upsert(Box::new(newer)))]);
     h.run();
     h.get_by_label_contains("Book club, on Telegram");
-    h.get_by_label("Archived 0");
+    h.get_by_label("Inbox · 2 chats · 1 unread");
 }
 
 /// The draft that is kept, as the backend was asked to keep it: its text and what it is for.

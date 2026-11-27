@@ -143,3 +143,44 @@ fn the_go_menu_lists_the_moves_with_their_keys() {
     h.run();
     assert!(open(&h).is_some(), "the menu row opens a chat");
 }
+
+/// The inbox's filter and search sit on their own lines without overlapping, and every unread count is inside its
+/// chat's row: none is drawn loose between the filter's options.
+#[test]
+fn the_filter_does_not_overlap_and_counts_stay_in_their_rows() {
+    let fake = Fake::default();
+    let h = three_chats(&fake);
+    let bounds = |label: &str| h.get_by_label(label).accesskit_node().raw_bounds().expect("bounds");
+    let parts = [bounds("All"), bounds("Unread"), bounds("Archived")];
+    let search = h.get_by_role_and_label(Role::TextInput, "Search chats").accesskit_node().raw_bounds().expect("bounds");
+    let overlap = |a: egui::accesskit::Rect, b: egui::accesskit::Rect| a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+    for (i, a) in parts.iter().enumerate() {
+        assert!(!overlap(*a, search), "a filter option over the search field");
+        for b in &parts[i + 1..] {
+            assert!(!overlap(*a, *b), "two filter options overlap");
+        }
+    }
+    assert!(parts.windows(2).all(|w| w[0].x1 <= w[1].x0 + 0.5), "in order, left to right");
+    let rows: Vec<egui::accesskit::Rect> = h
+        .get_all_by_role(Role::Button)
+        .filter(|n| n.accesskit_node().label().is_some_and(|l| l.contains(", on ")))
+        .filter_map(|n| n.accesskit_node().raw_bounds())
+        .collect();
+    let is_count = |text: &str| {
+        let t = text.trim().trim_start_matches('(').trim_end_matches(')');
+        !t.is_empty() && t.chars().all(|c| c.is_ascii_digit() || c == '+')
+    };
+    let mut counts = 0;
+    for node in h.root().query_all(egui_kittest::kittest::by()) {
+        let n = node.accesskit_node();
+        let text = n.label().or_else(|| n.value()).unwrap_or_default();
+        if !is_count(&text) {
+            continue;
+        }
+        counts += 1;
+        let Some(b) = n.raw_bounds() else { continue };
+        let inside = rows.iter().any(|r| b.x0 >= r.x0 - 0.5 && b.x1 <= r.x1 + 0.5 && b.y0 >= r.y0 - 0.5 && b.y1 <= r.y1 + 0.5);
+        assert!(inside, "a count {text:?} outside every chat row, at {b:?}");
+    }
+    assert!(counts >= 2, "the unread counts were found");
+}
