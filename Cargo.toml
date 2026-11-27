@@ -40,6 +40,7 @@ craft-behavior = { version = "=0.1.0", git = "https://github.com/storytold/craft
 craft-theme = { version = "=0.1.0", git = "https://github.com/storytold/craft-libs", rev = "a6103343f9bb89703f933342563f47a783529eb6" }
 craft-window = { version = "=0.1.0", git = "https://github.com/storytold/craft-libs", rev = "a6103343f9bb89703f933342563f47a783529eb6" }
 craft-menu = { version = "=0.1.0", git = "https://github.com/storytold/craft-libs", rev = "a6103343f9bb89703f933342563f47a783529eb6" }
+craft-theme-store = { version = "=0.1.0", git = "https://github.com/storytold/craft-libs", rev = "a6103343f9bb89703f933342563f47a783529eb6" }
 craft-color-ui = { version = "=0.1.0", git = "https://github.com/storytold/craft-libs", rev = "a6103343f9bb89703f933342563f47a783529eb6" }
 
 [profile.dev.package."*"]

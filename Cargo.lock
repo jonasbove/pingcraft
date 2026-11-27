@@ -1497,6 +1497,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "craft-theme-store"
+version = "0.1.0"
+source = "git+https://github.com/storytold/craft-libs?rev=a6103343f9bb89703f933342563f47a783529eb6#a6103343f9bb89703f933342563f47a783529eb6"
+dependencies = [
+ "craft-atomic",
+ "craft-behavior",
+ "craft-theme",
+ "craft-ui",
+ "dirs",
+ "egui",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "craft-tracked"
 version = "0.1.0"
 source = "git+https://github.com/storytold/craft-libs?rev=a6103343f9bb89703f933342563f47a783529eb6#a6103343f9bb89703f933342563f47a783529eb6"
@@ -5714,6 +5729,8 @@ name = "pingcraft"
 version = "0.1.0"
 dependencies = [
  "craft-settings",
+ "craft-theme",
+ "craft-theme-store",
  "eframe",
  "egui",
  "pingcraft-keychain",
@@ -5721,6 +5738,7 @@ dependencies = [
  "pingcraft-notify",
  "pingcraft-ui-egui",
  "serde",
+ "serde_json",
  "tempfile",
 ]
 
@@ -5778,6 +5796,7 @@ dependencies = [
  "craft-host",
  "craft-menu",
  "craft-theme",
+ "craft-theme-store",
  "craft-ui",
  "craft-window",
  "egui",

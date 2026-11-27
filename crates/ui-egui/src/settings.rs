@@ -21,8 +21,10 @@ use pingcraft_core::encryption::{RecoveryRefusal, RecoveryStatus};
 use pingcraft_core::{Accent, Alerts, Network};
 use zeroize::Zeroizing;
 
-use craft_theme::{Rgba, Srgba};
+use craft_theme::{Rgba, Srgba, ThemeDef, Variants};
+use craft_theme_store::ui::ThemeChip;
 use craft_ui::buttons::Button;
+use craft_ui::choice::RadioGroup;
 use craft_ui::contract::{Bind, Entry, Props as _, Show as _, ShowContainer as _};
 use craft_ui::display::{Shade, Text};
 use craft_ui::layout_components::{Row, Stack};
@@ -33,7 +35,7 @@ use craft_ui::style::{TypeRole, Variant};
 use crate::commands::{AppCommand, SettingAction};
 use crate::i18n::fmt;
 use crate::picker::SkinTone;
-use crate::state::{Appearance, State};
+use crate::state::{Appearance, LookChange, State};
 use crate::theme::Tokens;
 use crate::tl;
 use crate::view::Out;
@@ -188,6 +190,8 @@ struct Words {
 /// The preferences model over the app's state, for one frame.
 struct Model<'a> {
     state: &'a mut State,
+    /// The themes to choose from: craft-libs' built-ins, PingCraft's own, the suite library's.
+    themes: &'a [ThemeDef],
     tone: SkinTone,
     /// Each network's colour as drawn when it sets none (its own, in the theme's mode).
     shown_colours: BTreeMap<String, [u8; 3]>,
@@ -196,7 +200,7 @@ struct Model<'a> {
 }
 
 impl<'a> Model<'a> {
-    fn new(ui: &Ui, state: &'a mut State, out: &'a mut Out) -> Self {
+    fn new(ui: &Ui, state: &'a mut State, out: &'a mut Out, themes: &'a [ThemeDef]) -> Self {
         let t = Tokens::get(ui.ctx());
         let networks = NETWORKS
             .iter()
@@ -213,7 +217,7 @@ impl<'a> Model<'a> {
             })
             .collect();
         let device_name = state.settings.this_device().map(|d| d.name.clone()).unwrap_or_default();
-        Self { tone: crate::picker::tone(ui.ctx()), state, shown_colours, words: Words { networks, device_name }, out }
+        Self { tone: crate::picker::tone(ui.ctx()), state, themes, shown_colours, words: Words { networks, device_name }, out }
     }
 
     /// The colour a network's row shows: its own setting, else its own colour.
@@ -241,12 +245,43 @@ impl<'a> Model<'a> {
             "appearance",
             tl!("Appearance"),
             vec![
-                RowSpec::new("appearance.mode", tl!("Mode"), RowKind::choice(self.state.prefs.appearance.id(), options))
+                RowSpec::new("appearance.mode", tl!("Mode"), RowKind::choice(self.state.appearance().id(), options))
                     .pills(true)
                     .keywords("light dark system theme mode"),
+                RowSpec::new("appearance.light_theme", tl!("Light theme"), RowKind::Custom).keywords("theme colour color palette"),
+                RowSpec::new("appearance.dark_theme", tl!("Dark theme"), RowKind::Custom).keywords("theme colour color palette"),
+                RowSpec::new("appearance.just_here", tl!("Just for PingCraft"), RowKind::Bool(self.state.prefs.just_here()))
+                    .help(tl!("Off: PingCraft follows the theme and mode chosen in any Craft app, and a choice here changes them there too. On: PingCraft keeps its own. A theme only PingCraft has (Catppuccin, Dracula, Gruvbox, Nord, One Dark, Solarized Light, Tokyo Night) is always PingCraft's own."))
+                    .keywords("suite shared craft apps"),
             ],
         )
-        .footnote(tl!("Colour themes are not available yet. PingCraft uses the Craft apps' default theme."))
+    }
+
+    /// One mode's row of theme chips (craft-theme-store's `ThemeChip`, in one radio group as craft-libs' own
+    /// appearance page lays them out): the themes that have that mode, the one chosen marked.
+    fn theme_row(&mut self, ui: &mut Ui, dark: bool) {
+        let selection = self.state.selection();
+        let chosen = if dark { selection.theme.dark } else { selection.theme.light };
+        let title = if dark { tl!("Dark theme") } else { tl!("Light theme") };
+        let fits =
+            |theme: &&ThemeDef| matches!((theme.variants, dark), (Variants::Both, _) | (Variants::DarkOnly, true) | (Variants::LightOnly, false));
+        let group = RadioGroup::new(title.to_owned(), Bind::given(Some(chosen.clone()))).id_salt(("themes", dark)).show(ui, |ui, _| {
+            Row::new().wrap(true).show(ui, |ui, _| {
+                for theme in self.themes.iter().filter(fits) {
+                    ThemeChip::new(theme, dark).can_favorite(false).id_salt(theme.id.as_str()).show(ui);
+                }
+            });
+        });
+        // The chips are swatches; the chosen theme's name is written out under them (each chip names its theme in its
+        // tooltip and to a screen reader).
+        if let Some(theme) = self.themes.iter().filter(fits).find(|t| t.id == chosen) {
+            Text::new(theme.name.clone()).role(TypeRole::Caption).shade(Shade::Muted).show(ui);
+        }
+        if let Some(Some(id)) = group.output.value()
+            && *id != chosen
+        {
+            self.state.look_changes.push(LookChange::Theme { id: id.clone(), dark });
+        }
     }
 
     fn notifications_page(&self) -> PageSpec<'_> {
@@ -409,6 +444,7 @@ impl PreferencesModel for Model<'_> {
     fn set(&mut self, key: &str, value: PrefValue) {
         let action = match (key, value) {
             ("appearance.mode", PrefValue::Choice(id)) => return self.state.requested.push(AppCommand::Appearance(Appearance::from_id(&id))),
+            ("appearance.just_here", PrefValue::Bool(on)) => return self.state.look_changes.push(LookChange::JustHere(on)),
             ("notifications.previews", PrefValue::Bool(on)) => SettingAction::Previews(on),
             ("emoji.skin_tone", PrefValue::Choice(id)) => SettingAction::SkinTone(id),
             ("security.device_name", PrefValue::Text(typed)) => SettingAction::RenameDevice(typed),
@@ -426,7 +462,12 @@ impl PreferencesModel for Model<'_> {
     }
 
     fn custom_row(&mut self, ui: &mut Ui, key: &str) -> bool {
-        self.security_row(ui, key)
+        match key {
+            "appearance.light_theme" => self.theme_row(ui, false),
+            "appearance.dark_theme" => self.theme_row(ui, true),
+            _ => return self.security_row(ui, key),
+        }
+        false
     }
 
     fn custom_page(&mut self, _ui: &mut Ui, _page: &str) -> bool {
@@ -435,7 +476,8 @@ impl PreferencesModel for Model<'_> {
 
     fn reset_page(&mut self, page: &str) {
         match page {
-            "appearance" => self.state.requested.push(AppCommand::Appearance(Appearance::default())),
+            // Back to the suite's theme and mode.
+            "appearance" => self.state.look_changes.push(LookChange::JustHere(false)),
             "notifications" => {
                 if !self.state.prefs.previews {
                     self.state.prefs.previews = true;
@@ -456,7 +498,7 @@ impl PreferencesModel for Model<'_> {
 }
 
 /// The SETTINGS tab. Returns the colour row whose swatch was pressed, for the app to open the colour picker.
-pub fn settings(ui: &mut Ui, state: &mut State, out: &mut Out) -> Option<ColorRequest> {
+pub fn settings(ui: &mut Ui, state: &mut State, out: &mut Out, themes: &[ThemeDef]) -> Option<ColorRequest> {
     let mut page_state = std::mem::take(&mut state.settings.page);
     if let Some(notice) = state.settings.notice.clone() {
         Row::new().show(ui, |ui, _| {
@@ -466,7 +508,7 @@ pub fn settings(ui: &mut Ui, state: &mut State, out: &mut Out) -> Option<ColorRe
             }
         });
     }
-    let mut model = Model::new(ui, state, out);
+    let mut model = Model::new(ui, state, out, themes);
     let shown = egui::Frame::new()
         .inner_margin(egui::Margin::same(16))
         .show(ui, |ui| PreferencesPage::new(Bind::bound(&mut page_state)).show(ui, &mut model));
@@ -476,7 +518,7 @@ pub fn settings(ui: &mut Ui, state: &mut State, out: &mut Out) -> Option<ColorRe
 
 /// A colour the colour picker answered for a row of the Notifications page.
 pub fn picked_colour(ui: &Ui, state: &mut State, out: &mut Out, key: &str, colour: Srgba) {
-    let mut model = Model::new(ui, state, out);
+    let mut model = Model::new(ui, state, out, &[]);
     model.set_color(key, colour);
 }
 

@@ -101,19 +101,55 @@ impl Appearance {
     pub fn from_id(id: &str) -> Self {
         [Self::Light, Self::Dark].into_iter().find(|a| a.id() == id).unwrap_or_default()
     }
+
+    /// As craft-theme's mode choice.
+    pub fn mode(self) -> craft_theme::ModeChoice {
+        match self {
+            Self::Light => craft_theme::ModeChoice::Light,
+            Self::Dark => craft_theme::ModeChoice::Dark,
+            Self::System => craft_theme::ModeChoice::System,
+        }
+    }
+
+    /// From craft-theme's mode choice.
+    pub fn of(mode: craft_theme::ModeChoice) -> Self {
+        match mode {
+            craft_theme::ModeChoice::Light => Self::Light,
+            craft_theme::ModeChoice::Dark => Self::Dark,
+            craft_theme::ModeChoice::System => Self::System,
+        }
+    }
+}
+
+/// A change to the look the user asked for: the mode, a theme for one mode's slot, or whether PingCraft keeps a
+/// choice of its own instead of following the Craft suite's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LookChange {
+    Mode(Appearance),
+    Theme { id: craft_theme::ThemeId, dark: bool },
+    JustHere(bool),
 }
 
 /// The settings kept on this computer only, by the app (the account keeps the others).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Prefs {
-    pub appearance: Appearance,
+    /// PingCraft's own theme and mode, over the Craft suite's choice (craft-theme's `AppChoice`); all `None` to
+    /// follow the suite.
+    pub look: craft_theme::AppChoice,
     /// Whether a notification shows the message's text, or only who wrote.
     pub previews: bool,
 }
 
 impl Default for Prefs {
     fn default() -> Self {
-        Self { appearance: Appearance::default(), previews: true }
+        Self { look: crate::themes::follow_suite(), previews: true }
+    }
+}
+
+impl Prefs {
+    /// Whether PingCraft keeps a theme or mode of its own rather than the suite's.
+    pub fn just_here(&self) -> bool {
+        self.look.theme.is_some() || self.look.mode.is_some()
     }
 }
 
@@ -404,16 +440,38 @@ pub struct State {
     pub actions: Vec<crate::commands::SettingAction>,
     /// The inbox's search field takes the focus next frame.
     pub focus_search: bool,
+    /// The Craft suite's theme choice, as last read (craft-theme-store); its unset fields are PingCraft's defaults.
+    pub suite: craft_theme::SuiteChoice,
+    /// Changes to the look asked for this frame, applied by the app.
+    pub look_changes: Vec<LookChange>,
 }
 
 impl State {
+    /// The theme selection shown: PingCraft's own choice over the suite's.
+    pub fn selection(&self) -> craft_theme::Selection {
+        crate::themes::selection(&self.suite, &self.prefs.look)
+    }
+
+    /// The mode chosen (light, dark, or the system's).
+    pub fn appearance(&self) -> Appearance {
+        Appearance::of(self.selection().mode)
+    }
+
     pub fn apply(&mut self, event: Event) {
         self.settings.apply(&event);
         match event {
-            Event::AlreadyRunning => *self = Self { screen: Screen::AlreadyRunning, prefs: self.prefs, ..Self::default() },
+            Event::AlreadyRunning => {
+                *self = Self { screen: Screen::AlreadyRunning, prefs: self.prefs.clone(), suite: self.suite.clone(), ..Self::default() }
+            }
             Event::SignedOut => {
                 let server = std::mem::take(&mut self.sign_in.server);
-                *self = Self { screen: Screen::SignIn, prefs: self.prefs, passphrase: self.passphrase, ..Self::default() };
+                *self = Self {
+                    screen: Screen::SignIn,
+                    prefs: self.prefs.clone(),
+                    suite: self.suite.clone(),
+                    passphrase: self.passphrase,
+                    ..Self::default()
+                };
                 self.sign_in.server = server;
             }
             Event::Locked { first } => {

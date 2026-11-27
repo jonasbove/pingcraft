@@ -13,7 +13,7 @@ use crate::{Appearance, PingCraftApp};
 fn app(fake: &Fake, appearance: Appearance, size: egui::Vec2) -> Harness<'static, PingCraftApp> {
     let ctx = super::context();
     let mut app = PingCraftApp::new(Box::new(fake.clone()));
-    app.set_prefs(crate::Prefs { appearance, previews: true });
+    app.set_prefs(crate::Prefs { look: craft_theme::AppChoice::new(None, Some(appearance.mode()), None), previews: true });
     app.prime(&ctx);
     Harness::builder().with_context(ctx).with_size(size).with_max_steps(12).wgpu().build_ui_state(super::frame, app)
 }
@@ -92,6 +92,66 @@ fn screenshots_of_the_main_screens() {
                 h.run();
                 save(&mut h, &dir, &format!("settings-{}-{tag}", page.to_lowercase()));
             }
+        }
+    }
+}
+
+/// The inbox, an open chat and the Appearance page in each of PingCraft's own themes, in each mode it has.
+#[test]
+fn screenshots_of_each_theme() {
+    let Some(dir) = std::env::var_os("PINGCRAFT_SHOTS").map(|d| std::path::PathBuf::from(d).join("themes")) else { return };
+    std::fs::create_dir_all(&dir).unwrap();
+    for theme in crate::themes::own() {
+        let modes: &[(&str, craft_theme::ModeChoice)] = match theme.variants {
+            craft_theme::Variants::Both => &[("dark", craft_theme::ModeChoice::Dark), ("light", craft_theme::ModeChoice::Light)],
+            craft_theme::Variants::DarkOnly => &[("dark", craft_theme::ModeChoice::Dark)],
+            craft_theme::Variants::LightOnly => &[("light", craft_theme::ModeChoice::Light)],
+        };
+        let name = theme.id.as_str().trim_start_matches(crate::themes::PREFIX);
+        for (mode_name, mode) in modes {
+            let fake = Fake::default();
+            let ctx = super::context();
+            let mut app = PingCraftApp::new(Box::new(fake.clone()));
+            let pair = craft_theme::ThemePair::same(theme.id.clone());
+            app.set_prefs(crate::Prefs { look: craft_theme::AppChoice::new(Some(pair), Some(*mode), None), previews: true });
+            app.prime(&ctx);
+            let mut h =
+                Harness::builder().with_context(ctx).with_size(egui::vec2(1200.0, 800.0)).with_max_steps(12).wgpu().build_ui_state(super::frame, app);
+            fake.tell([
+                Event::SignedIn { user: "@ana:example.org".into() },
+                Event::Connection(pingcraft_core::ConnectionState::Online),
+                Event::Recovery(pingcraft_core::encryption::RecoveryStatus::On),
+                Event::Inbox(InboxChange::Reset(chats())),
+            ]);
+            h.run();
+            let tag = if modes.len() > 1 { format!("{name}-{mode_name}") } else { name.to_owned() };
+            save(&mut h, &dir, &format!("{tag}-inbox"));
+            h.get_by_label_contains("Book club, on Telegram").click();
+            h.run();
+            fake.tell([Event::Messages {
+                chat: ChatId("!book".into()),
+                messages: vec![
+                    message(
+                        "1",
+                        "Lars",
+                        false,
+                        pingcraft_core::MessageBody::Text("Has everyone finished chapter 8?".into()),
+                        pingcraft_core::SendState::Sent,
+                    ),
+                    message(
+                        "2",
+                        "@ana:example.org",
+                        true,
+                        pingcraft_core::MessageBody::Text("Yes! What an ending.".into()),
+                        pingcraft_core::SendState::Sent,
+                    ),
+                ],
+            }]);
+            h.run();
+            save(&mut h, &dir, &format!("{tag}-chat"));
+            h.get_by_label("Settings").click();
+            h.run();
+            save(&mut h, &dir, &format!("{tag}-appearance"));
         }
     }
 }

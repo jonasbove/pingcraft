@@ -354,8 +354,28 @@ Starts when mautrix-discord releases its bridgev2 rewrite (ADR 0008).
 6. **Unread count on the app's icon** (maintainer, 2026-11-25): the total unread on the taskbar or dock
    icon, or in the tray where there is one, cleared as chats are read. Per platform: what each desktop supports
    (Linux launchers vary) is checked in the ticket.
-7. **Colour themes** (maintainer, 2026-11-26), on craft-libs' `craft-theme` and `craft-theme-store`, after the
-   craft-libs update moves PingCraft onto craft-ui:
+7. **Colour themes: built-ins and the picker done (2026-11-27, brought forward by the maintainer); import not yet.**
+   - **Built in:** craft-libs' built-ins, the suite library's themes, and PingCraft's copies of the seven palettes
+     proposed to craft-libs (#3701 Gruvbox, #3704 Catppuccin, #3705 Tokyo Night, #3706 Nord, #3707 One Dark, #3708
+     Dracula, #3709 Solarized Light): the same `craft-design-theme` files in `crates/ui-egui/themes/`, read with
+     craft-theme's parser, under PingCraft's own ids (`pingcraft.<name>`, since `craft.` is reserved), each in
+     `ATTRIBUTION.md`. **They go away once craft-libs ships them**; a saved choice of `pingcraft.<name>` then shows
+     `craft.<name>` by itself (`themes::builtin_for`).
+   - **Choosing:** Settings, Appearance: the mode (light, dark, the system's), a Light theme and a Dark theme row of
+     craft-theme-store's `ThemeChip`s (as craft-libs' own appearance page lays them out; the chosen theme's name
+     written under its row), and "Just for PingCraft".
+   - **Where it is kept:** the Craft suite's shared choice (craft-theme-store, `selection.json` in the suite folder,
+     `~/.config/ArtCraft/themes/` on Linux, or `$CRAFT_SUITE_DIR`), with PingCraft's own override (craft-theme's
+     `AppChoice`) in `config.toml`: `[appearance] mode` and `theme_light` / `theme_dark` (empty to follow the suite),
+     and `last_suite`, the suite's choice last seen, so the window opens in it. With "Just for PingCraft" off, a choice
+     goes to the suite and the other Craft apps follow it; on, it is PingCraft's own. A theme only PingCraft has is
+     always PingCraft's own (the other apps could not show it). The old `[appearance] mode` (one setting, before the
+     suite's choice) reads as PingCraft's own mode, so it is kept as it was (decided here, for the maintainer).
+   - **Every theme looks right:** PingCraft's painted surfaces take the theme's tokens; the network colours are moved
+     in lightness as little as needed (craft-theme's `ensure_contrast`) to reach 3:1 on each theme's panels and
+     background, tested for every built-in and own theme in each mode it has. Screenshots of each own theme
+     (`tests/shots.rs`). Not done: theme import (base16/base24, VS Code, craft JSON), next.
+   The original plan:
    - **PingCraft opens in craft-libs' default theme** (maintainer, 2026-11-26): the orchid look is dropped, not
      kept as a theme, under the rule that craft-libs dictates the look. Network colours stay the networks' own in
      every theme. The Settings screen's Appearance page is where the theme choice goes (part 2); today it holds the

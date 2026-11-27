@@ -17,6 +17,7 @@ mod picker;
 mod settings;
 mod state;
 mod theme;
+mod themes;
 mod time;
 mod view;
 mod widgets;
@@ -26,6 +27,8 @@ mod tests;
 
 use craft_color_ui::ui::ColorPickerDialog;
 use craft_menu::{MenuBar, MenuBarUi};
+use craft_theme::{ModeChoice, ThemeId};
+use craft_theme_store::{SelectionChange, SuiteClient};
 use craft_ui::contract::Tracked;
 use craft_ui::dialog::{DialogHost, DialogResult};
 use craft_ui::runtime::commands::{AppCatalog, CommandInput, CommandStates};
@@ -36,7 +39,7 @@ use pingcraft_core::notify::Notifier;
 use crate::commands::{AppCommand, SettingAction};
 
 pub use picker::SkinTone;
-pub use state::{Appearance, Prefs, Screen, State, Tab};
+pub use state::{Appearance, LookChange, Prefs, Screen, State, Tab};
 pub use theme::Tokens;
 
 /// The logo as drawn in the window (the design's `pingcraft-logo-128.png`).
@@ -64,6 +67,8 @@ pub struct PingCraftApp {
     menu: Tracked<MenuBar>,
     /// craft-ui's dialogs the app opens: the colour picker.
     dialogs: DialogHost,
+    /// The Craft suite's theme choice and library.
+    suite: SuiteClient,
 }
 
 impl PingCraftApp {
@@ -78,12 +83,15 @@ impl PingCraftApp {
             command_states: Tracked::new(CommandStates::new()),
             menu: commands::laid_out(),
             dialogs: DialogHost::new(),
+            suite: SuiteClient::memory(),
         }
     }
 
     /// Asks for the first frame's input from the settings given with [`Self::set_prefs`], so the window opens in the
     /// chosen mode (no light frame before a dark one). Call it once, after `set_prefs` and before the first frame.
     pub fn prime(&mut self, ctx: &egui::Context) {
+        self.suite.sync();
+        self.state.suite = self.suite.shown();
         self.next_input(ctx);
     }
 
@@ -98,12 +106,85 @@ impl PingCraftApp {
         if let Some(catalog) = &self.catalog {
             input = input.catalog(catalog.clone());
         }
-        framework::set_next(ctx, self.state.prefs.appearance, input);
+        let selection = self.state.selection();
+        // The theme of the mode shown: with "the system's", the mode the last frame resolved.
+        let dark = match selection.mode {
+            ModeChoice::Dark => true,
+            ModeChoice::Light => false,
+            ModeChoice::System => Tokens::get(ctx).dark,
+        };
+        let id = if dark { selection.theme.dark } else { selection.theme.light };
+        framework::set_next(ctx, selection.mode, self.theme_source(id), input);
+    }
+
+    /// Where a theme comes from: PingCraft's own, a built-in, or the suite library (craft-libs' default while a
+    /// library theme loads, or when it is gone).
+    fn theme_source(&self, id: ThemeId) -> framework::ThemeSource {
+        // Once craft-libs ships one of PingCraft's own themes, a choice of it shows craft-libs' built-in.
+        if let Some(builtin) = themes::builtin_for(&id) {
+            return framework::ThemeSource::BuiltIn(builtin);
+        }
+        if let Some(own) = themes::own_theme(&id) {
+            return framework::ThemeSource::Held(std::sync::Arc::new(own.clone()));
+        }
+        if id.is_builtin() {
+            return framework::ThemeSource::BuiltIn(id);
+        }
+        match self.suite.theme(&id) {
+            Some(def) => framework::ThemeSource::Held(std::sync::Arc::new(def)),
+            None => framework::ThemeSource::BuiltIn(ThemeId::suite_default()),
+        }
+    }
+
+    /// The suite's choice as last accepted, for the app to keep for the next start.
+    pub fn suite_accepted(&self) -> craft_theme_store::Accepted {
+        self.suite.accepted().clone()
+    }
+
+    /// The Craft suite's theme choice and library: on the desktop, the shared one (craft-theme-store's `SuiteDir`);
+    /// without it (tests, the web build), one in memory.
+    pub fn set_suite(&mut self, client: SuiteClient) {
+        self.suite = client;
+    }
+
+    /// Applies a change to the look: to PingCraft's own choice when it keeps one (or for a theme only PingCraft has),
+    /// else to the suite's, which every Craft app follows.
+    fn change_look(&mut self, change: LookChange) {
+        let prefs = &mut self.state.prefs;
+        match change {
+            LookChange::JustHere(true) => {
+                let shown = themes::selection(&self.state.suite, &prefs.look);
+                prefs.look.theme = Some(shown.theme);
+                prefs.look.mode = Some(shown.mode);
+            }
+            LookChange::JustHere(false) => {
+                prefs.look = themes::follow_suite();
+            }
+            LookChange::Mode(mode) => {
+                if prefs.just_here() {
+                    prefs.look.mode = Some(mode.mode());
+                } else {
+                    self.suite.change(SelectionChange { mode: Some(mode.mode()), ..SelectionChange::default() });
+                }
+            }
+            LookChange::Theme { id, dark } => {
+                // A theme only PingCraft has would be unknown to the other Craft apps: it is PingCraft's own choice.
+                if prefs.just_here() || themes::own_theme(&id).is_some() {
+                    let mut pair = themes::selection(&self.state.suite, &prefs.look).theme;
+                    *(if dark { &mut pair.dark } else { &mut pair.light }) = id;
+                    prefs.look.theme = Some(pair);
+                } else if dark {
+                    self.suite.change(SelectionChange::theme_dark(id));
+                } else {
+                    self.suite.change(SelectionChange::theme_light(id));
+                }
+            }
+        }
     }
 
     /// The settings kept on this computer, for the app to save.
     pub fn prefs(&self) -> Prefs {
-        self.state.prefs
+        self.state.prefs.clone()
     }
 
     /// Starts from the settings kept on this computer.
@@ -129,7 +210,7 @@ impl PingCraftApp {
                 out.push(Command::LoadDevices);
             }
             AppCommand::Refresh => out.push(Command::Refresh),
-            AppCommand::Appearance(appearance) => state.prefs.appearance = appearance,
+            AppCommand::Appearance(appearance) => state.look_changes.push(LookChange::Mode(appearance)),
             AppCommand::ChangePassphrase => state.settings.passphrase = Some(settings::PassphraseForm::default()),
             AppCommand::NewRecoveryKey => state.settings.new_key = Some(settings::KeyForm::default()),
             AppCommand::ResetRecovery => state.settings.new_key = Some(settings::KeyForm { reset: true, ..Default::default() }),
@@ -235,6 +316,9 @@ impl PingCraftApp {
         theme::apply(&ctx);
         picker::set_tone(&ctx, self.skin_tone);
         self.state.focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
+        // The suite's choice, as another Craft app may have just changed it (one atomic load unless it did).
+        self.suite.sync();
+        self.state.suite = self.suite.shown();
         let mut out = Vec::new();
         for event in self.backend.poll() {
             match &event {
@@ -278,7 +362,13 @@ impl PingCraftApp {
                         Tab::Inbox => view::inbox(ui, &mut self.state, &mut out),
                         Tab::Accounts => accounts::accounts(ui, &mut self.state),
                         Tab::Settings => {
-                            if let Some(request) = settings::settings(ui, &mut self.state, &mut out) {
+                            let themes: Vec<craft_theme::ThemeDef> = craft_theme::builtins()
+                                .iter()
+                                .chain(themes::own())
+                                .chain(self.suite.snapshot().index.iter().map(|entry| &entry.theme))
+                                .cloned()
+                                .collect();
+                            if let Some(request) = settings::settings(ui, &mut self.state, &mut out, &themes) {
                                 // The eyedropper would capture the screen; a network's colour has no need of it.
                                 self.dialogs.open(ColorPickerDialog::from_request(request).eyedropper(false));
                             }
@@ -302,6 +392,9 @@ impl PingCraftApp {
         }
         for action in std::mem::take(&mut self.state.actions) {
             settings::run_action(&ctx, &mut self.state, &mut out, action);
+        }
+        for change in std::mem::take(&mut self.state.look_changes) {
+            self.change_look(change);
         }
         // Escape that nothing else took (no field, menu, popup or dialog): an open chat goes back to the list.
         let back = self.state.screen == Screen::Inbox && self.state.tab == Tab::Inbox && self.state.open.is_some();

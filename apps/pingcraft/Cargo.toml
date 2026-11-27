@@ -17,6 +17,10 @@ pingcraft-matrix = { path = "../../crates/matrix" }
 pingcraft-keychain = { path = "../../crates/keychain" }
 pingcraft-notify = { path = "../../crates/notify" }
 craft-settings = { workspace = true }
+# The Craft suite's theme choice (craft-theme-store) and its types (craft-theme).
+craft-theme = { workspace = true }
+craft-theme-store = { workspace = true }
+serde_json = { workspace = true }
 # PingCraft's settings on this computer (craft-settings' config.toml).
 serde = { version = "1", features = ["derive"] }
 egui = { workspace = true }

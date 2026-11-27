@@ -14,7 +14,7 @@ use std::sync::{Arc, LazyLock};
 
 use craft_host::target::ShellInfo;
 use craft_host::{AppInfo, Host};
-use craft_theme::ModeChoice;
+use craft_theme::{ModeChoice, ThemeDef, ThemeId};
 use craft_ui::InstallSpec;
 use craft_ui::runtime::commands::{CommandInput, CommandRef};
 use craft_ui::runtime::env::RootEnv;
@@ -23,22 +23,33 @@ use craft_ui::shell::embed::{self, CloseDecision};
 use craft_window::system::{NoWindows, WindowSystem};
 use egui::Context;
 
-use crate::state::Appearance;
-
 /// The app's name and version for the runtime's dialogs and words. PingCraft's words are not craft-i18n's yet
 /// (PLAN.md, M2 ticket 9), so the host carries no catalogs and the framework's own words are English.
 static HOST: LazyLock<Arc<Host>> =
     LazyLock::new(|| Arc::new(Host::builder(AppInfo { id: "pingcraft", name: "PingCraft", version: env!("CARGO_PKG_VERSION") }).build()));
 
-/// The root values of a frame: craft-libs' default theme in the mode the user chose (light, dark, or the system's),
-/// and PingCraft's commands with their state.
-pub fn input(appearance: Appearance, commands: CommandInput) -> FrameInput {
-    let mode = match appearance {
-        Appearance::Light => ModeChoice::Light,
-        Appearance::Dark => ModeChoice::Dark,
-        Appearance::System => ModeChoice::System,
+/// The theme a frame resolves from: a built-in by id, or a theme the app holds (PingCraft's own, or the suite
+/// library's).
+#[derive(Clone)]
+pub enum ThemeSource {
+    BuiltIn(ThemeId),
+    Held(Arc<ThemeDef>),
+}
+
+/// The root values of a frame: the theme and the mode the user chose (light, dark, or the system's), and
+/// PingCraft's commands with their state.
+pub fn input(mode: ModeChoice, theme: ThemeSource, commands: CommandInput) -> FrameInput {
+    let root = RootEnv::new().mode(mode);
+    let root = match theme {
+        ThemeSource::BuiltIn(id) => root.theme(id),
+        ThemeSource::Held(def) => root.library_theme(def),
     };
-    FrameInput::new(RootEnv::new().mode(mode)).host(Arc::clone(&HOST)).commands(commands)
+    FrameInput::new(root).host(Arc::clone(&HOST)).commands(commands)
+}
+
+/// craft-libs' default theme, following the system.
+fn default_input() -> FrameInput {
+    input(ModeChoice::System, ThemeSource::BuiltIn(ThemeId::suite_default()), CommandInput::new())
 }
 
 fn install_with(ctx: &Context, spec: InstallSpec) -> Result<(), craft_ui::InstallError> {
@@ -46,7 +57,7 @@ fn install_with(ctx: &Context, spec: InstallSpec) -> Result<(), craft_ui::Instal
         Ok(()) | Err(craft_ui::InstallError::AlreadyInstalled) => {}
         Err(error) => return Err(error),
     }
-    set_input(ctx, input(Appearance::default(), CommandInput::new()));
+    set_input(ctx, default_input());
     Ok(())
 }
 
@@ -74,7 +85,8 @@ pub fn install_headless(ctx: &Context) {
 /// What the interface asked the next frame's input to be.
 #[derive(Clone)]
 struct Next {
-    appearance: Appearance,
+    mode: ModeChoice,
+    theme: ThemeSource,
     commands: CommandInput,
 }
 
@@ -102,15 +114,15 @@ pub fn before_input(ctx: &Context) {
             d.get_temp::<Next>(next_id())
         });
         match next {
-            Some(Next { appearance, commands }) => input(appearance, commands),
-            None => input(Appearance::default(), CommandInput::new()),
+            Some(Next { mode, theme, commands }) => input(mode, theme, commands),
+            None => default_input(),
         }
     });
 }
 
-/// The input the next frame should have: the theme's mode, and PingCraft's commands with their state.
-pub fn set_next(ctx: &Context, appearance: Appearance, commands: CommandInput) {
-    ctx.data_mut(|d| d.insert_temp(next_id(), Next { appearance, commands }));
+/// The input the next frame should have: the mode and theme, and PingCraft's commands with their state.
+pub fn set_next(ctx: &Context, mode: ModeChoice, theme: ThemeSource, commands: CommandInput) {
+    ctx.data_mut(|d| d.insert_temp(next_id(), Next { mode, theme, commands }));
 }
 
 /// The commands fired since the last call (a shortcut, a menu row, a command button), oldest first.

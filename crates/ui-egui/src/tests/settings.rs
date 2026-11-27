@@ -69,17 +69,49 @@ fn the_app_menu_opens_settings() {
 fn appearance_is_light_dark_or_the_systems() {
     let fake = Fake::default();
     let mut h = on_page(&fake, "Appearance");
-    assert_eq!(h.state().state.prefs.appearance, Appearance::System, "follows the system unless chosen");
+    assert_eq!(h.state().state.appearance(), Appearance::System, "follows the system unless chosen");
     h.get_by_label("Dark").click();
     h.run();
     h.run();
-    assert_eq!(h.state().state.prefs.appearance, Appearance::Dark);
+    assert_eq!(h.state().state.appearance(), Appearance::Dark);
     assert!(crate::Tokens::get(&h.ctx).dark, "the theme is dark");
     h.get_by_label("Light").click();
     h.run();
     h.run();
     assert!(!crate::Tokens::get(&h.ctx).dark, "and light again");
-    h.get_by_label_contains("Colour themes are not available yet");
+}
+
+/// A theme only PingCraft has is PingCraft's own choice; a craft-libs theme goes to the Craft suite's choice unless
+/// "Just for PingCraft" is on. The window takes the theme's colours.
+#[test]
+fn themes_are_picked_for_each_mode_and_kept_here_or_with_the_suite() {
+    let fake = Fake::default();
+    let mut h = on_page(&fake, "Appearance");
+    h.get_by_label("Dark").click();
+    h.run();
+    h.run();
+    let before = crate::Tokens::get(&h.ctx).bg;
+    let pick = |h: &mut Harness<'static, PingCraftApp>, row: &str, theme: &str| {
+        h.get_by_role_and_label(Role::RadioGroup, row).get_by_label_contains(theme).click();
+        h.run();
+        h.run();
+        h.run();
+    };
+    pick(&mut h, "Dark theme", "Tokyo Night");
+    let s = &h.state().state;
+    assert_eq!(s.selection().theme.dark.as_str(), "pingcraft.tokyo-night");
+    assert!(s.prefs.just_here(), "a theme only PingCraft has is PingCraft's own");
+    assert_eq!(s.suite.theme_dark, None, "the suite is not told of it");
+    assert_ne!(crate::Tokens::get(&h.ctx).bg, before, "the window takes its colours");
+
+    h.get_by_role_and_label(Role::CheckBox, "Just for PingCraft").click();
+    h.run();
+    h.run();
+    assert!(!h.state().state.prefs.just_here(), "back to the suite's");
+    pick(&mut h, "Dark theme", "Graphite");
+    let s = &h.state().state;
+    assert_eq!(s.suite.theme_dark.as_ref().map(|t| t.as_str()), Some("craft.graphite"), "a craft-libs theme goes to the suite");
+    assert!(!s.prefs.just_here());
 }
 
 /// The saved appearance applies from the very first frame: a window set to dark never shows a light frame first.
@@ -87,7 +119,7 @@ fn appearance_is_light_dark_or_the_systems() {
 fn a_saved_dark_appearance_shows_from_the_first_frame() {
     let ctx = super::context();
     let mut app = PingCraftApp::new(Box::new(Fake::default()));
-    app.set_prefs(crate::Prefs { appearance: Appearance::Dark, previews: true });
+    app.set_prefs(crate::Prefs { look: craft_theme::AppChoice::new(None, Some(craft_theme::ModeChoice::Dark), None), previews: true });
     app.prime(&ctx);
     // One pass, the window's first: the theme it resolves is dark.
     let mut dark = None;

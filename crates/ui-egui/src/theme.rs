@@ -90,8 +90,19 @@ impl Tokens {
         let c = &tokens.color;
         let ty = &tokens.typography;
         let dark = mode == Mode::Dark;
+        let panel = colour(c.surface.panel);
+        let background = colour(c.surface.background);
+        // Each theme's surfaces differ: a network's colour is moved just far enough in lightness (craft-theme's
+        // `ensure_contrast`, keeping its hue) to stand out from the panels and the window background, at the 3:1 a cue
+        // that is not text needs.
+        let legible = |c: Color32| {
+            let rgba = |c: Color32| Rgba([c.r(), c.g(), c.b(), 255]);
+            let on_panel = craft_theme::ensure_contrast(rgba(c), rgba(panel), 3.0);
+            let both = craft_theme::ensure_contrast(on_panel, rgba(background), 3.0);
+            colour(both)
+        };
         let [net_telegram, net_signal, net_discord, net_whatsapp] =
-            if dark { NETWORKS_DARK } else { ["telegram", "signal", "discord", "whatsapp"].map(light) };
+            if dark { NETWORKS_DARK } else { ["telegram", "signal", "discord", "whatsapp"].map(light) }.map(legible);
         let accent = colour(c.accent.strong);
         Self {
             dark,
@@ -239,6 +250,31 @@ mod tests {
     /// The network colours are data, not theme: the network tag's dot in them still stands out from craft-ui's default
     /// theme's panels and window background in both modes, at the 3:1 a cue that is not text needs (the tag's name is
     /// in the theme's own text colour, and says the network, so colour is not the only cue).
+    /// In every theme PingCraft offers (craft-libs' built-ins and PingCraft's own), in each mode it has, the network
+    /// colours stand out from the panels and the window background, as in the default theme.
+    #[test]
+    fn network_colours_stand_out_in_every_theme() {
+        use craft_theme::{Appearance, Size, TextSize, Variants};
+        for theme in craft_theme::builtins().iter().chain(crate::themes::own()) {
+            let modes: &[Mode] = match theme.variants {
+                Variants::Both => &[Mode::Dark, Mode::Light],
+                Variants::DarkOnly => &[Mode::Dark],
+                Variants::LightOnly => &[Mode::Light],
+            };
+            for &mode in modes {
+                let appearance =
+                    Appearance { mode, contrast: Contrast::Standard, size: Size::default(), text_size: TextSize::default(), reduced_motion: false };
+                let resolved = craft_theme::resolve(theme, appearance, None);
+                let t = Tokens::from_resolved(&resolved.tokens, mode);
+                for surface in [t.bg, t.sunken] {
+                    for net in [t.net_telegram, t.net_signal, t.net_discord, t.net_whatsapp] {
+                        assert!(contrast(net, surface) >= 2.99, "{} {mode:?}: network colour {net:?} on {surface:?}", theme.id);
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn network_colours_stand_out_on_the_themes_surfaces() {
         for mode in [Mode::Dark, Mode::Light] {

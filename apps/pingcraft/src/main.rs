@@ -40,8 +40,16 @@ struct Prefs {
 #[derive(Serialize, Deserialize, Default, Clone, PartialEq)]
 #[serde(default)]
 struct AppearancePrefs {
-    /// `light`, `dark` or `system` ([`Appearance::id`]); anything else, or nothing, follows the system.
+    /// PingCraft's own mode over the Craft suite's: `light`, `dark` or `system`; empty (or anything else) follows the
+    /// suite. Before the suite's choice existed this was the only appearance setting; a value kept from then is
+    /// PingCraft's own choice now.
     mode: String,
+    /// PingCraft's own themes for light and dark mode, by theme id; both empty to follow the suite.
+    theme_light: String,
+    theme_dark: String,
+    /// The suite's choice as last accepted (craft-theme-store's `Accepted`, as JSON), so the window opens in it before
+    /// the suite folder is read again.
+    last_suite: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
@@ -93,15 +101,32 @@ fn keep_skin_tone(tone: SkinTone, migrated: bool, settings: &mut SettingsStore<P
 fn keep_prefs(prefs: pingcraft_ui_egui::Prefs, settings: &mut SettingsStore<Prefs>) {
     if local_prefs(settings.get()) != prefs {
         settings.update(|p| {
-            p.appearance.mode = prefs.appearance.id().to_owned();
+            p.appearance.mode = prefs.look.mode.map(|m| Appearance::of(m).id().to_owned()).unwrap_or_default();
+            let (light, dark) = prefs.look.theme.as_ref().map(|t| (t.light.to_string(), t.dark.to_string())).unwrap_or_default();
+            p.appearance.theme_light = light;
+            p.appearance.theme_dark = dark;
             p.notifications.previews = prefs.previews;
         });
     }
 }
 
+/// Keeps the suite's choice as last accepted, so the next start opens in it.
+fn keep_suite(accepted: &craft_theme_store::Accepted, settings: &mut SettingsStore<Prefs>) {
+    let json = serde_json::to_string(accepted).unwrap_or_default();
+    if settings.get().appearance.last_suite != json {
+        settings.update(|p| p.appearance.last_suite = json);
+    }
+}
+
 /// The settings of this computer as the interface takes them.
 fn local_prefs(settings: &Prefs) -> pingcraft_ui_egui::Prefs {
-    pingcraft_ui_egui::Prefs { appearance: Appearance::from_id(&settings.appearance.mode), previews: settings.notifications.previews }
+    let a = &settings.appearance;
+    let mode = ["light", "dark", "system"].contains(&a.mode.as_str()).then(|| Appearance::from_id(&a.mode).mode());
+    let theme = match (craft_theme::ThemeId::parse(&a.theme_light), craft_theme::ThemeId::parse(&a.theme_dark)) {
+        (Ok(light), Ok(dark)) => Some(craft_theme::ThemePair { light, dark }),
+        _ => None,
+    };
+    pingcraft_ui_egui::Prefs { look: craft_theme::AppChoice::new(theme, mode, None), previews: settings.notifications.previews }
 }
 
 impl eframe::App for Window {
@@ -118,6 +143,7 @@ impl eframe::App for Window {
         self.app.ui(ui);
         keep_skin_tone(self.app.skin_tone(), self.app.skin_tone_migrated(), &mut self.settings);
         keep_prefs(self.app.prefs(), &mut self.settings);
+        keep_suite(&self.app.suite_accepted(), &mut self.settings);
         self.settings.tick(Instant::now());
     }
 
@@ -184,6 +210,15 @@ fn main() -> ExitCode {
             let kept = &settings.get().emoji;
             app.set_local_skin_tone(SkinTone::from_id(&kept.skin_tone), kept.skin_tone_migrated);
             app.set_prefs(local_prefs(settings.get()));
+            // The Craft suite's theme choice, shared with the other Craft apps, starting from the one last seen.
+            let last = serde_json::from_str(&settings.get().appearance.last_suite).ok();
+            let mut options = craft_theme_store::StoreOptions::new(concat!("pingcraft ", env!("CARGO_PKG_VERSION")));
+            if let Some(last) = last {
+                options = options.last_accepted(last);
+            }
+            let wake = cc.egui_ctx.clone();
+            let watch = craft_theme_store::SuiteWatch::open(&craft_theme_store::SuiteDir::resolve(false), options, move || wake.request_repaint());
+            app.set_suite(craft_theme_store::SuiteClient::new(watch));
             // Before the first frame, so it opens in the saved mode.
             app.prime(&cc.egui_ctx);
             let ctx = cc.egui_ctx.clone();
@@ -227,17 +262,28 @@ mod tests {
         assert!(third.get().emoji.skin_tone_migrated, "moved up once, never again");
     }
 
+    trait ParseTheme {
+        fn parse_theme(&self) -> craft_theme::ThemeId;
+    }
+
+    impl ParseTheme for &str {
+        fn parse_theme(&self) -> craft_theme::ThemeId {
+            craft_theme::ThemeId::parse(self).unwrap()
+        }
+    }
+
     /// The appearance and the previews setting are saved and come back; a file without them (from before Settings)
     /// follows the system and shows previews.
     #[test]
     fn the_appearance_and_previews_are_saved_and_come_back() {
-        use pingcraft_ui_egui::{Appearance, Prefs as Local};
+        use pingcraft_ui_egui::Prefs as Local;
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join(craft_settings::store::CONFIG_FILE), "schema_version = 1\n\n[emoji]\nskin_tone = \"dark\"\n").unwrap();
         let (mut settings, _) = SettingsStore::<Prefs>::open_at(dir.path());
         assert_eq!(super::local_prefs(settings.get()), Local::default(), "an older file");
-        let chosen = Local { appearance: Appearance::Dark, previews: false };
-        super::keep_prefs(chosen, &mut settings);
+        let pair = craft_theme::ThemePair { light: "pingcraft.gruvbox".parse_theme(), dark: "pingcraft.tokyo-night".parse_theme() };
+        let chosen = Local { look: craft_theme::AppChoice::new(Some(pair), Some(craft_theme::ModeChoice::Dark), None), previews: false };
+        super::keep_prefs(chosen.clone(), &mut settings);
         settings.flush().unwrap();
         let (again, _) = SettingsStore::<Prefs>::open_at(dir.path());
         assert_eq!(super::local_prefs(again.get()), chosen);
@@ -246,7 +292,9 @@ mod tests {
         let only = tempfile::tempdir().unwrap();
         std::fs::write(only.path().join(craft_settings::store::CONFIG_FILE), "[appearance]\nmode = \"dark\"\n").unwrap();
         let (hand, _) = SettingsStore::<Prefs>::open_at(only.path());
-        assert_eq!(super::local_prefs(hand.get()).appearance, Appearance::Dark);
+        let hand = super::local_prefs(hand.get());
+        assert_eq!(hand.look.mode, Some(craft_theme::ModeChoice::Dark), "kept as PingCraft's own mode");
+        assert_eq!(hand.look.theme, None, "the theme follows the suite");
     }
 
     /// A settings file from before the account kept the tone has no `skin_tone_migrated`: it reads as not moved up

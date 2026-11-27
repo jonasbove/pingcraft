@@ -175,7 +175,7 @@ impl AppCommand {
     /// Whether it is a choice that is on now (the appearance in use).
     fn checked(self, state: &State) -> Option<bool> {
         match self {
-            Self::Appearance(a) => Some(state.prefs.appearance == a),
+            Self::Appearance(a) => Some(state.appearance() == a),
             _ => None,
         }
     }
