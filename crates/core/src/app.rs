@@ -5,7 +5,8 @@
 use zeroize::Zeroizing;
 
 use crate::bridge::{Answers, BridgeError, BridgedNetwork, LoginStep, StepRef};
-use crate::encryption::{RecoveryKey, RecoveryStatus, Verification};
+use crate::devices::{Device, DeviceId, SignOutProblem};
+use crate::encryption::{RecoveryKey, RecoveryRefusal, RecoveryStatus, Verification};
 use crate::{AccountId, Alerts, ChatId, ConnectionState, DraftFor, InboxChange, Message, MessageDetails, MessageId, Mute, Network, Quote};
 
 /// Something the user asked for. `Debug` never shows a password, passphrase or message text.
@@ -81,6 +82,8 @@ pub enum Command {
     },
     /// Marks a chat as unread. Opening it marks it read again.
     MarkUnread(ChatId),
+    /// Marks a chat read: its messages, and takes off a "marked unread".
+    MarkRead(ChatId),
     /// Moves a chat out of the inbox into the archive (`archive`), or back. An archived chat comes back by itself
     /// when a new message arrives, unless it is muted.
     Archive {
@@ -115,6 +118,8 @@ pub enum Command {
     /// The user used this emoji (sent it, reacted with it, or picked it). It joins the account's recently used emoji
     /// on the server, which the user's other devices share; uses are sent together a few seconds after the last.
     EmojiUsed(String),
+    /// Whether notifications show the message's text. Kept with the account, in PingCraft's own account data.
+    SavePreviews(bool),
     /// The user chose this skin tone for emoji (by its saved name, such as `medium`). It is kept with the account,
     /// in PingCraft's own account data, so the user's other devices use it too.
     SaveSkinTone(String),
@@ -122,8 +127,37 @@ pub enum Command {
     RecoveryKeySaved,
     /// The user typed the account's recovery key on this device.
     Recover(RecoveryKey),
+    /// Makes a new recovery key in place of the account's, or the first one when it has none; [`Event::NewRecoveryKey`]
+    /// shows it. Only when this device can open the key backup ([`RecoveryStatus::On`]) or there is none
+    /// ([`RecoveryStatus::Off`]): a backup this device cannot open is never replaced. A first key may need the
+    /// account password (the server asks for it to set up cross-signing).
+    NewRecoveryKey {
+        password: Option<Zeroizing<String>>,
+    },
+    /// Starts over when the recovery key is lost: a new cross-signing identity and a new recovery key, proven with
+    /// the account password. Messages encrypted before can no longer be read on new devices.
+    ResetRecovery {
+        password: Zeroizing<String>,
+    },
     /// Ask the user's other devices to verify this one.
     VerifyThisDevice,
+    /// Changes the passphrase that unlocks PingCraft on this computer (only where there is no keychain).
+    /// [`Event::PassphraseChanged`] answers.
+    ChangePassphrase {
+        current: Zeroizing<String>,
+        new: Zeroizing<String>,
+    },
+    /// Asks which devices the user is signed in on: [`Event::Devices`] answers.
+    LoadDevices,
+    /// Gives this device a new name, which the user's other devices see.
+    RenameDevice(String),
+    /// Asks another of the user's devices to verify with this one, by comparing symbols.
+    VerifyDevice(DeviceId),
+    /// Signs another of the user's devices out, proven with the account password (the server asks for it).
+    SignOutDevice {
+        device: DeviceId,
+        password: Zeroizing<String>,
+    },
     AcceptVerification,
     SymbolsMatch,
     SymbolsDiffer,
@@ -181,6 +215,7 @@ impl std::fmt::Debug for Command {
             Self::PinChat { chat, pin } => f.debug_struct("PinChat").field("chat", chat).field("pin", pin).finish(),
             Self::Mute { chat, mute } => f.debug_struct("Mute").field("chat", chat).field("mute", mute).finish(),
             Self::MarkUnread(c) => f.debug_tuple("MarkUnread").field(c).finish(),
+            Self::MarkRead(c) => f.debug_tuple("MarkRead").field(c).finish(),
             Self::ChatAlerts { chat, alerts } => f.debug_struct("ChatAlerts").field("chat", chat).field("alerts", alerts).finish(),
             Self::NetworkAlerts { network, alerts } => f.debug_struct("NetworkAlerts").field("network", network).field("alerts", alerts).finish(),
             Self::Archive { chat, archive } => f.debug_struct("Archive").field("chat", chat).field("archive", archive).finish(),
@@ -193,9 +228,18 @@ impl std::fmt::Debug for Command {
             Self::EmojiUsed(_) => f.write_str("EmojiUsed(..)"),
             // Says something about the person, so it stays out of logs too.
             Self::SaveSkinTone(_) => f.write_str("SaveSkinTone(..)"),
+            Self::SavePreviews(on) => f.debug_tuple("SavePreviews").field(on).finish(),
             Self::RecoveryKeySaved => f.write_str("RecoveryKeySaved"),
             Self::Recover(key) => f.debug_tuple("Recover").field(key).finish(),
+            Self::NewRecoveryKey { .. } => f.write_str("NewRecoveryKey { .. }"),
+            Self::ResetRecovery { .. } => f.write_str("ResetRecovery { .. }"),
             Self::VerifyThisDevice => f.write_str("VerifyThisDevice"),
+            Self::ChangePassphrase { .. } => f.write_str("ChangePassphrase { .. }"),
+            Self::LoadDevices => f.write_str("LoadDevices"),
+            // A device's name is the user's own words, often their name.
+            Self::RenameDevice(_) => f.write_str("RenameDevice(..)"),
+            Self::VerifyDevice(d) => f.debug_tuple("VerifyDevice").field(d).finish(),
+            Self::SignOutDevice { device, .. } => f.debug_struct("SignOutDevice").field("device", device).finish_non_exhaustive(),
             Self::AcceptVerification => f.write_str("AcceptVerification"),
             Self::SymbolsMatch => f.write_str("SymbolsMatch"),
             Self::SymbolsDiffer => f.write_str("SymbolsDiffer"),
@@ -277,11 +321,28 @@ pub enum Event {
     /// that is asked of the server itself, never assumed from a sync that has not arrived yet. Sent once signed in
     /// and whenever another device changes it.
     SkinTone(Option<String>),
+    /// Whether notifications show the message's text, as the account keeps it, or (`None`) that it keeps nothing: asked
+    /// of the server itself once signed in, then sent whenever another device changes it.
+    Previews(Option<bool>),
     /// Each network's notification sound and accent colour, as the account keeps them (networks without settings
     /// are left out). Sent once signed in and whenever they change.
     NetworkAlerts(std::collections::BTreeMap<Network, Alerts>),
-    /// The first sign-in made a recovery key: show it until the user has saved it.
+    /// A new recovery key (the first sign-in's, or one asked for in Settings): show it until the user has saved it.
     NewRecoveryKey(RecoveryKey),
+    /// A new recovery key was not made, for a reason the user can act on.
+    RecoveryKeyRefused(RecoveryRefusal),
+    /// Whether PingCraft is unlocked with a passphrase on this computer (`true`), or keeps its secrets in the system
+    /// keychain. Sent once the secrets are open.
+    Passphrase(bool),
+    /// The passphrase was changed (`true`), or the current one typed was wrong and nothing changed (`false`).
+    PassphraseChanged(bool),
+    /// The devices the user is signed in on, in the order Settings lists them (`devices::sorted`).
+    Devices(Vec<Device>),
+    /// Signing another device out did not work; it is still signed in.
+    SignOutRefused {
+        device: DeviceId,
+        problem: SignOutProblem,
+    },
     Recovery(RecoveryStatus),
     /// That recovery key did not open the key backup.
     WrongRecoveryKey,
@@ -332,6 +393,11 @@ mod tests {
         let commands = [
             Command::SignIn { server: "example.org".into(), username: "ana".into(), password: Zeroizing::new("hunter2".into()) },
             Command::Unlock { passphrase: Zeroizing::new("correct horse".into()) },
+            Command::ChangePassphrase { current: Zeroizing::new("old horse".into()), new: Zeroizing::new("new battery".into()) },
+            Command::SignOutDevice { device: crate::devices::DeviceId("PHONE".into()), password: Zeroizing::new("acct pass".into()) },
+            Command::RenameDevice("Ana's laptop".into()),
+            Command::NewRecoveryKey { password: Some(Zeroizing::new("first key pw".into())) },
+            Command::ResetRecovery { password: Zeroizing::new("reset pw".into()) },
             Command::Recover(RecoveryKey::new("EsTc 8Jq2")),
             Command::SendText { chat: crate::ChatId("!a".into()), text: "private words".into() },
             Command::Reply { chat: crate::ChatId("!a".into()), to: crate::MessageId("m".into()), text: "private reply".into() },
@@ -359,6 +425,12 @@ mod tests {
         for secret in [
             "hunter2",
             "correct horse",
+            "old horse",
+            "new battery",
+            "acct pass",
+            "first key pw",
+            "reset pw",
+            "Ana's laptop",
             "EsTc",
             "private words",
             "12345678",

@@ -287,7 +287,7 @@ async fn pins_mutes_and_marking_unread_reach_the_server() {
     inbox_until("the archived chat in the inbox", &mut feed, &mut inbox, |inbox| inbox.get(&id).filter(|c| c.is_archived()).map(|_| ())).await;
     assert_eq!(connection.archive(&id, false).await.unwrap().archived, None);
     // The chat's own sound and colour, in PingCraft's room account data.
-    let alerts = pingcraft_core::Alerts { sound: Some(false), accent: Some(pingcraft_core::Accent::WhatsApp) };
+    let alerts = pingcraft_core::Alerts { sound: Some(false), accent: Some(pingcraft_core::Accent([0x80, 0x40, 0x20])) };
     assert_eq!(connection.set_chat_alerts(&id, alerts).await.unwrap().alerts, alerts);
     inbox_until("the chat's sound and colour in the inbox", &mut feed, &mut inbox, |inbox| inbox.get(&id).filter(|c| c.alerts == alerts).map(|_| ()))
         .await;

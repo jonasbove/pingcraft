@@ -71,6 +71,9 @@ pub enum ChatUpdate {
 /// An open chat. Its messages arrive as whole lists, oldest first; dropping it closes the chat.
 pub struct ChatTimeline {
     timeline: Arc<Timeline>,
+    /// The event behind each message ID handed out, kept after the timeline drops the item: the SDK gives an event a
+    /// new item (and so a new ID) when it rebuilds its timeline, and the interface may still ask by the old one.
+    events: Arc<std::sync::Mutex<HashMap<String, OwnedEventId>>>,
     connection_rooms: Arc<matrix_sdk_ui::RoomListService>,
     room_id: OwnedRoomId,
     lists: UnboundedReceiver<ChatUpdate>,
@@ -107,6 +110,8 @@ impl Connection {
                 }
             }
         });
+        let events: Arc<std::sync::Mutex<HashMap<String, OwnedEventId>>> = Arc::default();
+        let seen = Arc::clone(&events);
         let task = spawn(async move {
             // Typing notices come for as long as this is held.
             let _typing_guard = typing_guard;
@@ -126,6 +131,7 @@ impl Connection {
             let mut changed = (true, true);
             loop {
                 if changed.0 {
+                    remember_events(&items, &seen);
                     let (list, missing) = messages(&items, &own);
                     if tx.send(ChatUpdate::Messages(list)).is_err() {
                         return;
@@ -162,7 +168,7 @@ impl Connection {
                 };
             }
         });
-        Ok(ChatTimeline { timeline, connection_rooms: rooms, room_id, lists, _task: AbortOnDrop::new(task) })
+        Ok(ChatTimeline { timeline, events, connection_rooms: rooms, room_id, lists, _task: AbortOnDrop::new(task) })
     }
 }
 
@@ -232,13 +238,20 @@ impl ChatTimeline {
 
     /// The timeline's item for a message.
     async fn item(&self, message: &MessageId) -> Result<EventTimelineItem, TimelineError> {
-        self.timeline
-            .items()
-            .await
-            .iter()
-            .find(|i| i.unique_id() == &TimelineUniqueId(message.0.clone()))
-            .and_then(|i| i.as_event().cloned())
-            .ok_or(TimelineError::NoSuchMessage)
+        let items = self.timeline.items().await;
+        let at = self.position(&items, message)?;
+        items.get(at).and_then(|i| i.as_event().cloned()).ok_or(TimelineError::NoSuchMessage)
+    }
+
+    /// Where a message is among `items`: by its ID, or, when the timeline was rebuilt since the ID was handed out, by
+    /// the event it was.
+    fn position(&self, items: &Vector<Arc<TimelineItem>>, message: &MessageId) -> Result<usize, TimelineError> {
+        let id = TimelineUniqueId(message.0.clone());
+        if let Some(at) = items.iter().position(|i| i.unique_id() == &id) {
+            return Ok(at);
+        }
+        let event = self.events.lock().ok().and_then(|e| e.get(&message.0).cloned()).ok_or(TimelineError::NoSuchMessage)?;
+        items.iter().position(|i| i.as_event().and_then(|e| e.event_id()) == Some(event.as_ref())).ok_or(TimelineError::NoSuchMessage)
     }
 
     /// Sends a text message that replies to `to`.
@@ -271,7 +284,7 @@ impl ChatTimeline {
     /// A message's details: when it was sent, whether it was encrypted, who has read it, and its earlier versions.
     pub async fn details(&self, message: &MessageId) -> Result<MessageDetails, TimelineError> {
         let items = self.timeline.items().await;
-        let at = items.iter().position(|i| i.unique_id() == &TimelineUniqueId(message.0.clone())).ok_or(TimelineError::NoSuchMessage)?;
+        let at = self.position(&items, message)?;
         let item = items.get(at).and_then(|i| i.as_event()).ok_or(TimelineError::NoSuchMessage)?;
         let names: HashMap<OwnedUserId, String> = items
             .iter()
@@ -341,6 +354,16 @@ impl ChatTimeline {
 impl Drop for ChatTimeline {
     fn drop(&mut self) {
         self.connection_rooms.remove_room_subscriptions(&[&self.room_id]);
+    }
+}
+
+/// Notes the event behind each message ID in `items` (kept for IDs the timeline later drops).
+fn remember_events(items: &Vector<Arc<TimelineItem>>, events: &std::sync::Mutex<HashMap<String, OwnedEventId>>) {
+    let Ok(mut events) = events.lock() else { return };
+    for item in items {
+        if let Some(event) = item.as_event().and_then(|e| e.event_id()) {
+            events.entry(item.unique_id().0.clone()).or_insert_with(|| event.to_owned());
+        }
     }
 }
 

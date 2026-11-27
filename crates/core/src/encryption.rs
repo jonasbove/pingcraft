@@ -19,6 +19,17 @@ pub enum RecoveryStatus {
     NeedsKey,
 }
 
+/// Why a new recovery key was not made, when it is something the user can act on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecoveryRefusal {
+    /// The server wants the account password first.
+    NeedsPassword,
+    /// The server did not take the account password given.
+    WrongPassword,
+    /// The server wants another way of proving it is the user, which PingCraft cannot do yet.
+    NotSupported,
+}
+
 /// The account's recovery key, as the user saves it or types it in. Wiped from memory when dropped, and never
 /// shown by `Debug`.
 #[derive(Clone, PartialEq, Eq)]

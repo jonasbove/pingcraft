@@ -67,9 +67,8 @@ allow-wildcard-paths = true
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-# The egui and winit forks the Craft apps share ([patch.crates-io]), and craft-libs pinned by rev.
-allow-git = [
-    "https://github.com/storytold/craft-libs",
-    "https://github.com/storytold/egui.git",
-    "https://github.com/storytold/winit.git",
-]
+# Any storytold repository, always pinned by rev (maintainer, 2026-11-26; PLAN.md, Quality gates): craft-libs, the egui
+# and winit forks the Craft apps share ([patch.crates-io]), and what craft-libs' UI library pulls in from storytold
+# (vectorcraft, through craft-ui's craft-svg). Git sources outside storytold stay denied.
+[sources.allow-org]
+github = ["storytold"]

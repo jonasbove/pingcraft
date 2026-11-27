@@ -25,7 +25,7 @@ fn step_ref(network: &str, step: &str) -> StepRef {
 /// Signed in, on the ACCOUNTS tab, with the bridges' answers in.
 fn on_accounts(fake: &Fake, accounts: Vec<Account>) -> Harness<'static, PingCraftApp> {
     let mut h = signed_in(fake);
-    h.get_by_label("ACCOUNTS").click();
+    h.get_by_label("Accounts").click();
     h.run();
     assert!(matches!(&fake.take()[..], [Command::LoadNetworks]), "opening the tab asks the bridges");
     fake.tell([
@@ -43,25 +43,24 @@ fn accept_risk(h: &mut Harness<'static, PingCraftApp>, network: &str) {
     h.run();
     h.get_by_label(&format!("I understand that {network} may restrict or ban this account, and I want to connect it anyway.")).click();
     h.run();
-    h.get_by_label(&format!("→ CONNECT {}", network.to_uppercase())).click();
+    h.get_by_label(&format!("→ Connect {network}")).click();
     h.run();
 }
 
 #[test]
-fn the_header_has_tabs_and_settings_waits() {
+fn the_header_has_its_tabs() {
     let fake = Fake::default();
     let h = signed_in(&fake);
-    for tab in ["INBOX", "ACCOUNTS", "SETTINGS"] {
-        h.get_by_label(tab);
+    for tab in ["Inbox", "Accounts", "Settings"] {
+        assert!(!h.get_by_label(tab).accesskit_node().is_disabled(), "{tab}");
     }
-    assert!(h.get_by_label("SETTINGS").accesskit_node().is_disabled(), "no settings screen yet");
 
     let mut h = on_accounts(&fake, vec![]);
     h.get_by_label("Connect Telegram");
     assert!(h.get_by_label("Discord: not yet").accesskit_node().is_disabled(), "Discord waits for its bridge");
-    assert!(h.query_all_by_label("NO ACCOUNTS YET").count() >= 2);
+    assert!(h.query_all_by_label("No accounts yet").count() >= 2);
     h.get_by_label("0 accounts");
-    h.get_by_label("INBOX").click();
+    h.get_by_label("Inbox").click();
     h.run();
     h.get_by_label_contains("Book club, on Telegram");
 }
@@ -72,17 +71,17 @@ fn connecting_shows_the_risk_first_and_waits_for_the_tick() {
     let mut h = on_accounts(&fake, vec![]);
     h.get_by_label("Connect WhatsApp").click();
     h.run();
-    h.get_by_label("Before you connect WhatsApp");
-    h.get_by_label("RISK LEVEL · MEDIUM-HIGH");
-    // The card behind the sheet says MEDIUM-HIGH too; the scale's cell is the selected one.
-    use egui::accesskit::Toggled;
-    let marked: Vec<Option<Toggled>> = h.get_all_by_label("MEDIUM-HIGH").map(|n| n.accesskit_node().toggled()).collect();
-    assert!(marked.contains(&Some(Toggled::True)), "the scale marks WhatsApp's level: {marked:?}");
-    let low: Vec<Option<Toggled>> = h.get_all_by_label("LOW").map(|n| n.accesskit_node().toggled()).collect();
-    assert!(low.contains(&Some(Toggled::False)) && !low.contains(&Some(Toggled::True)), "{low:?}");
+    h.get_by_role_and_label(egui::accesskit::Role::Dialog, "Before you connect WhatsApp");
+    h.get_by_label("Risk level · Medium-high");
+    // The card behind the sheet says Medium-high too; the scale's badge is the selected one.
+    let level = |label: &str| -> Vec<Option<String>> { h.get_all_by_label(label).map(|n| n.accesskit_node().description()).collect() };
+    let marked = level("Medium-high");
+    assert!(marked.contains(&Some("This network's level".into())), "the scale marks WhatsApp's level: {marked:?}");
+    let low = level("Low");
+    assert!(low.iter().all(Option::is_none), "{low:?}");
     h.get_by_label_contains("WhatsApp's terms don't allow unofficial apps");
     h.get_by_label_contains("the link drops");
-    let connect = "→ CONNECT WHATSAPP";
+    let connect = "→ Connect WhatsApp";
     assert!(h.get_by_label(connect).accesskit_node().is_disabled(), "not before the risk is accepted");
     h.get_by_label(connect).click();
     h.run();
@@ -93,9 +92,9 @@ fn connecting_shows_the_risk_first_and_waits_for_the_tick() {
     h.get_by_label(connect).click();
     h.run();
     // Two ways to log in: the user picks one.
-    h.get_by_label("HOW DO YOU WANT TO LOG IN?");
+    h.get_by_label("How do you want to log in?");
     assert!(fake.take().is_empty());
-    h.get_by_label("PAIRING CODE").click();
+    h.get_by_label("Pairing code").click();
     h.run();
     assert!(matches!(&fake.take()[..], [Command::StartLogin { network, flow }] if network.id() == "whatsapp" && flow == "phone"));
 }
@@ -106,9 +105,9 @@ fn cancelling_the_risk_screen_sends_nothing() {
     let mut h = on_accounts(&fake, vec![]);
     h.get_by_label("Connect Telegram").click();
     h.run();
-    h.get_by_label("Before you connect Telegram");
-    h.get_by_label("RISK LEVEL · LOW");
-    h.get_by_label("CANCEL").click();
+    h.get_by_role_and_label(egui::accesskit::Role::Dialog, "Before you connect Telegram");
+    h.get_by_label("Risk level · Low");
+    h.get_by_label("Cancel").click();
     h.run();
     assert!(h.query_by_label("Before you connect Telegram").is_none());
     assert!(fake.take().is_empty());
@@ -134,9 +133,10 @@ fn a_qr_code_is_shown_until_cancelled() {
     let code = h.get_by_label("QR code to scan with Signal");
     assert_eq!(code.accesskit_node().role(), egui::accesskit::Role::Image);
     h.get_by_label("Scan the QR code on your other device");
-    h.get_by_label("CANCEL").click();
+    h.get_by_label("Cancel").click();
     h.run();
-    assert!(matches!(&fake.take()[..], [Command::CancelLogin(step)] if *step == step_ref("signal", "fi.mau.signal.qr")));
+    let sent = fake.take();
+    assert!(matches!(&sent[..], [Command::CancelLogin(step)] if *step == step_ref("signal", "fi.mau.signal.qr")), "{sent:?}");
     assert!(h.query_by_label("QR code to scan with Signal").is_none());
 }
 
@@ -145,7 +145,7 @@ fn a_question_is_answered_and_done_closes_the_sheet() {
     let fake = Fake::default();
     let mut h = on_accounts(&fake, vec![]);
     accept_risk(&mut h, "Telegram");
-    h.get_by_label("PHONE NUMBER").click();
+    h.get_by_label("Phone number").click();
     h.run();
     fake.take();
     let field = InputField {
@@ -163,9 +163,9 @@ fn a_question_is_answered_and_done_closes_the_sheet() {
         can_cancel: true,
     })]);
     h.run();
-    assert!(h.get_by_label("CONTINUE").accesskit_node().is_disabled());
-    type_into(&mut h, "PHONE NUMBER", "+4512345678");
-    h.get_by_label("CONTINUE").click();
+    assert!(h.get_by_label("Continue").accesskit_node().is_disabled());
+    type_into(&mut h, "Phone number", "+4512345678");
+    h.get_by_label("Continue").click();
     h.run();
     let sent = fake.take();
     assert!(
@@ -174,7 +174,7 @@ fn a_question_is_answered_and_done_closes_the_sheet() {
     );
     fake.tell([Event::Login(LoginStep::Done { network: Network::from_id("telegram"), account: AccountId("new".into()) })]);
     h.run();
-    assert!(h.query_by_label("CONTINUE").is_none(), "the sheet closed");
+    assert!(h.query_by_label("Continue").is_none(), "the sheet closed");
     h.get_by_label_contains("Telegram is connected.");
 }
 
@@ -186,7 +186,7 @@ fn a_failed_login_says_why() {
     fake.tell([Event::LoginFailed { network: Network::from_id("signal"), error: BridgeError::NotAuthorized }]);
     h.run();
     h.get_by_label_contains("could not confirm who you are");
-    h.get_by_label("CLOSE").click();
+    super::click_in_footer(&mut h, "Close");
     h.run();
     assert!(h.query_by_label_contains("could not confirm who you are").is_none());
 }
@@ -197,20 +197,20 @@ fn removing_an_account_asks_first() {
     let account =
         Account { id: AccountId("u1".into()), network: Network::from_id("signal"), name: "+45 12 34 56 78".into(), state: AccountState::Connected };
     let mut h = on_accounts(&fake, vec![account]);
-    h.get_by_label("YOUR ACCOUNTS · 1 ACCOUNT");
+    h.get_by_label("Your accounts · 1 account");
     h.get_by_label("+45 12 34 56 78");
     h.get_by_label("Remove +45 12 34 56 78").click();
     h.run();
-    h.get_by_label("Remove this account?");
+    h.get_by_role_and_label(egui::accesskit::Role::Dialog, "Remove this account?");
     assert!(fake.take().is_empty(), "nothing is removed before it is confirmed");
-    h.get_by_label("CANCEL").click();
+    h.get_by_label("Cancel").click();
     h.run();
     assert!(h.query_by_label("Remove this account?").is_none());
     assert!(fake.take().is_empty());
 
     h.get_by_label("Remove +45 12 34 56 78").click();
     h.run();
-    h.get_by_label("REMOVE ACCOUNT").click();
+    h.get_by_label("Remove account").click();
     h.run();
     assert!(matches!(&fake.take()[..], [Command::RemoveAccount { network, account }] if network.id() == "signal" && account.0 == "u1"));
     fake.tell([Event::AccountRemoved { network: Network::from_id("signal"), account: AccountId("u1".into()) }]);
@@ -226,7 +226,7 @@ fn an_empty_inbox_leads_to_connecting_a_network() {
     fake.tell([Event::SignedIn { user: "@ana:example.org".into() }, Event::Inbox(InboxChange::Reset(vec![]))]);
     h.run();
     h.get_by_label("Your chats, one inbox.");
-    h.get_by_label("CONNECT A NETWORK").click();
+    h.get_by_label("Connect a network").click();
     h.run();
     assert!(matches!(&fake.take()[..], [Command::LoadNetworks]));
     h.get_by_label("Connect Telegram");
@@ -244,8 +244,8 @@ fn the_cards_and_the_risk_sheet_fit_the_window() {
     }
     h.get_by_label("Connect WhatsApp").click();
     h.run();
-    let go = h.get_by_label("→ CONNECT WHATSAPP").accesskit_node().raw_bounds().unwrap();
-    let title = h.get_by_label("Before you connect WhatsApp").accesskit_node().raw_bounds().unwrap();
+    let go = h.get_by_label("→ Connect WhatsApp").accesskit_node().raw_bounds().unwrap();
+    let title = h.get_by_role_and_label(egui::accesskit::Role::Dialog, "Before you connect WhatsApp").accesskit_node().raw_bounds().unwrap();
     assert!(title.y0 >= 0.0 && go.y1 <= 760.0, "the whole risk sheet is in the window: {title:?} to {go:?}");
 }
 
@@ -254,7 +254,7 @@ fn a_password_is_sent_as_typed_and_never_shown_by_debug() {
     let fake = Fake::default();
     let mut h = on_accounts(&fake, vec![]);
     accept_risk(&mut h, "Telegram");
-    h.get_by_label("PHONE NUMBER").click();
+    h.get_by_label("Phone number").click();
     h.run();
     fake.take();
     let field = |id: &str, kind: FieldKind, name: &str| InputField {
@@ -268,11 +268,11 @@ fn a_password_is_sent_as_typed_and_never_shown_by_debug() {
     let fields = vec![field("code", FieldKind::Code, "Code"), field("password", FieldKind::Password, "Two-step password")];
     fake.tell([Event::Login(LoginStep::Ask { step: step_ref("telegram", "2fa"), instructions: String::new(), fields, can_cancel: true })]);
     h.run();
-    type_into(&mut h, "CODE", " 12345 ");
-    type_into(&mut h, "TWO-STEP PASSWORD", " spaces count ");
+    type_into(&mut h, "Code", " 12345 ");
+    type_into(&mut h, "Two-step password", " spaces count ");
     let shown = format!("{:?}", h.state().state.accounts);
     assert!(!shown.contains("12345") && !shown.contains("spaces count"), "{shown}");
-    h.get_by_label("CONTINUE").click();
+    h.get_by_label("Continue").click();
     h.run();
     let sent = fake.take();
     let [Command::AnswerLogin { answers, .. }] = &sent[..] else { panic!("{sent:?}") };
@@ -286,7 +286,7 @@ fn a_connected_network_says_so_instead_of_offering_to_connect() {
     let account =
         Account { id: AccountId("u1".into()), network: Network::from_id("signal"), name: "+45 12 34 56 78".into(), state: AccountState::Connected };
     let h = on_accounts(&fake, vec![account]);
-    h.get_by_label("Signal: connected");
+    connect_line(&h, "Signal: connected");
     assert!(h.query_by_label("Connect Signal").is_none(), "no CONNECT button for a network that is connected");
     h.get_by_label("Connect Telegram");
 }
@@ -297,7 +297,7 @@ fn a_logged_out_account_offers_to_reconnect() {
     let account =
         Account { id: AccountId("u1".into()), network: Network::from_id("signal"), name: "+45 12 34 56 78".into(), state: AccountState::LoggedOut };
     let h = on_accounts(&fake, vec![account]);
-    assert!(h.query_by_label("Signal: connected").is_none());
+    assert!(!h.get_all_by_label("Connected").any(|n| n.accesskit_node().description().is_some()), "no Connected label");
     h.get_by_label("Reconnect Signal");
 }
 
@@ -309,10 +309,39 @@ fn every_card_has_its_account_line_and_button_at_the_same_height() {
     let mut h = on_accounts(&fake, vec![account]);
     // The cards line up from the tallest description measured on the frame before.
     h.run();
-    let top = |label: &str| h.get_by_label(label).accesskit_node().raw_bounds().unwrap().y0;
-    let telegram = top("Connect Telegram");
+    // Each card's last line is a button or, once connected, a label in its place: centred on one line, at the card's
+    // right edge. The label is no button: it is not as tall as one.
+    let bounds = |h: &Harness<'static, PingCraftApp>, name: &str| connect_line(h, name);
+    let telegram = bounds(&h, "Connect Telegram");
+    let centre = |r: egui::accesskit::Rect| (r.y0 + r.y1) / 2.0;
     for other in ["Signal: connected", "Connect WhatsApp", "Discord: not yet"] {
-        assert!((top(other) - telegram).abs() < 1.0, "{other} is at {}, Telegram's button at {telegram}", top(other));
+        let r = bounds(&h, other);
+        assert!((centre(r) - centre(telegram)).abs() < 1.0, "{other} is centred at {}, Telegram's button at {}", centre(r), centre(telegram));
+    }
+    let (connect, connected) = (bounds(&h, "Connect Telegram"), bounds(&h, "Signal: connected"));
+    let width = |r: egui::accesskit::Rect| r.x1 - r.x0;
+    // Two cards of one width: the same right edge within each card.
+    let (whatsapp, discord) = (bounds(&h, "Connect WhatsApp"), bounds(&h, "Discord: not yet"));
+    // Telegram, Signal, WhatsApp and Discord, in that order: WhatsApp is two cards on from Telegram.
+    let card = (whatsapp.x1 - connect.x1) / 2.0;
+    assert!(card > 0.0, "the cards are side by side");
+    assert!(((connected.x1 - connect.x1) - card).abs() < 1.0, "Connected ends where Connect would, one card on");
+    assert!(((discord.x1 - whatsapp.x1) - card).abs() < 1.0, "every card's last line ends at its right edge");
+    assert!(connected.y1 - connected.y0 < connect.y1 - connect.y0, "Connected is a label, not as tall as a button");
+    assert!(width(connected) > 0.0);
+}
+
+/// A card's last line by its accessible name, or for "<network>: connected" the Connected label that says so.
+fn connect_line(h: &Harness<'static, PingCraftApp>, name: &str) -> egui::accesskit::Rect {
+    match name.strip_suffix(": connected") {
+        Some(network) => h
+            .get_all_by_label("Connected")
+            .find(|n| n.accesskit_node().description().is_some_and(|d| d.starts_with(network)))
+            .unwrap_or_else(|| panic!("no Connected label for {network}"))
+            .accesskit_node()
+            .raw_bounds()
+            .unwrap(),
+        None => h.get_by_label(name).accesskit_node().raw_bounds().unwrap(),
     }
 }
 
@@ -324,7 +353,7 @@ fn an_account_row_leaves_room_between_the_tag_the_name_and_the_state() {
     let h = on_accounts(&fake, vec![account]);
     let name = h.get_by_label("+45 12 34 56 78").accesskit_node().raw_bounds().unwrap();
     let tag = h
-        .get_all_by_label("SIGNAL")
+        .get_all_by_label("Signal")
         .map(|n| n.accesskit_node().raw_bounds().unwrap())
         .find(|r| (r.y0 + r.y1) / 2.0 > name.y0 && (r.y0 + r.y1) / 2.0 < name.y1)
         .unwrap();
@@ -337,12 +366,47 @@ fn an_account_row_leaves_room_between_the_tag_the_name_and_the_state() {
 fn refresh_is_on_every_tab() {
     let fake = Fake::default();
     let mut h = on_accounts(&fake, vec![]);
-    h.get_by_label("REFRESH").click();
+    h.get_by_label("Refresh").click();
     h.run();
     assert!(matches!(&fake.take()[..], [Command::Refresh]));
-    h.get_by_label("INBOX").click();
+    h.get_by_label("Inbox").click();
     h.run();
-    h.get_by_label("REFRESH").click();
+    h.get_by_label("Refresh").click();
     h.run();
     assert!(matches!(&fake.take()[..], [Command::Refresh]));
+}
+
+/// With the risk sheet open over the ACCOUNTS tab, Tab moves among the sheet's controls only: never to the header's
+/// tabs, Refresh or the cards behind it; and Escape cancels it.
+#[test]
+fn tab_stays_inside_the_risk_sheet_and_escape_cancels_it() {
+    let fake = Fake::default();
+    let mut h = on_accounts(&fake, vec![]);
+    h.get_by_label("Connect Telegram").click();
+    h.run();
+    h.step();
+    let sheet = h.get_by_role_and_label(egui::accesskit::Role::Dialog, "Before you connect Telegram").accesskit_node().raw_bounds().unwrap();
+    h.get_by_label("Cancel").focus();
+    h.run();
+    let mut reached = 0;
+    for _ in 0..6 {
+        h.key_press(egui::Key::Tab);
+        h.run();
+        let focused: Vec<(Option<String>, egui::accesskit::Rect)> =
+            h.query_all_by(|n| n.is_focused()).filter_map(|n| Some((n.accesskit_node().label(), n.accesskit_node().raw_bounds()?))).collect();
+        reached += focused.len();
+        for (label, b) in &focused {
+            for behind in ["Inbox", "Accounts", "Refresh", "Connect Signal", "Connect WhatsApp"] {
+                assert_ne!(label.as_deref(), Some(behind), "Tab reached {behind} behind the sheet");
+            }
+            assert!(b.x0 >= sheet.x0 - 40.0, "focus at {b:?} is inside the sheet starting at {sheet:?}");
+        }
+    }
+    assert!(reached > 0, "Tab focuses the sheet's controls");
+    // Escape is the sheet's Cancel: it closes, and nothing is sent.
+    fake.take();
+    h.key_press(egui::Key::Escape);
+    h.run();
+    assert!(h.query_by_role_and_label(egui::accesskit::Role::Dialog, "Before you connect Telegram").is_none(), "Escape closes the sheet");
+    assert!(fake.take().is_empty());
 }

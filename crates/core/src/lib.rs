@@ -7,6 +7,7 @@
 
 pub mod app;
 pub mod bridge;
+pub mod devices;
 pub mod encryption;
 mod inbox;
 pub mod notify;
@@ -177,32 +178,46 @@ pub enum DraftFor {
     Edit(String),
 }
 
-/// The accent colours a chat or a network can take: the network colours, by the network they belong to by default
-/// (PLAN.md, "Later": network colours). Saved by [`Accent::id`].
+/// An accent colour a chat or a network can take: any colour, chosen with the colour picker, and saved as `#rrggbb`
+/// (maintainer, 2026-11-26). Each network has a colour of its own ([`Accent::of_network`]), which the interface
+/// draws in the shade that suits the theme's mode; any other colour is drawn as it is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Accent {
-    Telegram,
-    Signal,
-    WhatsApp,
-    Discord,
-}
+pub struct Accent(pub [u8; 3]);
+
+/// The networks' own colours, as saved: the shade drawn in a light theme. The interface keeps a lighter shade of each
+/// for a dark theme. Never change one: a saved colour equal to one of these is that network's colour.
+const NETWORK_COLOURS: [(&str, [u8; 3]); 4] =
+    [("telegram", [0x2b, 0x52, 0x78]), ("signal", [0x1c, 0x56, 0xc4]), ("whatsapp", [0x17, 0x70, 0x3c]), ("discord", [0x4a, 0x4e, 0xc8])];
 
 impl Accent {
-    pub const ALL: [Self; 4] = [Self::Telegram, Self::Signal, Self::WhatsApp, Self::Discord];
+    /// The networks that have a colour of their own, by id.
+    pub const NETWORKS: [&'static str; 4] = ["telegram", "signal", "whatsapp", "discord"];
 
-    /// The name it is saved under, which is also the network whose colour it is. Never change one.
-    pub fn id(self) -> &'static str {
-        match self {
-            Self::Telegram => "telegram",
-            Self::Signal => "signal",
-            Self::WhatsApp => "whatsapp",
-            Self::Discord => "discord",
-        }
+    /// A network's own colour, by its id; `None` for Matrix and networks without one.
+    pub fn of_network(id: &str) -> Option<Self> {
+        NETWORK_COLOURS.iter().find(|(n, _)| *n == id).map(|(_, rgb)| Self(*rgb))
     }
 
-    /// The colour saved under `id`; `None` for anything else (a saved value is never trusted).
-    pub fn from_id(id: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|a| a.id() == id)
+    /// The network whose own colour this is, if it is one.
+    pub fn network(self) -> Option<&'static str> {
+        NETWORK_COLOURS.iter().find(|(_, rgb)| *rgb == self.0).map(|(n, _)| *n)
+    }
+
+    /// How it is saved: `#rrggbb`, in lower case.
+    pub fn hex(self) -> String {
+        let [r, g, b] = self.0;
+        format!("#{r:02x}{g:02x}{b:02x}")
+    }
+
+    /// A saved colour: `#rrggbb` (either case), or, as saved before any colour could be chosen, the id of the network
+    /// whose colour it is (`"signal"`). `None` for anything else: a saved value is never trusted.
+    pub fn parse(saved: &str) -> Option<Self> {
+        let Some(digits) = saved.strip_prefix('#') else { return Self::of_network(saved) };
+        if digits.len() != 6 || !digits.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return None;
+        }
+        let byte = |at: usize| digits.get(at..at + 2).and_then(|pair| u8::from_str_radix(pair, 16).ok());
+        Some(Self([byte(0)?, byte(2)?, byte(4)?]))
     }
 }
 
@@ -390,21 +405,39 @@ pub enum SendState {
 mod tests {
     use super::{Chat, ChatId, MessageBody, MessagePreview, Network, Timestamp};
 
-    /// A chat's settings win over its network's, which win over the default; a saved colour is only ever one of the
-    /// network colours.
+    /// A chat's settings win over its network's, which win over the default.
     #[test]
     fn a_chats_alerts_win_over_its_networks() {
         use super::{Accent, Alerts};
-        let network = Alerts { sound: Some(false), accent: Some(Accent::Signal) };
-        let chat = Alerts { sound: None, accent: Some(Accent::WhatsApp) };
-        assert_eq!(chat.over(network), Alerts { sound: Some(false), accent: Some(Accent::WhatsApp) });
+        let signal = Accent::of_network("signal");
+        let mine = Accent([0x12, 0x34, 0x56]);
+        let network = Alerts { sound: Some(false), accent: signal };
+        let chat = Alerts { sound: None, accent: Some(mine) };
+        assert_eq!(chat.over(network), Alerts { sound: Some(false), accent: Some(mine) });
         assert!(!chat.over(network).sounds());
         assert!(Alerts::default().over(Alerts::default()).sounds(), "sound is on unless turned off");
-        for accent in Accent::ALL {
-            assert_eq!(Accent::from_id(accent.id()), Some(accent));
+    }
+
+    /// Any colour is saved as `#rrggbb` and read back; what was saved before colours could be chosen (a network's id)
+    /// still reads as that network's colour; anything else is refused.
+    #[test]
+    fn accents_are_saved_as_hex_and_old_network_ids_still_read() {
+        use super::Accent;
+        let mine = Accent([0x0a, 0xbc, 0xff]);
+        assert_eq!(mine.hex(), "#0abcff");
+        assert_eq!(Accent::parse(&mine.hex()), Some(mine));
+        assert_eq!(Accent::parse("#0ABCFF"), Some(mine), "either case");
+        assert_eq!(mine.network(), None);
+        for id in Accent::NETWORKS {
+            let old = Accent::parse(id);
+            assert!(old.is_some(), "{id}");
+            assert_eq!(old, Accent::of_network(id));
+            assert_eq!(old.and_then(Accent::network), Some(id), "an old id stays that network's colour");
+            assert_eq!(old.map(Accent::hex).as_deref().and_then(Accent::parse), old, "and is saved as hex from then on");
         }
-        assert_eq!(Accent::from_id("#ff0000"), None);
-        assert_eq!(Accent::from_id(""), None);
+        for nonsense in ["", "#", "#12345", "#1234567", "#gg0000", "red", "matrix", "#+12345", "\u{1F600}"] {
+            assert_eq!(Accent::parse(nonsense), None, "{nonsense:?}");
+        }
     }
 
     #[test]

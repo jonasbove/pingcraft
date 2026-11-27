@@ -38,8 +38,8 @@ These apply from milestone 2 on (ADR 0009):
   yet: integration tests are several binaries in `crates/matrix/tests/` rather than one `tests/it/main.rs` per
   crate (rule 30); there is no automation interface or `pingcraft-cli mcp` (rules 14 and 18); interface text goes
   through a stand-in for craft-i18n, which now links next to matrix-sdk but is not swapped in yet (rule 16; M2
-  ticket 9); colours come from
-  PingCraft's own tokens until it moves onto craft-theme (rule 14).
+  ticket 9); colours, type sizes, radii and control heights come from craft-ui's theme since the craft-libs update,
+  part 1, but panel heights, margins, widths and emoji symbol sizes are still literals in the code (rule 14).
 - **Git dependencies** (maintainer, 2026-11-26): any `github.com/storytold` repository may be a cargo git source
   (for example `storytold/vectorcraft`, which craft-libs' `craft-svg` pulls in through `craft-ui`), always pinned
   by `rev`. The change that first needs a storytold source not yet in `deny.toml` replaces the per-repository
@@ -138,7 +138,7 @@ desktop target.
    (`pingcraft_core::encryption`) is what the interface renders. Tested against tuwunel with fresh users. Open,
    for the maintainer: what to offer when the recovery key is lost (resetting it loses the encrypted history);
    an account with a key backup but no secret storage (made by another client); verifying other people; QR codes.
-9. **Done, with gaps below.** **UI:** the window and app icon from `design/assets/logo/`, the orchid theme from `design/tools/lib.py`, and the sign-in, inbox and chat screens in `pingcraft-ui-egui`, with i18n and `egui_kittest` AccessKit tests.
+9. **Done, with gaps below.** **UI:** the window and app icon from `design/assets/logo/`, the orchid theme from `design/tools/lib.py` (replaced by craft-ui's default theme in the craft-libs update, part 1), and the sign-in, inbox and chat screens in `pingcraft-ui-egui`, with i18n and `egui_kittest` AccessKit tests.
 
    Built: the sign-in, unlock (and choosing a passphrase), inbox, chat (every message state, retry, older
    messages), recovery key, entering the recovery key and verify-device sheets, over
@@ -149,11 +149,16 @@ desktop target.
      `trn`) and no catalogs. The swap is its own change, not a drop-in: craft-i18n's `trn` writes numbers grouped
      for the region ("1,234 chats"), `fmt` wraps inserted values in bidi isolates when there is right-to-left
      text, and catalogs need a `build.rs` (`craft-i18n-build`) and an `I18n` with the language setting.
-   - **Fonts:** Archivo, Inter and Geist Mono are not bundled (house rule 3 puts fonts in craft-fonts, and
-     PingCraft does not use it yet); egui's own faces stand in. egui's emoji face lacks some of the SAS symbols.
+   - **Fonts: craft-ui's font stack** (craft-libs update, part 1, 2026-11-26; maintainer: craft-libs dictates the
+     look). The interface draws with `craft_ui::fonts::UiFonts`: craft-ui's Inter (it ships the face itself) ahead
+     of egui's faces, installed system fonts on the desktop for scripts those lack (`system_fonts`; the tests turn
+     them off so they draw the same everywhere), and egui's monochrome emoji as the last resort. The design's
+     Archivo and Geist Mono are gone with PingCraft's own look. No craft-fonts faces are embedded yet
+     (`craft-fonts-build`'s `Embed`, a craft-fonts checkout in `CRAFT_FONTS_DIR`): the web build will need them for
+     other scripts, since it has no system fonts.
    - **Design gaps** (built in the design's language, for the maintainer to review): choosing a passphrase, the
      "this device can't read earlier messages" notice, entering the recovery key, and a confirmation before
-     signing out from the unlock sheet clears this computer. White on the orchid (unread counts) is 4.47:1, a
+     signing out from the unlock sheet clears this computer. (Before part 1:) White on the orchid (unread counts) was 4.47:1, a
      hair under the 4.5:1 the design states.
    - **Not built yet:** the SETTINGS tab (ACCOUNTS came with milestone 3), the network filter (a later decision), the chat header's
      account line (its "…" menu came with "Messages and chats"), SAVE TO FILE for the recovery key, deleting a failed message, and the window's own
@@ -229,12 +234,37 @@ Goal: a user connects Telegram, Signal and WhatsApp accounts from PingCraft, aft
    warning.** **WhatsApp:** bridge in compose, connected from PingCraft, with the bridge's "phone offline" warning shown in
    the inbox. **(maintainer: an account)**
 10. **Done.** **Accounts screen:** list a user's accounts and remove one.
-    The header's INBOX and ACCOUNTS tabs (SETTINGS shows, disabled, until it has a screen); the network cards from
+    The header's INBOX and ACCOUNTS tabs (and SETTINGS, M3 ticket 11); the network cards from
     `connect-network`, with each card's accounts and whether its bridge answers; the user's accounts with their state
     and REMOVE, which asks first; and "Connect a network" from the empty inbox. Not checked against a real account
     (tickets 7 to 9), and the screens were checked through their AccessKit tree only, not by eye.
-11. **Settings screen** (maintainer, 2026-11-25): the header's SETTINGS tab, disabled until now. Not in the design
-    yet: add a `settings` frame to `design/pingcraft.figcraft` first. Sections:
+11. **Built (2026-11-26), with gaps; no frame yet** (it follows craft-libs' preferences pattern, so the design file
+    needs a `settings` frame drawn after it). The SETTINGS tab, on `PreferencesPage` (craft-libs update, step 5):
+    - **Appearance:** light, dark, or as the system is (default), as craft-theme's mode, kept on this computer
+      (`[appearance] mode = "light" | "dark" | "system"` in craft-settings' `config.toml`: on Linux
+      `$XDG_CONFIG_HOME/pingcraft/config.toml`, or `$PINGCRAFT_CONFIG_DIR/config.toml`), also from View, Appearance in
+      the app menu. It is read and handed to the runtime before the first frame (`PingCraftApp::prime`; tested), so a
+      dark choice never opens on a light frame. "As the system is" follows craft-platform's appearance reader, which
+      `framework::install` starts on the desktop (the XDG portal's `color-scheme` on Linux) and which wakes the window
+      when it changes; not tried by hand. A footnote says colour themes are not there yet (M6 ticket
+      7 adds them on this page).
+    - **Notifications:** message text in notifications on or off (off: "New message from …"), kept with the account
+      (see "Questions for the maintainer"; this computer keeps a copy in `[notifications] previews`); and each network's notification sound and accent colour (moved here from the
+      ACCOUNTS tab, which now points here), the colour any colour from craft-color-ui's colour picker
+      (`ColorPickerDialog`, eyedropper off) or typed as hex, kept with the account as before.
+    - **Emoji:** the default skin tone, the same synced setting as the picker's.
+    - **Security:** this device's name (renamed when the field is committed); the unlock passphrase, changed in a
+      sheet that asks for the current one and the new one twice (only where PingCraft uses one; with the keychain the
+      row says there is none); sign out of this device, in a sheet that warns when no recovery key is set up; the
+      recovery key's state, with "Create a new recovery key…" when this device can open the backup or there is none
+      (a sheet asks first, then the key is shown once in the first sign-in's sheet, captioned "New recovery key"), or
+      "Enter recovery key…" and "Verify this device" when it cannot; and the other devices, each with its name, when
+      it was last seen and whether it is verified, with Verify (the usual verification sheet) and Sign out, which asks
+      for the account password (the server's interactive authentication; a server that asks for something else gets
+      "PingCraft cannot do that yet").
+    - **Gaps:** Reset Section shows on every page (craft-libs gives no way to leave it out); on Security it does
+      nothing, since nothing there has a default. Not looked at by eye, and no live test ran.
+    The original list, for reference:
     - **Appearance:** dark or light theme.
     - **Passphrase:** change the passphrase that unlocks PingCraft on this device (ADR 0004).
     - **Recovery key:** whether recovery is set up, and making a new key, shown once as on first sign-in.
@@ -290,7 +320,7 @@ Starts when mautrix-discord releases its bridgev2 rewrite (ADR 0008).
    What notifies: a new message from someone else in a chat that is not muted, unless that chat is open and the
    window has focus. The title is the chat's name, the body the sender and a short preview; message text never goes
    in a log. Clicking a notification opens its chat where the platform reports clicks. A setting to leave previews
-   out comes with the Settings screen (milestone 3, ticket 11).
+   out is on the Settings screen's Notifications page (done 2026-11-26; kept on this computer).
 
    **Built (2026-11-25), checked on Linux only.** `pingcraft-notify`: zbus 5 (already in the tree through the
    keyring) on Linux and the BSDs, with clicks from the `default` action; notify-rust 4.19 (MIT OR Apache-2.0) on
@@ -316,7 +346,7 @@ Starts when mautrix-discord releases its bridgev2 rewrite (ADR 0008).
      `cargo clippy` for `aarch64-pc-windows-msvc` and unit tests of the file's layout on Linux; **untested on
      Windows**: whether Windows accepts the shortcut and then shows toasts is not known. A failure is said once on
      stderr and PingCraft goes on.
-   - The web build shows none (the browser's Notification API later); the preview setting comes with Settings.
+   - The web build shows none (the browser's Notification API later).
 2. Search.
 3. Media: images and files, over authenticated media.
 4. Reactions, edits and replies: now part of "Messages and chats" below.
@@ -324,10 +354,42 @@ Starts when mautrix-discord releases its bridgev2 rewrite (ADR 0008).
 6. **Unread count on the app's icon** (maintainer, 2026-11-25): the total unread on the taskbar or dock
    icon, or in the tray where there is one, cleared as chats are read. Per platform: what each desktop supports
    (Linux launchers vary) is checked in the ticket.
-7. **Colour themes** (maintainer, 2026-11-26), on craft-libs' `craft-theme` and `craft-theme-store`, after the
-   craft-libs update moves PingCraft onto craft-ui:
-   - **PingCraft's own look becomes a theme** ("PingCraft", the orchid accent) and stays the default. Network
-     colours stay the networks' own in every theme.
+7. **Colour themes: built-ins and the picker done (2026-11-27, brought forward by the maintainer); import not yet.**
+   - **Built in:** craft-libs' built-ins, the suite library's themes, and PingCraft's copies of the seven palettes
+     proposed to craft-libs (#3701 Gruvbox, #3704 Catppuccin, #3705 Tokyo Night, #3706 Nord, #3707 One Dark, #3708
+     Dracula, #3709 Solarized Light): the same `craft-design-theme` files in `crates/ui-egui/themes/`, read with
+     craft-theme's parser, under PingCraft's own ids (`pingcraft.<name>`, since `craft.` is reserved), each in
+     `ATTRIBUTION.md`. **They go away once craft-libs ships them**; a saved choice of `pingcraft.<name>` then shows
+     `craft.<name>` by itself (`themes::builtin_for`).
+   - **Choosing:** Settings, Appearance: the mode (light, dark, the system's), a Light theme and a Dark theme row of
+     craft-theme-store's `ThemeChip`s (as craft-libs' own appearance page lays them out; the chosen theme's name
+     written under its row), and "Just for PingCraft".
+   - **Where it is kept:** the Craft suite's shared choice (craft-theme-store, `selection.json` in the suite folder,
+     `~/.config/ArtCraft/themes/` on Linux, or `$CRAFT_SUITE_DIR`), with PingCraft's own override (craft-theme's
+     `AppChoice`) in `config.toml`: `[appearance] mode` and `theme_light` / `theme_dark` (empty to follow the suite),
+     and `last_suite`, the suite's choice last seen, so the window opens in it. With "Just for PingCraft" off, a choice
+     goes to the suite and the other Craft apps follow it; on, it is PingCraft's own. A theme only PingCraft has is
+     always PingCraft's own (the other apps could not show it). The old `[appearance] mode` (one setting, before the
+     suite's choice) reads as PingCraft's own mode, so it is kept as it was (decided here, for the maintainer).
+   - **Every theme looks right:** PingCraft's painted surfaces take the theme's tokens; the network colours are moved
+     in lightness as little as needed (craft-theme's `ensure_contrast`) to reach 3:1 on each theme's panels and
+     background, tested for every built-in and own theme in each mode it has. Screenshots of each own theme
+     (`tests/shots.rs`).
+   - **Import (done 2026-11-27):** Settings, Appearance, "Import a theme": a path typed in (PingCraft's host has no
+     file picker service yet) to a Craft theme (JSON, taken as it is), a base16 or base24 scheme (YAML, read by a
+     small reader of flat `key: value` lines, no YAML library) or a VS Code colour theme (JSON with comments, through
+     craft-libs' `craft-jsonc`). base16 maps base00 to the window, base01 fields, base02 lines and hover, base03 faint
+     text and edges, base04 muted text, base05 text, base08/0A/0B/0C the statuses and base0D the accent; a VS Code
+     theme's workbench colours map best-effort, and what it lacks is left to craft-theme (the notice names it). The
+     result goes to the suite library (craft-theme-store's import, as a copy when the id is taken), id
+     `imported.<name>` for a converted one, where every Craft app finds it, and is chosen for its mode. Tests: the
+     conversions (unit), importing each format through Settings and a file that is no theme (AccessKit), and
+     screenshots of one of each.
+   The original plan:
+   - **PingCraft opens in craft-libs' default theme** (maintainer, 2026-11-26): the orchid look is dropped, not
+     kept as a theme, under the rule that craft-libs dictates the look. Network colours stay the networks' own in
+     every theme. The Settings screen's Appearance page is where the theme choice goes (part 2); today it holds the
+     mode (light, dark, or the system's).
    - **Built in, in PingCraft only** (not craft-libs built-ins): Tokyo Night and Catppuccin (Latte, Frappé,
      Macchiato, Mocha), as `craft-design-theme` files from their MIT-licensed palettes, each in `ATTRIBUTION.md`;
      alongside craft-libs' own built-ins.
@@ -380,10 +442,12 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
    (+6.7 MB; the font is 5.0 MB). Follow-ups (2026-11-26) and what is still open:
    - **The web build loads the colour font after the page opens** (maintainer, 2026-11-26). `color_fonts` builds
      for wasm32 (clippy `-D warnings`, as `cargo xtask ci` checks it), so it is no longer target-gated. The web build
-     starts with egui's monochrome emoji, and `theme::install` starts fetching `noto-color-emoji/Noto-COLRv1.ttf`
+     starts with egui's monochrome emoji, and `emoji::install` starts fetching `noto-color-emoji/Noto-COLRv1.ttf`
      next to the app (through `web-sys`, no JavaScript) without holding up the first frame; once it arrives,
-     `emoji::install_color_font` checks it is the pinned file (size, then SHA-256, from `font_pin.rs`) and switches
-     faces. A failed fetch or any other file leaves emoji monochrome and says nothing. Tested natively: a context
+     `emoji::install_color_font` checks it is the pinned file (size, then SHA-256, from `font_pin.rs`) and installs
+     the font stack again with it (since the craft-libs update: craft-ui's `UiFonts` with the font as
+     `Emoji::color` and at the head of the `emoji` family; `Emoji::served` cannot do this, see "craft-libs: what
+     PingCraft lacks"). A failed fetch or any other file leaves emoji monochrome and says nothing. Tested natively: a context
      that starts monochrome draws 👍 in colour once the font is installed, and a wrong or too big file is refused.
      **Not run in a browser:** `pingcraft-web` is still the stub that exports nothing (no eframe app, no
      `index.html`, no Trunk), so the fetch has never run and the wasm size with the interface is still unknown.
@@ -572,10 +636,12 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
       4.19 cannot ask for `UNNotificationSound.defaultSound`, so notifications there stay silent whatever the
       setting. **Default: on** (decided here, for the maintainer to confirm): that is a change on Windows, where
       toasts were silent, and on Linux services that play no sound unless asked.
-    - **Accent colour:** one of the network colours (`Accent`: Telegram's, Signal's, WhatsApp's, Discord's, by id),
-      or the network's own; it colours the chat's network tag in the inbox and the chat header. A minimal choice
-      (swatches as radio buttons), no colour picker: **a fuller choice comes with the craft-libs update**
-      (craft-color-ui's colour picker, maintainer 2026-11-26). Saved values are only ever one of the four ids.
+    - **Accent colour:** any colour (maintainer, 2026-11-26), saved as `#rrggbb`; it colours the chat's network tag
+      in the inbox and the chat header. A network's own colour (`Accent::of_network`, the shade drawn in a light
+      theme) is drawn in the theme's shade of it, so it stays legible in a dark theme. Data saved before then holds a
+      network's id (`"signal"`): it reads as that network's colour (unit tests for both kinds of data) and is written
+      as hex the next time. A network's colour is set on the Settings screen with craft-color-ui's colour picker or
+      as hex; a chat's own in its "…" menu, still as swatches of the four network colours.
     - **Where they live** (decided here, for the maintainer to confirm): with the account, so they follow the user
       between devices, in PingCraft's own namespace, since no Matrix event says how a client sounds or colours a
       chat. A chat's: room account data `io.github.jonasbove.pingcraft.alerts` (`{"sound": false, "accent":
@@ -584,8 +650,8 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
       copy (other networks and keys kept), watched for other devices' changes. A chat's setting wins over its
       network's, which wins over the default. They are PingCraft's only; the networks are not told, as the menus say.
     - **Where they are set:** a SOUND AND COLOUR part of the chat's "…" menu (with USE THE NETWORK'S SOUND SETTING
-      once the chat has its own), and a SOUND AND COLOUR list on the ACCOUNTS tab, one row per network (Matrix
-      too). **No frames yet** for either; they need the maintainer's design pass.
+      once the chat has its own), and each network's on the Settings screen's Notifications page (Matrix too; moved
+      there from the ACCOUNTS tab on 2026-11-26, for the maintainer to confirm). **No frames yet** for either.
     - Tests: the levels and the colour ids (core), reading and writing both kinds of data and refusing anything else
       (adapter), the Linux hints, and through the AccessKit tree the chat menu's controls, a network's setting
       reaching a chat, a notification's sound following the chat over its network, and the ACCOUNTS tab's controls.
@@ -637,6 +703,17 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
       watches the sync's room account data, 2026-11-26), but no live test has two devices for it yet; not tried by
       hand. **Needs a frame** on page "Messages · Draft" (the filter and the
       menu items), not drawn in this change.
+    - **On craft-ui's menu, with letter keys (craft-libs update, part 1, 2026-11-26).** The message's menu is
+      craft-ui's `Menu`, opened from its "more" button or a right-click on the message or its text; rows a message
+      does not allow are left out, as before. The quick reactions are rows too ("React with 👍", checked when the
+      reaction is yours; their emoji come from the font stack's colour face): as egui buttons in the menu's body they
+      kept the keyboard out of the whole menu. Each row's label marks the design's letter as its mnemonic, which
+      craft-ui's open menu runs it from, and shows it as the row's shortcut: R reply, E more reactions, C copy text,
+      F forward, P pin, S select, I details, and T edit and D delete (the design's Up moves among the rows, and Delete
+      is no letter). Ctrl+C is not bound. Tests: Enter opens the menu, the arrows and Enter run a row, Escape closes
+      it, R starts a reply, and r typed in the composer is text. Not tried in the running app. Not done: the chat's
+      "…" menu (still an egui popup) and the app menu (craft-menu). (The note above that craft-libs `menu` is only
+      the window's menu bar is out of date: craft-menu has context menus, `craft_menu::context`.)
     - **Context menu: done, without shortcuts.** A message's menu opens from its "…" button or a right-click;
       the keyboard shortcuts in the design (through `craft-keymap`) are still to come. **They come with the
       craft-libs update** (maintainer, 2026-11-26): the bump from `cdee9b8` (done 2026-11-26, now `a6103343`) brings craft-keymap's and
@@ -650,6 +727,209 @@ PingCraft only (local pins, mute, sounds) is labelled as such.
     (page "Components", where the draft frames' icons are placeholders), then drawn in egui in place of the text
     marks used today (📌, 🔕, "…", "×", "›"). Each recorded in `ATTRIBUTION.md`; checked with craft-libs `ui`
     first (house rule 16).
+    **Superseded by craft-ui's icons** (maintainer, 2026-11-26: craft-libs dictates the look). Done (craft-libs
+    update, part 1): the marks are craft-ui's catalogue icons (`craft_ui` icons, Lucide by default): the message's
+    and the chat's menus open from `IconButton`s with `more`, the next pinned message is `chevron_right`, cancelling
+    a reply or edit is `close`, and a chat row's pinned and muted marks are labelled `Icon`s ("Pinned", "Muted";
+    they were bare emoji before, which a screen reader read as such). PingCraft draws no icons of its own, so
+    nothing goes in `ATTRIBUTION.md`. craft-ui's runtime is installed for this (`framework.rs`, the `embed` hooks in
+    the desktop app; the tests install it headless). Still text, with no catalogue icon to take: the composer's
+    emoji button (an emoji, 😀) and a loading message's "…". The menus' rows stay words; icons for reply, forward,
+    react, select and the rest come with the menus (part 1, step 4) where the catalogue has them. Network marks:
+    the network tags (craft-ui badges, step 3); no network logos, as before.
+
+## craft-libs update, part 1: PingCraft on craft-ui (2026-11-26)
+
+The maintainer's rule (2026-11-26): craft-libs is the standard and dictates how PingCraft looks and feels. Part 1
+(branch `craft-ui-1`) moves the interface onto craft-ui; the window and title bar, platform appearance, dialogs on
+craft-ui's dialog host, the i18n swap, the automation interface and colour themes come later.
+
+- **Fonts** (step 1): craft-ui's font stack, see M2 ticket 9 and "Messages and chats" 1.
+- **Runtime and icons** (step 2): see "Messages and chats" 13. The runtime is hosted through `craft_ui::shell::embed`
+  (`framework.rs`). **Not run:** the desktop app's hooks (`raw_input_hook`, `logic`, `before_ui`), `SystemWindows` and
+  the OS appearance reader only compile; the tests install the runtime headless and run no hooks, and nobody has
+  opened the window since.
+- **Theme and components** (step 3): PingCraft's own look is gone: the orchid tokens, the square corners, the mono
+  capitals and the hand-made buttons, toggles and badges. Colours, sizes and type come from craft-ui's resolved
+  theme, its default theme (part 1 said "in the system's light or dark", but `RootEnv::new()` is light; since Settings
+  the mode is the user's choice, the system's by default), read through `theme::Tokens` and written
+  into egui's style for the parts still drawn with egui (`theme::apply`, each frame, only when they change). Buttons
+  are craft-ui `Button`s (primary, secondary, danger), fields `TextField`s (Enter submits through the field's own
+  output), check boxes `Checkbox`es, the header's tabs `ToggleButton`s, the ALL / UNREAD / ARCHIVED filter a
+  `Segmented`, the unread count a count `Badge`, the encryption state a `Badge`, the risk scale `Badge`s, labels and
+  notes `Text` in the caption and body roles, and the avatar a round mark in the accent's soft fill. Labels are in
+  sentence case now ("Sign in", not "SIGN IN"); the tests find them so. The sheets are craft-ui `Dialog`s (`Dialog::prompt`,
+  `widgets::sheet`): under an egui `Modal`, Tab reached nothing once the sheets' controls were craft-ui components, so
+  they moved to craft-ui's own dialog, which keeps Tab inside and closes on Escape or its close action; that is the
+  sheet's Cancel wherever it has one (the sign-in, unlock, recovery key, verification, waiting and "already open"
+  sheets have none, so Escape leaves them open). Their logo and orchid hero are gone; their footer is PingCraft's
+  row of craft-ui buttons, not the dialog's own `FooterButton`s, and running them on craft-ui's `DialogHost` is the
+  later "dialogs" work. Tests: Tab stays in the risk sheet and Escape cancels it; Enter in the password signs in and
+  Enter in the composer sends. The reaction picker is still an egui `Modal` (its content is the egui emoji picker). Still egui, with a reason each: the
+  composer and the inbox search (`TextField` cannot lay its text out with PingCraft's emoji layout), the emoji
+  chips, quick reactions and picker cells (a craft-ui button's label is plain text, not a layout job), the message
+  list and inbox rows, and the menus' rows (step 4). Network colours stay data (`theme.rs`), a dot beside the
+  network's neutral badge.
+  - **The accent colour picker** (ticket 11), after part 1: decided by the maintainer (2026-11-26) as any colour,
+    picked with craft-color-ui's colour picker and saved as `#rrggbb` in the same account data; done with the
+    Settings screen (see "Messages and chats" 11).
+  - **Decided (maintainer, 2026-11-26): PingCraft's own theme is dropped.** PingCraft opens in craft-libs' default
+    theme; no orchid theme or app section is shipped (M6 ticket 7 updated).
+  - **The design file** (`design/`) now differs from the built app everywhere the look changed: corners, type,
+    sentence-case labels, buttons, tabs, badges, icons and the sheets' hero (no orchid band or rule). It is to be
+    redrawn later.
+  - **Not looked at by eye:** no screenshot was taken; the tests check the AccessKit tree and some geometry only.
+    Built for Linux and wasm32 only; Windows, macOS and the BSDs were not compiled.
+  - **Departures from craft-ui's own patterns:** a field is a caption over a `TextField`, not `form::Field`; the
+    header's tabs are `ToggleButton`s, not a `TabStrip`; the chat's "…" menu is still an egui popup.
+  - **Decided (maintainer, 2026-11-26): installed system fonts stay on for the desktop.** craft-ui's `system_fonts`
+    draws names and messages in scripts the interface faces lack from the system's fonts; it brings `fontique` and
+    fontconfig (loaded at run time) into the desktop build. The tests run with it off.
+  - **Test assertions changed in part 1, and why:** the theme's contrast test now checks the network colours only, at
+    the 3:1 a non-text cue needs (their names are drawn in the theme's text colour; the theme's own contrast is
+    craft-theme's job); the check that the pinned and muted marks have glyphs went with the emoji marks (they are
+    icons); the risk scale's level is told by its description, not a toggled state (a badge has none); sheet titles
+    are found on their dialog node, a footer's Close below the dialog's own; the harness runs up to 12 steps while a
+    dialog opens; labels are in sentence case.
+- **The corner rule** (maintainer, 2026-11-26): what can be clicked, typed in or chosen (buttons, fields, chips,
+  swatches, menu rows, a clickable row's highlight) is rounded with craft-ui's control radius (`Tokens::radius_control`),
+  ideally by being craft-ui's own component; surfaces that sit apart from their surroundings (cards, the account rows,
+  message bubbles, boxed notes in sheets, the emoji picker) take craft-ui's surface radius (`radius_surface`), as its
+  dialogs and menus do; labels, tags, badges and status words may be square, but nothing that is not interactive may
+  look like a button. Regions that run edge to edge (panels, the header, the problem and reply bars) stay square,
+  and the QR code is square by nature. Done 2026-11-26 across `crates/ui-egui`; "Connected" on a card is a craft-ui
+  `Badge` in line with Connect. The rounded surfaces are still egui frames with craft-ui's radius, not craft-ui's own
+  surface (`Stack::surface`), since their content is egui's.
+- **craft-libs gaps found with the dialogs and menus:** a `Dialog`'s close action cannot be turned off (its
+  `closable` has no setter), so the sheets that have nothing to cancel show a close action that does nothing; egui's
+  `Popup::menu` does not see the framework's click (`widgets::menu_under` opens it from the button's output); a menu
+  row's label is plain text (emoji draw through the font stack's fallback, not PingCraft's emoji layout).
+- **Keyboard shortcuts and menus** (step 4): the message menu is craft-ui's `Menu` with the design's letters.
+  **PingCraft's commands** (`commands.rs`, rule 14) are registered with craft-ui's command board as an app catalog
+  (`AppCatalog`): the tabs (`view.inbox`, `view.accounts`, `app.settings`), `view.refresh`, the three appearance modes
+  and Settings' actions (`security.change_passphrase`, `security.new_recovery_key`, `security.enter_recovery_key`,
+  `security.verify_this_device`, `security.sign_out`), each with its enabled state from the app's state. Only
+  Settings has a default shortcut, ⌘, (Ctrl+, off macOS), as in the other Craft apps; the others wait for the design.
+  A shortcut, a menu row and a command button (`Button::command`) all fire into the frame's output, which
+  `framework::before_input` keeps for the app to run (`PingCraftApp::run`); the header's tabs and the Appearance
+  page run the same function. Settings' actions that take a value (previews, a network's sound and colour, the skin
+  tone, renaming this device, verifying or signing out another device) are `SettingAction`s: their ids are registered
+  too, a fired reference carries the value in its parameters, and the page's controls run the same
+  `settings::run_action` (2026-11-26).
+  **Shortcuts** (maintainer, 2026-11-26), with `Cmd` ⌘ on macOS and Ctrl elsewhere, `Ctrl` the Control key: ⌘,
+  Settings; ⌘1 Inbox and ⌘2 Accounts; ⌘F search chats (the Craft apps' find); F5 and ⌘R Refresh (craft-libs has no
+  convention for it; decided here); Ctrl+Tab / Ctrl+⇧Tab, ⌥↓ / ⌥↑ and ⌘PgDn / ⌘PgUp next and previous chat in the
+  inbox's order with its filter and search, wrapping; Ctrl+⌥Tab / Ctrl+⌥⇧Tab and ⌥⇧↓ / ⌥⇧↑ next and previous unread
+  chat; ⌘⇧A mark the open chat read (new core command `MarkRead`). Opening a chat this way marks it read as a click
+  does. Escape in an open chat goes back to the list when no field, menu, popup or dialog takes it (the window's own
+  Escape, `with_window_intents`). Menus: Go (Inbox, Accounts, Search chats, the four moves) and Chat (Mark as read);
+  View keeps Refresh and Appearance. Ctrl+Tab works from the composer (tested). A desktop may keep Ctrl+⌥Tab for
+  itself; not worked around. ⌥ chords do not fire while a text field has the keys (craft-keymap's typing rule).
+  Kittests in `tests/shortcuts.rs`. **The app menu** is craft-menu's in-window bar (`MenuBarUi`) over File (Sign out…), Edit
+  (Settings, tagged `ItemRole::Settings`, which the Linux and Windows layouts put last in Edit as "Preferences…")
+  and View (Inbox, Accounts, Refresh, Appearance). **Not done:** the native macOS menu (`craft_menu::mac::install`,
+  with its per-frame poll and gate; macOS is not compiled here), so a Mac build would show the in-window bar; the
+  chat's "…" menu stays an egui popup (it holds the chat's sound check box and colour swatches, which are not menu
+  rows, so it is not a small move); the Keyboard Shortcuts dialog (`craft_menu::shortcuts`) and stored overrides.
+  Tests: Ctrl+, and Edit, Preferences… open Settings (AccessKit tree).
+- **The Settings screen** (maintainer, 2026-11-26, step 5): **built**, on craft-ui-patterns' `PreferencesPage` in its
+  default layout (a search field, the page list, the shown page; each edit applies at once), the SETTINGS tab enabled.
+  See M3 ticket 11 for the pages. Tests: `tests/settings.rs` (AccessKit tree, one test per page and per Security
+  action, Tab and Enter reaching a page's button), unit tests of the stored formats, and live tests in
+  `crates/matrix/tests/settings.rs` (**not run** in this session: no test server).
+
+## craft-libs: what PingCraft lacks
+
+The maintainer's rule (2026-11-26): craft-libs dictates how PingCraft looks and feels. PingCraft adopts craft-ui as
+it is, never changes craft-libs to suit itself, and where something it needs is missing keeps a small stopgap built
+from craft-libs' own pieces and writes the gap down here, for a craft-libs change someone else makes.
+
+- **Colour emoji that lead a family, and a served emoji face fetched at start** (`craft_ui::fonts`). The stack puts
+  `Emoji` faces after the system fonts, as a fallback: a keycap (`1️⃣`) or `❤️` starts in the text face, because
+  egui picks a face by a cluster's first character and Inter has the digits. Stopgap: `emoji::stack` names an
+  `emoji` family (`UiFonts::family`) and puts the colour face at its head with `Stack::insert`. On the web,
+  `Emoji::served` is fetched only when no installed face has a character, and `Emoji::monochrome` always has it
+  first (`FaceList` answers before the loader), so a served colour face behind a monochrome one is never fetched;
+  and a served face cannot be put at a family's head before it arrives. Stopgap: PingCraft fetches the pinned file
+  itself (`emoji::web`, as before) and installs the stack again with it as `Emoji::color`. Missing in craft-libs: a
+  way to fetch a served face at install (as `ui_downloads` does for the interface language's scripts) and to name a
+  served face as a family's first face.
+- **A browser `FontFetcher`.** craft-ui defines the trait but ships no implementation; vectorcraft-web carries its
+  own (`BrowserFetcher`). PingCraft does not need one while the stopgap above stands.
+- **Icons the catalogue lacks** (`craft_ui` icons at the pinned revision): notifications off (a bell with a slash;
+  `track_mute`, a muted speaker, stands in for a muted chat), an emoji or smiley face (the composer's emoji button
+  stays the emoji 😀), reply, forward, react (add a reaction), unpin, select, send, archive and mark as unread.
+  Present and used where they fit: `more`, `close`, `chevron_right`, `pin`, `copy`, `trash`, `pencil`, `info`,
+  `arrow_down`, `lock`, `search`, `settings`.
+- **A theme for an app's own egui code** (`craft_ui::style`). craft-framework.md says `craft_ui::style` turns tokens
+  into egui styling "stock widgets included", but at the pinned revision nothing public does: the resolved tokens are
+  `Env::tokens` (doc-hidden, "read in `style` only"), and the other apps keep their own `theme.rs`. Stopgap:
+  `theme::Tokens` reads them through `Env::of_root` and `theme::apply` writes egui's visuals and text sizes.
+- **A badge in a colour from data** (`craft_ui::display::Badge`). It takes a tone only. Stopgap: a dot in the
+  network's colour beside a neutral badge (`widgets::network_tag_in`).
+- **A badge's selected state** (`Badge`). `Props::selected` does not reach its AccessKit node. Stopgap: the risk
+  scale's level badge carries the description "This network's level".
+- **Rich labels** (`Button`, `TextField`, `Text`): no way to give a label or a field's text a laid-out job, so emoji
+  in buttons, chips and the composer cannot take PingCraft's emoji layout. Those stay egui widgets.
+- **Emoji layout** (`emoji.rs`): craft-ui's text exports no equivalent (its cluster script rules,
+  `fonts/script.rs`, are crate-private) of PingCraft's emoji a size up among text, large
+  emoji-only messages, or a network's own emoji presentation (`pingcraft_core::EmojiPresentation`), so these stay
+  PingCraft's.
+
+- **A surface component for an app's own egui content.** Cards, account rows, bubbles and boxed notes are egui
+  frames given craft-ui's surface radius by hand (`Tokens::radius_surface`), not craft-ui's surface
+  (`Stack::surface`), because what they hold is egui's; likewise the chat menu's colour swatches are painted with the
+  control radius rather than craft-ui's `Swatch`, which reports a colour pick rather than a choice among fixed
+  colours. The PingCraft-specific heights (header 48, footer 34, panels) have no craft-ui token: they are layout,
+  not controls.
+- **Reset Section on every page** (`patterns::preferences::PreferencesPage`). It shows on every page with rows, and a
+  page cannot leave it out; on Settings' Security page nothing has a default, so it does nothing there. Missing: a
+  page that opts out of Reset Section.
+- **A row's accessible name is its label alone** (`PreferencesPage`). The same row in each network's group reads
+  "Notification sound" and "Accent colour"; the group (named by the network) is its context, which a screen reader
+  says on entering it. Noted, not worked around.
+
+## Looked at by eye (2026-11-27)
+
+`tests/shots.rs` renders the inbox, an open chat, Accounts and each Settings page, dark and light, at 1200×800 and
+800×600, with wgpu, when `PINGCRAFT_SHOTS` names a folder (it renders nothing otherwise; CI has no GPU). Found and
+fixed: the inbox filter carried counts in its words ("All 5 · Unread 3 · Archived 0") on the same line as the search
+field, so the two fought for one row; it is now craft-ui's segmented control with words only, the search on its own
+line, and the counts on the line under them ("Inbox · 5 chats · 3 unread"). Chat rows were taller inside than out:
+craft-ui's badges (the network tag, the unread count) are taller than a line of text, so the count spilled over the
+rule under the row; each line now has half the row's height and centres in it. A network tag's colour dot came after
+its name in a row (the row runs right to left) and before it in the chat header; it is before it in both. The
+network cards' descriptions were justified (spread words); they are left-aligned. The chat area is painted on craft-ui's
+window background (`surface.background`) instead of the panel colour, the inbox list staying a panel.
+
+**Dark theme, for the maintainer:** craft-libs' default (ArtCraft) dark is mid-grey by design. Its surfaces:
+background `#424242`, canvas and page `#282828`, panel and chrome `#535353`, raised `#5c5c5c`, sunken (fields)
+`#454545`, control `#626262`, text `#eeeeee`, muted text `#d4d4d4`. PingCraft paints the header, footer, menu bar and
+inbox list with the panel (`#535353`), the chat area with the background (`#424242`, was `#535353`), message bubbles
+of others none and own messages the accent's soft fill, fields with egui's sunken (the background). Darker would
+need another theme (one of the planned built-ins, M6 ticket 7, such as Catppuccin Mocha or Tokyo Night) or a darker
+dark proposed to craft-libs; PingCraft does not change craft-libs' theme.
+
+## Questions for the maintainer (Settings, 2026-11-26)
+
+Decided here the conservative way, each easy to change:
+- **Message previews** — answered (maintainer, 2026-11-26): kept with the account, in PingCraft's global account data
+  `io.github.jonasbove.pingcraft.notifications` (`{"previews": false}`), asked of the server once signed in and
+  followed through the sync. `config.toml`'s `[notifications] previews` stays as this computer's copy and start-up
+  value; an "off" there moves up once to an account that keeps nothing (tested; live test `tests/previews.rs`).
+- **Appearance** — answered (maintainer, 2026-11-26): stays PingCraft's own, on this computer, for now; it moves to
+  craft-theme's suite-wide choice (`selection.json`) in part 2, with the colour themes (M6 ticket 7).
+- **Each network's sound and colour moved** from the ACCOUNTS tab to Settings (the ACCOUNTS tab points there). Keep a
+  copy on ACCOUNTS?
+- **A new recovery key** — answered (maintainer, 2026-11-26): a device that cannot open the backup offers "Reset: make
+  a new recovery key…", with a warning and the account password (matrix-rust-sdk's `Recovery::reset_identity`, then
+  `enable`). A first key on an account without cross-signing sets cross-signing up first (a live run found that a
+  key made without it left the device unable to use it: the SDK counts recovery as on only when the key holds the
+  cross-signing secrets), and a key is reported only once the device can use it.
+- **Signing another device out** asks for the account password; a server that wants something else (single sign-on)
+  gets "PingCraft cannot do that yet".
+- **Shortcuts:** only Settings has one (⌘, / Ctrl+,). The tabs, Refresh and the rest have none until the design
+  gives them keys.
 
 ## Later, not yet planned
 

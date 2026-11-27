@@ -22,7 +22,7 @@ fn the_inbox_says_which_chats_are_pinned_muted_or_marked_unread() {
     h.get_by_label("Lars Holm, on Matrix, pinned");
     h.get_by_label("Book club, on Telegram, muted, 2 unread. Lars: The ending of chapter 8");
     h.get_by_label("Mei Tanaka, on Telegram, marked unread");
-    h.get_by_label("UNREAD 2");
+    h.get_by_label("Inbox · 3 chats · 2 unread");
 }
 
 fn chat_menu(h: &mut egui_kittest::Harness<'static, crate::PingCraftApp>) {
@@ -144,7 +144,7 @@ fn typing_is_shown_and_told() {
     super::type_into(&mut h, "Message Book club", "on my way");
     let sent = fake.take_all();
     assert!(sent.iter().any(|c| matches!(c, Command::Typing { typing: true, .. })), "{sent:?}");
-    h.get_by_label("SEND").click();
+    h.get_by_label("Send").click();
     h.run();
     let sent = fake.take_all();
     assert!(sent.iter().any(|c| matches!(c, Command::Typing { typing: false, .. })), "{sent:?}");
@@ -159,7 +159,7 @@ fn jump_to_latest_shows_when_scrolled_up() {
     fake.tell([Event::Messages { chat: ChatId("!book".into()), messages: many }]);
     h.run();
     assert!(h.query_by_label("Jump to latest").is_none(), "at the newest message already");
-    h.get_by_label("LOAD OLDER MESSAGES").scroll_to_me();
+    h.get_by_label("Load older messages").scroll_to_me();
     h.run();
     h.get_by_label("Jump to latest").click();
     h.run();
@@ -177,7 +177,7 @@ fn sending_a_kept_draft_forgets_it() {
     h.get_by_label_contains("Book club, on Telegram").click();
     h.run();
     fake.take();
-    h.get_by_label("SEND").click();
+    h.get_by_label("Send").click();
     h.run();
     let sent = fake.take();
     assert!(
@@ -205,10 +205,10 @@ fn a_chat_can_be_archived_and_found_under_archived() {
     fake.tell([Event::Inbox(InboxChange::Upsert(Box::new(book.clone())))]);
     h.run();
     assert!(h.query_by_label_contains("Book club, on Telegram").is_none(), "out of the inbox");
-    h.get_by_label("ALL 1");
-    h.get_by_label("UNREAD 0");
-    h.get_by_label("ARCHIVED 1").click();
+    h.get_by_label("Inbox · 1 chat · 0 unread");
+    h.get_by_label("Archived").click();
     h.run();
+    h.get_by_label("Archive · 1 chat");
     h.get_by_label_contains("Book club, on Telegram").click();
     h.run();
     fake.take();
@@ -219,7 +219,7 @@ fn a_chat_can_be_archived_and_found_under_archived() {
     assert!(matches!(&sent[..], [Command::Archive { chat, archive: false }] if chat.0 == "!book"), "{sent:?}");
 
     // A message after it was archived brings it back by itself.
-    h.get_by_label("ALL 1").click();
+    h.get_by_label("All").click();
     h.run();
     let mut newer = chat("!book", "Book club", "Telegram", 3, Some(("Lars", "Chapter 9 now")));
     newer.archived = book.archived;
@@ -227,7 +227,7 @@ fn a_chat_can_be_archived_and_found_under_archived() {
     fake.tell([Event::Inbox(InboxChange::Upsert(Box::new(newer)))]);
     h.run();
     h.get_by_label_contains("Book club, on Telegram");
-    h.get_by_label("ARCHIVED 0");
+    h.get_by_label("Inbox · 2 chats · 1 unread");
 }
 
 /// The draft that is kept, as the backend was asked to keep it: its text and what it is for.
@@ -267,7 +267,7 @@ fn a_reply_in_progress_is_kept_with_the_draft() {
     h.run();
     h.get_by_label("Replying to Lars Holm");
     fake.take();
-    h.get_by_label("SEND").click();
+    h.get_by_label("Send").click();
     h.run();
     let sent = fake.take();
     assert!(
@@ -286,7 +286,7 @@ fn an_edit_in_progress_is_kept_with_the_draft() {
     super::type_into(&mut h, "Message Book club", "set aside");
     h.get_by_label("Message actions: You, Thursday works.").click();
     h.run();
-    h.get_by_label("Edit").click();
+    h.get_by_role(egui::accesskit::Role::Menu).get_by_label("Edit").click();
     h.run();
     fake.take();
     h.get_by_label_contains("Lars Holm, on Matrix").click();
@@ -299,7 +299,7 @@ fn an_edit_in_progress_is_kept_with_the_draft() {
     h.run();
     h.get_by_label("Message actions: You, Thursday works.").click();
     h.run();
-    h.get_by_label("Edit").click();
+    h.get_by_role(egui::accesskit::Role::Menu).get_by_label("Edit").click();
     h.run();
     // Typed at the end of the text (where the cursor lands when focused is egui's business).
     h.state_mut().state.open.as_mut().unwrap().draft.push_str(" Friday too.");
@@ -320,7 +320,7 @@ fn an_edit_in_progress_is_kept_with_the_draft() {
     h.run();
     h.get_by_label("Editing your message");
     fake.take();
-    h.get_by_label("SAVE").click();
+    h.get_by_label("Save").click();
     h.run();
     let sent = fake.take();
     assert!(matches!(&sent[..], [Command::Edit { message, text, .. }, ..] if message.0 == "2" && text == "Thursday works. Friday too."), "{sent:?}");
@@ -383,11 +383,11 @@ fn a_chats_sound_and_colour_follow_its_network_unless_set() {
     h.get_by_role_and_label(Role::RadioButton, "Accent colour: Signal's").click();
     h.run();
     let sent = fake.take();
-    assert!(matches!(&sent[..], [Command::ChatAlerts { alerts: Alerts { accent: Some(Accent::Signal), .. }, .. }]), "{sent:?}");
+    assert!(matches!(&sent[..], [Command::ChatAlerts { alerts: Alerts { accent: Some(a), .. }, .. }] if a.network() == Some("signal")), "{sent:?}");
 
     // The network turns sound off; a chat without its own setting follows it.
     let mut networks = std::collections::BTreeMap::new();
-    networks.insert(Network::from_id("telegram"), Alerts { sound: Some(false), accent: Some(Accent::Discord) });
+    networks.insert(Network::from_id("telegram"), Alerts { sound: Some(false), accent: Accent::of_network("discord") });
     fake.tell([Event::NetworkAlerts(networks)]);
     h.run();
     chat_menu(&mut h);
@@ -417,36 +417,15 @@ fn a_chats_sound_and_colour_follow_its_network_unless_set() {
     assert_eq!(notifier.shown.borrow().iter().map(|n| n.sound).collect::<Vec<_>>(), [false, true]);
 }
 
-/// The ACCOUNTS tab sets each network's notification sound and accent colour.
+/// Enter in the composer sends what was typed.
 #[test]
-fn a_networks_sound_and_colour_are_set_on_the_accounts_tab() {
-    use egui::accesskit::Role;
-    use pingcraft_core::{Accent, Alerts, Network};
+fn enter_in_the_composer_sends() {
     let fake = Fake::default();
-    let mut h = signed_in(&fake);
-    h.get_by_label("ACCOUNTS").click();
-    h.run();
+    let mut h = super::messages::book_club(&fake);
     fake.take();
-    // Below the cards and the accounts: scrolled to, as a screen reader would.
-    h.get_by_role_and_label(Role::CheckBox, "Notification sound for Telegram").scroll_to_me();
-    h.run();
-    h.run();
-    h.get_by_role_and_label(Role::CheckBox, "Notification sound for Telegram").click();
+    super::type_into(&mut h, "Message Book club", "on my way");
+    h.key_press(egui::Key::Enter);
     h.run();
     let sent = fake.take();
-    assert!(
-        matches!(&sent[..], [Command::NetworkAlerts { network, alerts: Alerts { sound: Some(false), accent: None } }] if *network == Network::from_id("telegram")),
-        "{sent:?}"
-    );
-    // A second change before the backend answers builds on the first.
-    h.get_by_role_and_label(Role::RadioButton, "Accent colour for Telegram: Discord's").click();
-    h.run();
-    let sent = fake.take();
-    assert!(matches!(&sent[..], [Command::NetworkAlerts { alerts: Alerts { sound: Some(false), accent: Some(Accent::Discord) }, .. }]), "{sent:?}");
-    h.get_by_role_and_label(Role::RadioButton, "Accent colour for Signal: WhatsApp's").scroll_to_me();
-    h.run();
-    h.get_by_role_and_label(Role::RadioButton, "Accent colour for Signal: WhatsApp's").click();
-    h.run();
-    let sent = fake.take();
-    assert!(matches!(&sent[..], [Command::NetworkAlerts { alerts: Alerts { accent: Some(Accent::WhatsApp), .. }, .. }]), "{sent:?}");
+    assert!(sent.iter().any(|c| matches!(c, Command::SendText { text, .. } if text == "on my way")), "{sent:?}");
 }

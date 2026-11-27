@@ -26,6 +26,7 @@ mod chat_settings;
 #[cfg(not(target_arch = "wasm32"))]
 mod connect;
 pub mod connection;
+pub mod devices;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod emoji_settings;
 pub mod encryption;
@@ -37,6 +38,8 @@ pub mod mautrix;
 // Native only for now, like the engine that uses it (its timing uses `std::time::Instant`).
 #[cfg(not(target_arch = "wasm32"))]
 pub mod network_alerts;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod notification_settings;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod recent_emoji;
 #[cfg(not(target_arch = "wasm32"))]

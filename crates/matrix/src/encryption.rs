@@ -1,16 +1,18 @@
 //! End-to-end encryption: cross-signing, the key backup with its recovery key, and verifying this device from
 //! another one by comparing symbols (SAS). Mapped onto `pingcraft_core::encryption`.
 //!
-//! The first sign-in sets up cross-signing and a recovery key (ADR 0004). A recovery key is only ever created when
+//! The first sign-in sets up cross-signing and a recovery key (ADR 0004). At sign-in, a recovery key is only created when
 //! the account has none: if the server already holds a key backup, PingCraft asks for the existing recovery key and
-//! never replaces it, since that would cut the user off from their encrypted history. Resetting a lost recovery key
-//! is not offered yet.
+//! never replaces it, since that would cut the user off from their encrypted history. Settings can make a new key in
+//! place of one this device can open ([`Connection::new_recovery_key`]); resetting a lost recovery key is not offered
+//! yet.
 
 use std::pin::pin;
 use std::time::Duration;
 
 use futures_util::StreamExt;
 use matrix_sdk::Client;
+use matrix_sdk::encryption::CrossSigningResetAuthType;
 use matrix_sdk::encryption::recovery::RecoveryState;
 use matrix_sdk::encryption::verification::{CancelInfo, SasState, SasVerification, VerificationRequest, VerificationRequestState};
 use matrix_sdk::event_handler::EventHandlerDropGuard;
@@ -38,6 +40,10 @@ pub enum EncryptionError {
     WrongRecoveryKey,
     /// The account has no cross-signing identity yet, so there is nothing to verify against.
     NotSetUp,
+    /// The server did not take the account password given.
+    WrongPassword,
+    /// The server wants another way of proving it is the user (single sign-on), which PingCraft cannot do yet.
+    NotSupported,
     /// Anything else the SDK reported, for the log. Never contains a key.
     Sdk(String),
 }
@@ -49,6 +55,8 @@ impl std::fmt::Display for EncryptionError {
             Self::BackupExists => f.write_str("the account already has a key backup; enter its recovery key"),
             Self::WrongRecoveryKey => f.write_str("that recovery key does not open the key backup"),
             Self::NotSetUp => f.write_str("encryption has not been set up for this account yet"),
+            Self::WrongPassword => f.write_str("the server did not accept that password"),
+            Self::NotSupported => f.write_str("the server wants another way of signing in for this, which PingCraft cannot do yet"),
             Self::Sdk(why) => f.write_str(why),
         }
     }
@@ -126,6 +134,61 @@ impl Connection {
         }
     }
 
+    /// Makes a new recovery key, for Settings: in place of the account's when this device can open the key backup
+    /// (the backup stays, and the old key stops working), or the first one when the account has none. A first key
+    /// sets up cross-signing first when the account has none (`password` is the account password, for servers that
+    /// ask for it): a key holds the cross-signing secrets, and without them this device could not use the key it
+    /// just made. Refused when the account has a backup this device cannot open ([`EncryptionError::BackupExists`]:
+    /// [`Connection::reset_recovery`] is for that), and while the state is not known yet. Succeeds only once this
+    /// device can read the backup with the new key ([`RecoveryStatus::On`]).
+    pub async fn new_recovery_key(&self, password: Option<&str>) -> Result<RecoveryKey, EncryptionError> {
+        let encryption = self.client().encryption();
+        let key = match self.recovery_status() {
+            RecoveryStatus::On => encryption.recovery().reset_key().await.map_err(sdk)?,
+            RecoveryStatus::Off => {
+                bootstrap_cross_signing(self.client(), password).await.map_err(|e| wrong_password(e, password))?;
+                if encryption.backups().fetch_exists_on_server().await.map_err(sdk)? {
+                    return Err(EncryptionError::BackupExists);
+                }
+                encryption.recovery().enable().wait_for_backups_to_upload().await.map_err(sdk)?
+            }
+            RecoveryStatus::NeedsKey => return Err(EncryptionError::BackupExists),
+            RecoveryStatus::Unknown => return Err(EncryptionError::Sdk("the server has not said yet whether a recovery key exists".into())),
+        };
+        key_made(self.recovery_status()).map(|()| RecoveryKey::new(key))
+    }
+
+    /// Starts over on a device that cannot open the key backup (the recovery key is lost): deletes the backup and
+    /// the secret storage, makes a new cross-signing identity (the server asks for the account `password`), and
+    /// makes a new recovery key, the matrix-rust-sdk way (`Recovery::reset_identity`, then `enable`). Messages
+    /// encrypted before can no longer be read on devices that do not already have their keys, and the user's other
+    /// devices need verifying again.
+    pub async fn reset_recovery(&self, password: &str) -> Result<RecoveryKey, EncryptionError> {
+        let client = self.client();
+        let recovery = client.encryption().recovery();
+        if let Some(handle) = recovery.reset_identity().await.map_err(sdk)? {
+            match handle.auth_type() {
+                CrossSigningResetAuthType::Uiaa(uiaa) => {
+                    let user = client.user_id().ok_or(EncryptionError::NotSetUp)?;
+                    let mut auth = Password::new(UserIdentifier::Matrix(MatrixUserIdentifier::new(user.to_string())), password.to_owned());
+                    auth.session = uiaa.session.clone();
+                    handle.reset(Some(AuthData::Password(auth))).await.map_err(|e| match &e {
+                        matrix_sdk::encryption::recovery::RecoveryError::Sdk(inner) if inner.as_uiaa_response().is_some() => {
+                            EncryptionError::WrongPassword
+                        }
+                        _ => sdk(e),
+                    })?;
+                }
+                CrossSigningResetAuthType::OAuth(_) => {
+                    handle.cancel().await;
+                    return Err(EncryptionError::NotSupported);
+                }
+            }
+        }
+        let key = recovery.enable().wait_for_backups_to_upload().await.map_err(sdk)?;
+        key_made(self.recovery_status()).map(|()| RecoveryKey::new(key))
+    }
+
     /// Gives this device the account's secrets from the key backup, with the recovery key the user typed.
     pub async fn recover(&self, key: &RecoveryKey) -> Result<(), EncryptionError> {
         self.client().encryption().recovery().recover(key.expose().trim()).await.map_err(|e| match e {
@@ -167,6 +230,23 @@ impl Connection {
             }
         });
         IncomingVerifications { requests: rx, _guard: self.client().event_handler_drop_guard(handle) }
+    }
+}
+
+/// A key just made is only a success once this device can read the backup with it: otherwise the user would save a
+/// key and still be asked for one.
+fn key_made(after: RecoveryStatus) -> Result<(), EncryptionError> {
+    match after {
+        RecoveryStatus::On => Ok(()),
+        other => Err(EncryptionError::Sdk(format!("the new recovery key does not hold everything this device needs ({other:?})"))),
+    }
+}
+
+/// The server asking again for a password that was given means it did not take it.
+fn wrong_password(e: EncryptionError, password: Option<&str>) -> EncryptionError {
+    match (e, password) {
+        (EncryptionError::NeedsPassword, Some(_)) => EncryptionError::WrongPassword,
+        (e, _) => e,
     }
 }
 
@@ -214,7 +294,7 @@ pub struct VerificationFlow {
 }
 
 impl VerificationFlow {
-    fn new(request: VerificationRequest) -> Self {
+    pub(crate) fn new(request: VerificationRequest) -> Self {
         let (sas_tx, sas_rx) = unbounded_channel();
         let (tx, states) = unbounded_channel();
         let task = spawn(follow(request.clone(), sas_tx, tx));
@@ -365,5 +445,28 @@ async fn follow_sas(sas: SasVerification, slot: &UnboundedSender<SasVerification
             Some(next) => state = next,
             None => return,
         }
+    }
+}
+
+#[cfg(test)]
+mod key_tests {
+    use pingcraft_core::encryption::RecoveryStatus;
+
+    use super::{EncryptionError, key_made, wrong_password};
+
+    /// A new key is reported only once this device can use it: a key left "incomplete" (the cross-signing secrets
+    /// missing from it, as a first key made without cross-signing was) is an error, not a key to save.
+    #[test]
+    fn a_new_key_counts_only_when_this_device_can_use_it() {
+        assert!(key_made(RecoveryStatus::On).is_ok());
+        for other in [RecoveryStatus::NeedsKey, RecoveryStatus::Off, RecoveryStatus::Unknown] {
+            assert!(matches!(key_made(other), Err(EncryptionError::Sdk(_))), "{other:?}");
+        }
+    }
+
+    #[test]
+    fn asked_again_for_a_given_password_means_it_was_wrong() {
+        assert!(matches!(wrong_password(EncryptionError::NeedsPassword, Some("pw")), EncryptionError::WrongPassword));
+        assert!(matches!(wrong_password(EncryptionError::NeedsPassword, None), EncryptionError::NeedsPassword));
     }
 }

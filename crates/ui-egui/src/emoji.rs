@@ -1,25 +1,32 @@
 //! Colour emoji: the font, telling an emoji from text, and laying text out so that emoji take the colour face.
 //!
-//! egui picks a face by the first character of a grapheme cluster, and the first face in the family that has it
-//! wins. Noto Color Emoji has the digits, `#`, `*`, `©` and `®` (for keycaps), so it has to come after the text
-//! face, where `1️⃣` would start in the text face and `❤️` too when the text face has U+2764. So emoji clusters are
-//! laid out in a family of their own, [`family`], whose first face is the colour one, and the rest of the text
-//! keeps its own family ([`job`]). The text itself, and so what a screen reader reads, is unchanged.
+//! The fonts are craft-ui's font stack (`craft_ui::fonts::UiFonts`): its interface faces, installed system fonts on
+//! the desktop, and the colour emoji face as its [`Emoji::color`] with egui's monochrome emoji as the last resort.
+//! There the colour face is a fallback, asked only for characters no text face has. egui picks a face by the first
+//! character of a grapheme cluster, and Noto Color Emoji has the digits, `#`, `*`, `©` and `®` (for keycaps), so
+//! `1️⃣` would start in the text face, and `❤️` too when the text face has U+2764. So emoji clusters are laid out in
+//! a family of their own, [`family`], which the stack builds and whose first face is the colour one, and the rest of
+//! the text keeps its own family ([`job`]). The text itself, and so what a screen reader reads, is unchanged.
 //!
 //! The desktop build embeds the font. The web build starts with egui's monochrome emoji and fetches the font after
-//! the page opens (`web`); `install_color_font` switches faces once it is there.
-
-use std::sync::Arc;
+//! the page opens (`web`); `install_color_font` installs the stack again with it once it is there. (craft-ui's own
+//! served faces, `Emoji::served`, are fetched only for a character no installed face has, which the monochrome face
+//! always answers first, and cannot lead a family: PLAN.md, "craft-libs: what PingCraft lacks".)
 
 use egui::text::{LayoutJob, TextFormat};
-use egui::{Color32, FontData, FontDefinitions, FontFamily, FontId};
+use egui::{Color32, FontData, FontFamily, FontId};
 use pingcraft_core::EmojiPresentation;
 use unicode_segmentation::UnicodeSegmentation;
 
-/// The colour face's name in egui's font definitions.
-const COLOR_FACE: &str = "NotoColorEmoji";
-/// egui's monochrome emoji faces, left out when the colour face is there.
-const MONOCHROME_FACES: [&str; 2] = ["NotoEmoji-Regular", "emoji-icon-font"];
+use craft_ui::fonts::{Emoji, Family, FontRef, I18nScripts, Stack, SystemFonts, UiFonts, noto_emoji};
+
+/// The name of the family emoji clusters are laid out in.
+const FAMILY: &str = "emoji";
+/// The colour face's name at the head of [`family`].
+const COLOR_FACE: &str = "emoji-color-first";
+
+/// The scripts of the interface languages, for the font stack.
+static SCRIPTS: I18nScripts = I18nScripts;
 
 #[allow(dead_code)]
 mod pin {
@@ -32,40 +39,32 @@ pub(crate) const EMBEDDED: Option<&[u8]> = Some(include_bytes!(env!("PINGCRAFT_E
 #[cfg(not(color_emoji))]
 pub(crate) const EMBEDDED: Option<&[u8]> = None;
 
-/// The family emoji clusters are laid out in: the colour face first when there is one, then the text faces.
+/// The family emoji clusters are laid out in: the colour face first when there is one, then the interface faces.
 pub fn family() -> FontFamily {
-    FontFamily::Name("emoji".into())
+    FontRef::named(FAMILY).family()
 }
 
-/// egui's default fonts, with the embedded colour emoji face in place of the monochrome ones, and [`family`].
-pub fn definitions() -> FontDefinitions {
-    definitions_with(EMBEDDED.map(FontData::from_static))
-}
-
-/// egui's default fonts with its monochrome emoji, and [`family`]: what the web build starts with.
-#[cfg(test)]
-pub fn monochrome_definitions() -> FontDefinitions {
-    definitions_with(None)
-}
-
-/// egui's default fonts, with this colour emoji face (if any) in place of the monochrome ones, and [`family`].
-fn definitions_with(font: Option<FontData>) -> FontDefinitions {
-    let mut defs = FontDefinitions::default();
-    let colour = font.is_some();
-    if let Some(font) = font {
-        defs.font_data.insert(COLOR_FACE.to_owned(), Arc::new(font));
-        for chain in defs.families.values_mut() {
-            chain.retain(|face| !MONOCHROME_FACES.contains(&face.as_str()));
-            chain.push(COLOR_FACE.to_owned());
-        }
+/// The interface's font stack: craft-ui's, with [`family`], the colour emoji face `colour` (if any) at its head and
+/// as the stack's colour emoji, and egui's monochrome emoji as the last resort. `system` says whether installed fonts
+/// are asked for characters the stack's faces lack (the app: yes; the tests: no, so they draw the same everywhere).
+pub fn stack(colour: Option<FontData>, system: SystemFonts) -> Stack {
+    let mut emoji = Emoji::default();
+    emoji.color.clone_from(&colour);
+    emoji.monochrome = noto_emoji();
+    let fonts = UiFonts::new(&SCRIPTS).family(Family::named(FAMILY)).emoji(emoji).system_fonts(system);
+    let mut stack = fonts.stack();
+    if let Some(colour) = colour {
+        stack.insert(&FontRef::named(FAMILY), 0, COLOR_FACE, colour);
     }
-    let mut emoji = defs.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
-    if colour {
-        emoji.retain(|face| face != COLOR_FACE);
-        emoji.insert(0, COLOR_FACE.to_owned());
-    }
-    defs.families.insert(family(), emoji);
-    defs
+    stack
+}
+
+/// Installs the interface's fonts on `ctx`, with the embedded colour emoji face where the build has one, and in the
+/// web build starts fetching it.
+pub fn install(ctx: &egui::Context) {
+    stack(EMBEDDED.map(FontData::from_static), SystemFonts::default()).install(ctx);
+    #[cfg(target_arch = "wasm32")]
+    web::fetch_color_font(ctx);
 }
 
 /// Why a colour font that arrived after start was not installed.
@@ -78,11 +77,11 @@ pub enum FontRefused {
     NotPinned,
 }
 
-/// Installs a colour emoji font that arrived after start (the web build fetches it), in place of egui's monochrome
-/// emoji, from the next frame on. Only the pinned file is accepted (`font_pin.rs`), the same one the desktop
-/// embeds; anything else leaves the fonts as they are.
+/// Installs the font stack again with a colour emoji font that arrived after start (the web build fetches it), in
+/// place of egui's monochrome emoji, from the next frame on. Only the pinned file is accepted (`font_pin.rs`), the
+/// same one the desktop embeds; anything else leaves the fonts as they are.
 #[cfg(any(test, target_arch = "wasm32"))]
-pub fn install_color_font(ctx: &egui::Context, bytes: Vec<u8>) -> Result<(), FontRefused> {
+pub fn install_color_font(ctx: &egui::Context, bytes: Vec<u8>, system: SystemFonts) -> Result<(), FontRefused> {
     use sha2::{Digest, Sha256};
     if !u64::try_from(bytes.len()).is_ok_and(|n| n <= pin::EMOJI_FONT_BYTES) {
         return Err(FontRefused::TooBig);
@@ -90,7 +89,7 @@ pub fn install_color_font(ctx: &egui::Context, bytes: Vec<u8>) -> Result<(), Fon
     if format!("{:x}", Sha256::digest(&bytes)) != pin::EMOJI_FONT_SHA256 {
         return Err(FontRefused::NotPinned);
     }
-    ctx.set_fonts(definitions_with(Some(FontData::from_owned(bytes))));
+    stack(Some(FontData::from_owned(bytes)), system).install(ctx);
     Ok(())
 }
 
@@ -111,7 +110,7 @@ pub mod web {
         let ctx = ctx.clone();
         wasm_bindgen_futures::spawn_local(async move {
             if let Some(bytes) = fetch(FONT_URL).await
-                && super::install_color_font(&ctx, bytes).is_ok()
+                && super::install_color_font(&ctx, bytes, craft_ui::fonts::SystemFonts::default()).is_ok()
             {
                 ctx.request_repaint();
             }
@@ -187,10 +186,10 @@ pub const LARGE_MAX: usize = 3;
 pub const EMOJI_LINE: f32 = 1.5;
 
 /// The line an emoji takes in one line of text (a name, a preview, the composer), in the text's size: a little less
-/// than the text's own line (1.15 in egui's proportional face), so the line is exactly as tall as without the emoji
-/// and the layout around it (the inbox rows, the header, the composer) does not move. The emoji is centred on the line
+/// than the text's own line (craft-ui's Inter, about 1.21), so the line is exactly as tall as without the emoji and
+/// the layout around it (the inbox rows, the header, the composer) does not move. The emoji is centred on the line
 /// and reaches about a seventh of the text's size above and below it, into the padding.
-const SINGLE_LINE: f32 = 1.1;
+const SINGLE_LINE: f32 = 1.2;
 
 /// How big a job's emoji are.
 #[derive(Debug, Clone, Copy, PartialEq)]

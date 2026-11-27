@@ -33,6 +33,23 @@ egui's own fonts (Ubuntu Light, Hack, Noto Emoji, the emoji icon font; OFL-1.1, 
 The design is built with Inter, Archivo and Geist Mono (SIL OFL 1.1) from
 `storytold/craft-fonts`, passed to `design/tools/build.py` with `--fonts`.
 
+## Colour themes
+
+`crates/ui-egui/themes/*.json` are `craft-design-theme` files written for the Craft suite (the same files as the open
+storytold/craft-libs pull requests #3701 and #3704 to #3709), mapped onto craft-theme's seeds and pins by hand from
+each palette's published colours; no theme code or file from the palettes' projects is copied. PingCraft carries
+them until craft-libs ships them as built-ins.
+
+| File | Palette | Palette's licence |
+|---|---|---|
+| `catppuccin.json` | [Catppuccin](https://github.com/catppuccin/catppuccin) (Mocha, Latte) | MIT |
+| `dracula.json` | [Dracula](https://github.com/dracula/dracula-theme) | MIT |
+| `gruvbox.json` | [Gruvbox](https://github.com/morhetz/gruvbox) | MIT |
+| `nord.json` | [Nord](https://github.com/nordtheme/nord) | MIT |
+| `one-dark.json` | [One Dark](https://github.com/atom/atom/tree/master/packages/one-dark-syntax) (Atom) | MIT |
+| `solarized-light.json` | [Solarized](https://github.com/altercation/solarized) | MIT |
+| `tokyo-night.json` | [Tokyo Night](https://github.com/enkia/tokyo-night-vscode-theme) (Night, Day) | MIT |
+
 ## Vendored code
 
 Third-party crates carried in the repository, patched; what changed and why is in `vendor/README.md`.

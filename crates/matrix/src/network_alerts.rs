@@ -1,5 +1,5 @@
 //! Each network's notification sound and accent colour, kept with the account so they follow the user between
-//! devices: PingCraft's own global account data [`NETWORKS`], `{"telegram": {"sound": false, "accent": "signal"}}`,
+//! devices: PingCraft's own global account data [`NETWORKS`], `{"telegram": {"sound": false, "accent": "#1c56c4"}}`,
 //! one entry per network that has settings. A chat's own settings (`chat_settings::ALERTS`) win over these.
 
 use std::collections::BTreeMap;
@@ -66,13 +66,19 @@ mod tests {
         let read = networks(&json!({
             "telegram": { "sound": false },
             "signal": { "accent": "whatsapp", "x.later": 1 },
+            "matrix": { "accent": "#A0B1C2" },
             "discord": {},
             "": { "sound": true },
             "whatsapp": "loud",
         }));
-        assert_eq!(read.len(), 2);
+        assert_eq!(read.len(), 3);
         assert_eq!(read[&Network::from_id("telegram")], Alerts { sound: Some(false), accent: None });
-        assert_eq!(read[&Network::from_id("signal")], Alerts { sound: None, accent: Some(Accent::WhatsApp) });
+        assert_eq!(
+            read[&Network::from_id("signal")],
+            Alerts { sound: None, accent: Accent::of_network("whatsapp") },
+            "saved before any colour could be chosen"
+        );
+        assert_eq!(read[&Network::matrix()], Alerts { sound: None, accent: Some(Accent([0xa0, 0xb1, 0xc2])) });
         assert!(networks(&json!([])).is_empty());
     }
 }

@@ -1,78 +1,112 @@
-//! The pieces the screens are made of, in the design's language: hairlines, square corners, mono capitals for
-//! labels and buttons, the orchid for what needs attention. Every control has an accessible name.
+//! The pieces the screens are made of: craft-ui's components (buttons, fields, check boxes, badges, text in type
+//! roles, icons) wherever one fits, and a few small pieces of PingCraft's own (the avatar, the sheet's frame) drawn
+//! from the theme's tokens. Every control has an accessible name that starts with its visible label.
 
-use egui::{Align2, Color32, CornerRadius, FontId, Frame, Margin, Response, RichText, Sense, Stroke, TextureHandle, Ui, Vec2};
+use egui::{Align2, FontId, Response, Sense, Stroke, TextureHandle, Ui, Vec2};
 use pingcraft_core::{Accent, Alerts, Network};
 
+use craft_behavior::IconId;
+use craft_theme::variant::{Emphasis, Tone};
+use craft_ui::buttons::{Button, ButtonOutput, IconButton};
+use craft_ui::choice::Checkbox;
+use craft_ui::contract::{Bind, EditResponse, PopupKind, Props as _, Show as _, ShowContainer as _, Sizing};
+use craft_ui::dialog::Dialog;
+use craft_ui::display::{Badge, Icon, Shade, Text};
+use craft_ui::primitives::IconSpec;
+use craft_ui::style::{TypeRole, Variant};
+use craft_ui::text::TextField;
+
 use crate::i18n::fmt;
-use crate::theme::{Tokens, wash};
+use crate::theme::Tokens;
 use crate::tl;
 
-/// A small mono capitals label (the design's HUD style).
-pub fn hud(ui: &mut Ui, text: &str, color: Color32) -> Response {
-    ui.label(RichText::new(text.to_uppercase()).monospace().size(11.0).color(color))
+/// The craft-ui icons (its catalogue, `craft_ui::primitives::icon_names`; the default set is Lucide) PingCraft uses.
+/// Where the catalogue has no icon for the meaning, the nearest one stands in (PLAN.md, "craft-libs: what PingCraft
+/// lacks").
+pub mod icon {
+    /// What else can be done with something: a message's or a chat's menu.
+    pub const MORE: &str = "more";
+    /// Close or cancel: a reply or edit in progress.
+    pub const CLOSE: &str = "close";
+    /// The next one: the next pinned message.
+    pub const NEXT: &str = "chevron_right";
+    /// A chat pinned to the top of the inbox.
+    pub const PINNED: &str = "pin";
+    /// A muted chat. Stand-in: the catalogue has no "notifications off" (bell with a slash); `track_mute` is a muted
+    /// speaker.
+    pub const MUTED: &str = "track_mute";
 }
 
-/// Which of the design's buttons.
+/// A craft-ui icon button showing `icon` (one of [`icon`]), named `label` for screen readers and in its tooltip.
+pub fn icon_button(ui: &mut Ui, icon: &'static str, label: &str) -> ButtonOutput {
+    IconButton::new(IconId::new(icon)).label(label.to_owned()).show(ui)
+}
+
+/// A craft-ui icon button showing `icon` that opens a menu ([`menu_under`]): screen readers are told it has one.
+pub fn menu_button(ui: &mut Ui, icon: &'static str, label: &str) -> ButtonOutput {
+    IconButton::new(IconId::new(icon)).label(label.to_owned()).popup(PopupKind::Menu).show(ui)
+}
+
+/// A menu that opens under `button` when it is clicked (by the framework's click rule, which a key press or an
+/// AccessKit action also meets) and closes when it is clicked again.
+pub fn menu_under(button: &ButtonOutput) -> egui::Popup<'_> {
+    egui::Popup::menu(&button.response).open_memory(button.clicked().then_some(egui::SetOpenCommand::Toggle))
+}
+
+/// A craft-ui icon in the muted ink, named `label` for screen readers and in its tooltip: a mark such as a chat's pin.
+pub fn mark_icon(ui: &mut Ui, icon: &'static str, label: &str) -> Response {
+    Icon::new(IconSpec::svg(IconId::new(icon))).label(label.to_owned()).show(ui)
+}
+
+/// A small label over a group of controls: caption text, in the normal or the muted shade.
+pub fn hud(ui: &mut Ui, text: &str, shade: Shade) -> Response {
+    Text::new(text.to_owned()).role(TypeRole::Caption).shade(shade).show(ui)
+}
+
+/// Which of craft-ui's push buttons.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
-    /// Inverted: the one thing to do next.
+    /// The one thing to do next (`Variant::PRIMARY`).
     Primary,
-    /// A hairline box.
+    /// Everything else (`Variant::SECONDARY`).
     Secondary,
-    /// Filled in the colour that says it cannot be undone.
+    /// What cannot be undone (`Variant::DANGER`).
     Danger,
 }
 
-/// A button with a mono capitals label. Its accessible name is the label as shown.
-pub fn button(ui: &mut Ui, text: &str, kind: Kind, enabled: bool) -> Response {
-    let t = Tokens::get(ui.ctx());
-    let label = text.to_uppercase();
-    let (fill, ink, stroke) = match kind {
-        Kind::Primary => (t.invert_bg, t.invert_fg, Stroke::new(1.0, t.invert_bg)),
-        Kind::Secondary => (Color32::TRANSPARENT, t.ink, Stroke::new(1.0, t.line_strong)),
-        Kind::Danger => (t.bad, t.bg, Stroke::new(1.0, t.bad)),
+/// A craft-ui push button; its accessible name is its label. Read a click with the output's `clicked`, which a key
+/// press or an AccessKit action also meets.
+pub fn button(ui: &mut Ui, text: &str, kind: Kind, enabled: bool) -> ButtonOutput {
+    let variant = match kind {
+        Kind::Primary => Variant::PRIMARY,
+        Kind::Secondary => Variant::SECONDARY,
+        Kind::Danger => Variant::DANGER,
     };
-    let hover = match kind {
-        Kind::Primary => t.invert_bg.lerp_to_gamma(t.accent, 0.35),
-        Kind::Secondary => t.line,
-        Kind::Danger => t.bad.lerp_to_gamma(t.ink_strong, 0.2),
-    };
-    let button = egui::Button::new(RichText::new(label).monospace().strong().size(11.0).color(ink))
-        .stroke(stroke)
-        .corner_radius(CornerRadius::ZERO)
-        .min_size(Vec2::new(0.0, 34.0));
-    animated(ui, button, enabled, fill, hover)
+    Button::new(text.to_owned()).variant(variant).enabled(enabled).show(ui)
 }
 
-/// Adds a button whose fill eases from `fill` to `hover` while the pointer is over it (120 ms each way). The fill is
-/// painted underneath the button, so the button's own fill is cleared.
-pub fn animated(ui: &mut Ui, button: egui::Button<'_>, enabled: bool, fill: Color32, hover: Color32) -> Response {
-    let slot = ui.painter().add(egui::Shape::Noop);
-    let response = ui.add_enabled(enabled, button.fill(Color32::TRANSPARENT));
-    let k = ui.ctx().animate_bool_with_time(response.id.with("hover"), enabled && response.hovered(), 0.12);
-    ui.painter().set(slot, egui::Shape::rect_filled(response.rect, CornerRadius::ZERO, fill.lerp_to_gamma(hover, k)));
-    response
-}
-
-/// A labelled text field. The label names the field for screen readers.
-pub fn field(ui: &mut Ui, label: &str, value: &mut String, password: bool, hint: &str) -> Response {
-    let t = Tokens::get(ui.ctx());
-    let label = hud(ui, label, t.ink);
-    let edit = egui::TextEdit::singleline(value).password(password).hint_text(hint).desired_width(f32::INFINITY).margin(Margin::symmetric(10, 8));
-    ui.add(edit).labelled_by(label.id)
+/// A labelled craft-ui text field (masked for a password), with its label over it. The label names the field for
+/// screen readers too. The output says whether Enter submitted it.
+pub fn field(ui: &mut Ui, label: &str, value: &mut String, password: bool, hint: &str) -> EditResponse<String> {
+    hud(ui, label, Shade::Normal);
+    let mut field = TextField::new(label.to_owned(), Bind::bound(value)).sizing(Sizing::FillWidth);
+    if !hint.is_empty() {
+        field = field.placeholder(hint.to_owned());
+    }
+    if password {
+        field = field.masked();
+    }
+    field.show(ui)
 }
 
 /// A few words in muted text, wrapped.
 pub fn note(ui: &mut Ui, text: &str) -> Response {
-    let t = Tokens::get(ui.ctx());
-    ui.label(RichText::new(text).size(12.5).color(t.muted))
+    Text::new(text.to_owned()).shade(Shade::Muted).show(ui)
 }
 
 /// A line in the colour that says something is wrong.
 pub fn problem(ui: &mut Ui, text: &str) -> Response {
-    let t = Tokens::get(ui.ctx());
-    ui.label(RichText::new(text).size(13.0).color(t.bad))
+    Text::new(text.to_owned()).tone(Tone::Bad).show(ui)
 }
 
 /// A network's name as people write it. Networks are proper names and are not translated.
@@ -92,25 +126,42 @@ pub fn network_tag(ui: &mut Ui, network: &Network) -> Response {
     network_tag_in(ui, network, None)
 }
 
-/// The network tag in a chosen accent colour (a chat's or its network's), or the network's own.
+/// The network tag in a chosen accent colour (a chat's or its network's), or the network's own: craft-ui's neutral
+/// badge with the network's name, after a dot in the network's colour (Matrix has none). craft-ui's badges take a tone,
+/// not a colour from data, so the dot carries the colour (PLAN.md, "craft-libs: what PingCraft lacks"); the name
+/// says which network it is, so colour is never the only cue.
 pub fn network_tag_in(ui: &mut Ui, network: &Network, accent: Option<Accent>) -> Response {
     let t = Tokens::get(ui.ctx());
     let colour = accent.map(|a| t.accent_colour(a)).or_else(|| t.network(network));
-    let (ink, fill, line) = match colour {
-        Some(c) => (c, wash(c), c),
-        None => (t.muted, Color32::TRANSPARENT, t.line_strong),
-    };
-    Frame::new()
-        .fill(fill)
-        .stroke(Stroke::new(1.0, line))
-        .inner_margin(Margin::symmetric(5, 1))
-        .show(ui, |ui| ui.label(RichText::new(network_name(network).to_uppercase()).monospace().size(10.0).color(ink)))
-        .inner
+    // The dot reads before the name whichever way the row runs: in a right-to-left row the badge goes in first.
+    let reversed = ui.layout().prefer_right_to_left();
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = t.caption / 3.0;
+        let dot = |ui: &mut Ui| {
+            if let Some(colour) = colour {
+                let side = t.caption * 0.75;
+                let (rect, _) = ui.allocate_exact_size(Vec2::splat(side), Sense::hover());
+                ui.painter().circle_filled(rect.center(), side / 2.0, colour);
+            }
+        };
+        if reversed {
+            let badge = Badge::new(network_name(network)).show(ui);
+            dot(ui);
+            badge
+        } else {
+            dot(ui);
+            Badge::new(network_name(network)).show(ui)
+        }
+    })
+    .inner
 }
 
-/// The accent colour's name, as the network colour it is.
+/// The accent colour's name: the network whose colour it is, or its `#rrggbb`.
 pub fn accent_name(accent: Accent) -> String {
-    fmt(tl!("{network}'s"), &[("network", &network_name(&Network::from_id(accent.id())))])
+    match accent.network() {
+        Some(id) => fmt(tl!("{network}'s"), &[("network", &network_name(&Network::from_id(id)))]),
+        None => accent.hex(),
+    }
 }
 
 /// The notification sound and accent colour controls, for a chat (`what` empty) or a network (`what` its name, in
@@ -121,20 +172,19 @@ pub fn alerts_controls(ui: &mut Ui, own: Alerts, shown: Alerts, what: &str, inhe
     let mut changed = None;
     let for_what =
         |label: &str| if what.is_empty() { label.to_owned() } else { fmt(tl!("{setting} for {what}"), &[("setting", label), ("what", what)]) };
-    let mut on = shown.sounds();
-    let sound = ui.checkbox(&mut on, tl!("Notification sound"));
-    let label = for_what(tl!("Notification sound"));
-    sound.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, &label));
-    if sound.clicked() {
+    let was = shown.sounds();
+    let mut on = was;
+    Checkbox::new(Bind::bound(&mut on)).label(for_what(tl!("Notification sound"))).show(ui);
+    if on != was {
         changed = Some(Alerts { sound: Some(on), ..own });
     }
-    if what.is_empty() && own.sound.is_some() && ui.small_button(tl!("Use the network's sound setting")).clicked() {
+    if what.is_empty() && own.sound.is_some() && button(ui, tl!("Use the network's sound setting"), Kind::Secondary, true).clicked() {
         changed = Some(Alerts { sound: None, ..own });
     }
     ui.horizontal(|ui| {
-        ui.label(RichText::new(tl!("Accent colour")).size(12.0).color(t.muted));
+        hud(ui, tl!("Accent colour"), Shade::Muted);
         let prefix = for_what(tl!("Accent colour"));
-        let choices = std::iter::once(None).chain(Accent::ALL.into_iter().map(Some));
+        let choices = std::iter::once(None).chain(Accent::NETWORKS.into_iter().map(Accent::of_network));
         for choice in choices {
             let selected = own.accent == choice;
             let colour = choice.map_or(t.muted, |a| t.accent_colour(a));
@@ -142,14 +192,15 @@ pub fn alerts_controls(ui: &mut Ui, own: Alerts, shown: Alerts, what: &str, inhe
             let painter = ui.painter();
             match choice {
                 Some(_) => {
-                    painter.rect_filled(rect.shrink(3.0), CornerRadius::ZERO, colour);
+                    painter.rect_filled(rect.shrink(3.0), t.radius_control, colour);
                 }
                 None => {
-                    painter.rect_stroke(rect.shrink(3.0), CornerRadius::ZERO, Stroke::new(1.0, colour), egui::StrokeKind::Inside);
+                    painter.rect_stroke(rect.shrink(3.0), t.radius_control, Stroke::new(1.0, colour), egui::StrokeKind::Inside);
                 }
             }
             if selected {
-                painter.rect_stroke(rect, CornerRadius::ZERO, Stroke::new(1.5, t.ink_strong), egui::StrokeKind::Inside);
+                // The selection ring follows the swatch's corners, a step out.
+                painter.rect_stroke(rect, t.radius_control + 3.0, Stroke::new(1.5, t.ink_strong), egui::StrokeKind::Inside);
             }
             let name = choice.map_or_else(|| inherit.to_owned(), accent_name);
             let label = format!("{prefix}: {name}");
@@ -174,28 +225,31 @@ pub fn initials(name: &str) -> String {
     pick.to_uppercase()
 }
 
-/// A square avatar with initials. Decorative: the name next to it is what screen readers read.
+/// A round avatar with initials, in the accent's soft fill. Decorative: the name next to it is what screen readers read.
 pub fn avatar(ui: &mut Ui, name: &str, size: f32) {
     let t = Tokens::get(ui.ctx());
     let (rect, _) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
-    ui.painter().rect_stroke(rect, CornerRadius::ZERO, Stroke::new(1.0, t.line_strong), egui::StrokeKind::Inside);
-    ui.painter().text(rect.center(), Align2::CENTER_CENTER, initials(name), FontId::monospace(size * 0.33), t.ink);
+    ui.painter().circle_filled(rect.center(), size / 2.0, t.accent_tint);
+    ui.painter().text(rect.center(), Align2::CENTER_CENTER, initials(name), FontId::proportional(size * 0.36), t.on_tint);
 }
 
-/// The unread count on a chat row; `quiet` for a muted chat (an outline, not the accent).
+/// The unread count on a chat row: craft-ui's count badge, solid in the accent; `quiet` for a muted chat (the neutral
+/// soft badge).
 pub fn unread(ui: &mut Ui, count: u32, quiet: bool) {
-    let t = Tokens::get(ui.ctx());
-    let (fill, stroke, ink) = if quiet { (t.sunken, Stroke::new(1.0, t.line_strong), t.muted) } else { (t.accent, Stroke::NONE, t.on_accent) };
-    Frame::new().fill(fill).stroke(stroke).inner_margin(Margin::symmetric(6, 1)).show(ui, |ui| {
-        ui.label(RichText::new(count.to_string()).monospace().size(10.0).color(ink));
-    });
+    let badge = Badge::count(count);
+    if quiet {
+        badge.show(ui);
+    } else {
+        badge.variant(Variant::look(Emphasis::Solid, Tone::Accent)).show(ui);
+    }
 }
 
-/// The mark on a chat the user marked unread: a small accent square where the count goes.
+/// The mark on a chat the user marked unread: a small accent dot where the count goes.
 pub fn marked_unread(ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
-    let (rect, _) = ui.allocate_exact_size(Vec2::splat(10.0), Sense::hover());
-    ui.painter().rect_filled(rect, CornerRadius::ZERO, t.accent);
+    let side = t.caption * 0.8;
+    let (rect, _) = ui.allocate_exact_size(Vec2::splat(side), Sense::hover());
+    ui.painter().circle_filled(rect.center(), side / 2.0, t.accent);
 }
 
 /// The logo, decoded once per context.
@@ -220,41 +274,39 @@ pub fn mark(ui: &mut Ui, size: f32) {
     }
 }
 
-/// A sheet over the dimmed window: a hero with the logo, a title and a caption, then the body, then a row of
-/// actions with the secondary one on the left and the primary on the right.
-pub fn sheet(ctx: &egui::Context, id: &str, width: f32, (title, caption): (&str, &str), body: impl FnOnce(&mut Ui), actions: impl FnOnce(&mut Ui)) {
-    let t = Tokens::get(ctx);
-    let frame = Frame::new().fill(t.bg).stroke(Stroke::new(1.0, t.line_strong)).inner_margin(Margin::ZERO);
-    egui::Modal::new(egui::Id::unique(id)).frame(frame).backdrop_color(t.scrim).show(ctx, |ui| {
-        ui.set_width(width);
-        ui.spacing_mut().item_spacing.y = 0.0;
-        let hero = Frame::new().fill(t.accent_tint).inner_margin(Margin { left: 24, right: 24, top: 18, bottom: 16 }).show(ui, |ui| {
-            ui.horizontal(|ui| {
-                mark(ui, 44.0);
-                ui.add_space(8.0);
-                ui.vertical(|ui| {
-                    ui.label(RichText::new(title).size(26.0).strong().color(t.ink_strong));
-                    hud(ui, caption, t.muted);
+/// A sheet over the window: craft-ui's modal `Dialog` titled `title`, with `caption` and then the body, and the row of
+/// actions under them (the secondary one on the left, the primary on the right). The dialog keeps the keyboard inside
+/// it (Tab), and its close action or Escape dismisses it: returns true then, for the caller to treat as its own
+/// Cancel. `width` is the body's width. craft-ui runs a container's body twice in a pass (a measuring run, then the
+/// real one), so `body` and `actions` may run twice; egui reports no click in the measuring run.
+pub fn sheet(
+    ctx: &egui::Context,
+    id: &str,
+    width: f32,
+    (title, caption): (&str, &str),
+    mut body: impl FnMut(&mut Ui),
+    mut actions: impl FnMut(&mut Ui),
+) -> bool {
+    let mut open = true;
+    egui::Area::new(egui::Id::unique(id)).show(ctx, |ui| {
+        Dialog::prompt(title.to_owned())
+            .id_salt(id)
+            .opened(Bind::bound(&mut open))
+            .footer(|ui, _| {
+                ui.horizontal(|ui| {
+                    ui.set_width(width);
+                    actions(ui);
                 });
+            })
+            .show(ui, |ui, _| {
+                ui.set_width(width);
+                if !caption.is_empty() {
+                    Text::new(caption.to_owned()).role(TypeRole::Caption).shade(Shade::Muted).show(ui);
+                }
+                body(ui);
             });
-        });
-        // The 2 px orchid rule on top of the hero.
-        let top = hero.response.rect;
-        ui.painter().line_segment([top.left_top(), top.right_top()], Stroke::new(2.0, t.accent));
-        ui.painter().hline(top.x_range(), top.bottom(), t.hairline());
-        Frame::new().inner_margin(Margin::same(24)).show(ui, |ui| {
-            ui.spacing_mut().item_spacing.y = 10.0;
-            body(ui);
-        });
-        let row = Frame::new().inner_margin(Margin::symmetric(24, 14)).show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.set_width(ui.available_width());
-                actions(ui);
-            });
-        });
-        let r = row.response.rect;
-        ui.painter().hline(r.x_range(), r.top(), t.hairline());
     });
+    !open
 }
 
 #[cfg(test)]

@@ -11,6 +11,9 @@ use crate::theme::Tokens;
 use crate::tl;
 use crate::view::{Out, preview_text, unsupported};
 use crate::widgets::{Kind, avatar, button, note};
+use craft_ui::contract::{Show as _, ShowContainer as _, Trigger};
+use craft_ui::display::Divider;
+use craft_ui::menu::{Menu, MenuItem};
 
 /// The quick reactions in a message's menu. Sent as written, with the variation selector the networks expect.
 pub const QUICK_REACTIONS: [&str; 6] = ["👍", "❤\u{fe0f}", "😂", "😮", "😢", "🙏"];
@@ -95,22 +98,26 @@ pub fn message_view(ui: &mut Ui, message: &Message, cx: &Cx<'_>, ticked: Option<
     let Some(on) = ticked else { return message_only(ui, message, cx, out) };
     let t = Tokens::get(ui.ctx());
     let mut act = None;
-    let row = egui::Frame::new().fill(if on { t.sunken } else { Color32::TRANSPARENT }).inner_margin(Margin::symmetric(8, 6)).show(ui, |ui| {
-        ui.horizontal_top(|ui| {
-            let mut value = on;
-            let label = fmt(tl!("Select: {sender}, {text}"), &[("sender", &who(message)), ("text", &snippet(&message.body))]);
-            let response = ui.add(egui::Checkbox::without_text(&mut value));
-            response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, &label));
-            if response.clicked() {
-                act = Some(Act::Toggle(message.id.clone()));
-            }
-            ui.vertical(|ui| {
-                ui.set_width(ui.available_width());
-                let (_, inner) = message_only(ui, message, cx, out);
-                act = act.take().or(inner);
+    let row = egui::Frame::new()
+        .corner_radius(t.radius_control)
+        .fill(if on { t.sunken } else { Color32::TRANSPARENT })
+        .inner_margin(Margin::symmetric(8, 6))
+        .show(ui, |ui| {
+            ui.horizontal_top(|ui| {
+                let mut value = on;
+                let label = fmt(tl!("Select: {sender}, {text}"), &[("sender", &who(message)), ("text", &snippet(&message.body))]);
+                let response = ui.add(egui::Checkbox::without_text(&mut value));
+                response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, &label));
+                if response.clicked() {
+                    act = Some(Act::Toggle(message.id.clone()));
+                }
+                ui.vertical(|ui| {
+                    ui.set_width(ui.available_width());
+                    let (_, inner) = message_only(ui, message, cx, out);
+                    act = act.take().or(inner);
+                });
             });
         });
-    });
     (row.response.rect, act)
 }
 
@@ -120,14 +127,15 @@ fn message_only(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out) -> (
     let area_id = ui.scope_id().with(("message-area", &message.id.0));
     let last: Option<Rect> = ui.ctx().data(|d| d.get_temp(area_id));
     let mut act = None;
-    if let Some(rect) = last {
-        let area = ui.interact(rect, area_id, Sense::click());
-        area.context_menu(|ui| {
-            if let Some(a) = menu(ui, message, cx, out) {
-                act = Some(a);
-            }
-        });
-    }
+    let area = last.map(|rect| ui.interact(rect, area_id, Sense::click()));
+    ui.data_mut(|d| match area {
+        Some(area) => {
+            d.insert_temp(more_id(message).with("area"), area);
+        }
+        None => {
+            d.remove::<egui::Response>(more_id(message).with("area"));
+        }
+    });
     let rect = if message.own { own(ui, message, cx, out, &mut act) } else { theirs(ui, message, cx, out, &mut act) };
     ui.ctx().data_mut(|d| d.insert_temp(area_id, rect));
     (rect, act)
@@ -147,7 +155,7 @@ fn own(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out, act: &mut Opt
     let t = Tokens::get(ui.ctx());
     ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
         let rule = if matches!(message.state, SendState::Failed(_)) { t.bad } else { t.accent_ink };
-        let frame = egui::Frame::new().fill(t.accent_tint).inner_margin(Margin::symmetric(14, 10)).show(ui, |ui| {
+        let frame = egui::Frame::new().corner_radius(t.radius_surface).fill(t.accent_tint).inner_margin(Margin::symmetric(14, 10)).show(ui, |ui| {
             ui.set_max_width(460.0);
             ui.with_layout(Layout::top_down(Align::Min), |ui| {
                 contents(ui, message, cx, out, act);
@@ -170,30 +178,31 @@ fn own(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out, act: &mut Opt
 
 /// The head, the quote, the body and the reactions.
 fn contents(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out, act: &mut Option<Act>) {
-    head(ui, message, cx, out, act);
+    head(ui, message, cx);
     if let Some(quote) = &message.reply_to
         && let Some(a) = quote_view(ui, quote, &message.id, cx.emoji)
     {
         *act = Some(a);
     }
     // The text is selectable, so it takes right-clicks itself: it opens the same menu.
-    body(ui, &message.body, cx.emoji).context_menu(|ui| {
-        if let Some(a) = menu(ui, message, cx, out) {
-            *act = Some(a);
-        }
-    });
+    let text = body(ui, &message.body, cx.emoji);
+    if let Some(more) = more_button(ui, message)
+        && let Some(a) = menu(ui, message, cx, out, &more, &text)
+    {
+        *act = Some(a);
+    }
     if !message.reactions.is_empty() {
         reactions(ui, message, cx, out);
     }
 }
 
-fn head(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out, act: &mut Option<Act>) {
+fn head(ui: &mut Ui, message: &Message, cx: &Cx<'_>) {
     let t = Tokens::get(ui.ctx());
     ui.horizontal(|ui| {
-        ui.label(emoji::text(&who(message), 13.0, t.ink_strong, cx.emoji));
-        ui.label(RichText::new(crate::time::clock(message.at)).monospace().size(12.0).color(t.muted));
+        ui.label(emoji::text(&who(message), t.body, t.ink_strong, cx.emoji));
+        ui.label(RichText::new(crate::time::clock(message.at)).size(t.label).color(t.muted));
         if message.edited {
-            ui.label(RichText::new(tl!("edited")).monospace().size(12.0).color(t.muted));
+            ui.label(RichText::new(tl!("edited")).size(t.label).color(t.muted));
         }
         if message.own {
             ui.add_space(24.0);
@@ -202,95 +211,101 @@ fn head(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out, act: &mut Op
                 SendState::Sending => (tl!("Sending…"), t.muted),
                 SendState::Failed(_) => (tl!("Not sent"), t.bad),
             };
-            ui.label(RichText::new(state.to_uppercase()).monospace().size(11.0).color(color));
+            ui.label(RichText::new(state).size(t.caption).color(color));
         }
         if message.body != MessageBody::Deleted {
-            more(ui, message, cx, out, act);
+            let more = crate::widgets::menu_button(ui, crate::widgets::icon::MORE, &actions_label(message));
+            ui.data_mut(|d| d.insert_temp(more_id(message), more.response));
         }
     });
 }
 
-/// The "…" button that opens the message's menu.
-fn more(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out, act: &mut Option<Act>) {
-    let t = Tokens::get(ui.ctx());
-    let label = fmt(tl!("Message actions: {sender}, {text}"), &[("sender", &who(message)), ("text", &snippet(&message.body))]);
-    let response = ui.add(egui::Button::new(RichText::new("…").size(14.0).color(t.muted)).frame(false).min_size(egui::vec2(24.0, 18.0)));
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
-    egui::Popup::menu(&response).show(|ui| {
-        if let Some(a) = menu(ui, message, cx, out) {
-            *act = Some(a);
-        }
-    });
+/// The accessible name of a message's menu and of the button that opens it.
+fn actions_label(message: &Message) -> String {
+    fmt(tl!("Message actions: {sender}, {text}"), &[("sender", &who(message)), ("text", &snippet(&message.body))])
 }
 
-/// The message's menu: quick reactions (recently used first) and the picker, then what the user may do with it.
-fn menu(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out) -> Option<Act> {
-    ui.set_min_width(220.0);
+fn more_id(message: &Message) -> egui::Id {
+    egui::Id::unique("pingcraft-message-more").with(&message.id.0)
+}
+
+/// The message's "more" button drawn in its head this pass, which its menu hangs from.
+fn more_button(ui: &Ui, message: &Message) -> Option<egui::Response> {
+    (message.body != MessageBody::Deleted).then(|| ui.data(|d| d.get_temp::<egui::Response>(more_id(message)))).flatten()
+}
+
+/// The message's menu, craft-ui's `Menu`: it opens from the "more" button (click), or a right-click on the message or
+/// its text. Quick reactions (recently used first) and the picker, then what the user may do with it. Each row's `&`
+/// marks the letter craft-ui's open menu runs it from, shown as its shortcut: R reply, E more reactions, C copy
+/// text, F forward, P pin, S select, I details, T edit, D delete.
+fn menu(ui: &mut Ui, message: &Message, cx: &Cx<'_>, out: &mut Out, more: &egui::Response, text_response: &egui::Response) -> Option<Act> {
     let mut act = None;
-    if message.can.react {
-        ui.horizontal(|ui| {
-            for key in crate::picker::quick_reactions(ui.ctx()) {
-                let key = key.as_str();
-                let shown = shown_key(key);
-                let mut chip = egui::Button::new(emoji::symbol(&drawn_key(key), 18.0, Color32::PLACEHOLDER)).frame(false);
-                if message.my_reaction(key) {
-                    chip = chip.selected(true);
-                }
-                let response = ui.add(chip);
-                response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, fmt(tl!("React with {emoji}"), &[("emoji", &shown)])));
-                if response.clicked() {
-                    crate::picker::remember(ui.ctx(), key);
-                    out.push(Command::React { chat: cx.chat.clone(), message: message.id.clone(), key: key.to_owned() });
-                    ui.close();
-                }
-            }
-        });
-        if ui.button(tl!("More reactions…")).clicked() {
-            act = Some(Act::ChooseReaction(message.id.clone()));
-        }
-        ui.separator();
-    }
-    let item = |ui: &mut Ui, label: &str, enabled: bool| enabled && ui.button(label).clicked();
-    if item(ui, tl!("Reply"), message.can.reply) {
-        act = Some(Act::Reply(message.id.clone()));
-    }
     let text = match &message.body {
-        MessageBody::Text(text) => Some(text),
+        MessageBody::Text(text) => Some(text.clone()),
         _ => None,
     };
-    if let Some(text) = text
-        && item(ui, tl!("Copy text"), true)
-    {
-        ui.ctx().copy_text(text.clone());
-        ui.close();
-    }
-    if item(ui, tl!("Forward"), text.is_some() && message.state == SendState::Sent) {
-        act = Some(Act::Forward(message.id.clone()));
-    }
     let pinned = cx.pinned.contains(&message.id);
-    if item(ui, if pinned { tl!("Unpin") } else { tl!("Pin in this chat") }, pinned || message.can.react) {
-        out.push(Command::PinMessage { chat: cx.chat.clone(), message: message.id.clone(), pin: !pinned });
-        ui.close();
+    let mut menu = Menu::new(actions_label(message)).opened_by(more, Trigger::Click).opened_by(text_response, Trigger::Context);
+    let area = ui.data(|d| d.get_temp::<egui::Response>(more_id(message).with("area")));
+    if let Some(area) = &area {
+        menu = menu.opened_by(area, Trigger::Context);
     }
-    if item(ui, tl!("Select"), true) {
-        act = Some(Act::Select(message.id.clone()));
-    }
-    if item(ui, tl!("Details"), true) {
-        act = Some(Act::Details(message.id.clone()));
-    }
-    if item(ui, tl!("Edit"), message.can.edit && text.is_some()) {
-        act = Some(Act::Edit(message.id.clone()));
-    }
-    if message.can.delete {
-        let t = Tokens::get(ui.ctx());
-        if ui.button(RichText::new(tl!("Delete")).color(t.bad)).clicked() {
+    menu.show(ui, |ui, _| {
+        if message.can.react {
+            // Quick reactions are rows too, so the menu works by keyboard (egui buttons in its body kept the focus
+            // out of it); craft-ui's text draws their emoji through the font stack's colour emoji face.
+            for key in crate::picker::quick_reactions(ui.ctx()) {
+                let key = key.as_str();
+                let label = fmt(tl!("React with {emoji}"), &[("emoji", &shown_key(key))]);
+                if MenuItem::new(label).check(message.my_reaction(key)).show(ui).ran {
+                    crate::picker::remember(ui.ctx(), key);
+                    out.push(Command::React { chat: cx.chat.clone(), message: message.id.clone(), key: key.to_owned() });
+                }
+            }
+            if row(ui, tl!("Mor&e reactions…"), true) {
+                act = Some(Act::ChooseReaction(message.id.clone()));
+            }
+            Divider::horizontal().show(ui);
+        }
+        if row(ui, tl!("&Reply"), message.can.reply) {
+            act = Some(Act::Reply(message.id.clone()));
+        }
+        if let Some(text) = &text
+            && row(ui, tl!("&Copy text"), true)
+        {
+            ui.ctx().copy_text(text.clone());
+        }
+        if row(ui, tl!("&Forward"), text.is_some() && message.state == SendState::Sent) {
+            act = Some(Act::Forward(message.id.clone()));
+        }
+        if row(ui, if pinned { tl!("Un&pin") } else { tl!("&Pin in this chat") }, pinned || message.can.react) {
+            out.push(Command::PinMessage { chat: cx.chat.clone(), message: message.id.clone(), pin: !pinned });
+        }
+        if row(ui, tl!("&Select"), true) {
+            act = Some(Act::Select(message.id.clone()));
+        }
+        if row(ui, tl!("Deta&ils"), true) {
+            act = Some(Act::Details(message.id.clone()));
+        }
+        if row(ui, tl!("Edi&t"), message.can.edit && text.is_some()) {
+            act = Some(Act::Edit(message.id.clone()));
+        }
+        if message.can.delete && row(ui, tl!("&Delete"), true) {
             act = Some(Act::Delete(message.id.clone()));
         }
-    }
-    if act.is_some() {
-        ui.close();
-    }
+    });
     act
+}
+
+/// One row of the message's menu: `label` with its `&` mnemonic, the letter it marks shown as the row's shortcut; left
+/// out when the message does not allow it. Whether it ran.
+fn row(ui: &mut Ui, label: &str, allowed: bool) -> bool {
+    let letter = label.split('&').nth(1).and_then(|rest| rest.chars().next()).map(|c| c.to_uppercase().to_string());
+    let mut item = MenuItem::new(label.to_owned());
+    if let Some(letter) = letter {
+        item = item.shortcut(letter);
+    }
+    allowed && item.show(ui).ran
 }
 
 /// The quoted original above a reply. Clicking it goes to the original.
@@ -300,8 +315,8 @@ fn quote_view(ui: &mut Ui, quote: &Quote, reply: &MessageId, presentation: Emoji
     let sender = if quote.sender.is_empty() { tl!("a message") } else { quote.sender.as_str() };
     let inner = egui::Frame::new().inner_margin(Margin { left: 10, right: 0, top: 2, bottom: 2 }).show(ui, |ui| {
         ui.set_max_width(420.0);
-        ui.label(emoji::text(sender, 12.0, t.accent_ink, presentation));
-        ui.add(egui::Label::new(emoji::text(&text, 12.5, t.muted, presentation)).truncate());
+        ui.label(emoji::text(sender, t.label, t.accent_ink, presentation));
+        ui.add(egui::Label::new(emoji::text(&text, t.label, t.muted, presentation)).truncate());
     });
     let rect = inner.response.rect;
     ui.painter().vline(rect.left() + 1.0, rect.y_range(), Stroke::new(2.0, t.line_strong));
@@ -332,10 +347,10 @@ fn chip(ui: &mut Ui, reaction: &Reaction, enabled: bool, presentation: EmojiPres
     let t = Tokens::get(ui.ctx());
     let shown = shown_key(&reaction.key);
     let count = reaction.by.len().max(1);
-    let text = emoji::text(&format!("{} {count}", drawn_key(&reaction.key)), 13.0, if reaction.mine { t.accent_ink } else { t.ink }, presentation);
+    let text = emoji::text(&format!("{} {count}", drawn_key(&reaction.key)), t.body, if reaction.mine { t.on_tint } else { t.ink }, presentation);
     let stroke = Stroke::new(1.0, if reaction.mine { t.accent_ink } else { t.line_strong });
     let fill = if reaction.mine { t.accent_tint } else { Color32::TRANSPARENT };
-    let response = ui.add_enabled(enabled, egui::Button::new(text).fill(fill).stroke(stroke).corner_radius(egui::CornerRadius::ZERO));
+    let response = ui.add_enabled(enabled, egui::Button::new(text).fill(fill).stroke(stroke).corner_radius(t.radius_control));
     let mut names = reaction.by.iter().take(MAX_NAMES).cloned().collect::<Vec<_>>().join(", ");
     if reaction.by.len() > MAX_NAMES {
         names = fmt(tl!("{names} and {n} more"), &[("names", &names), ("n", &(reaction.by.len() - MAX_NAMES).to_string())]);
@@ -352,22 +367,23 @@ fn chip(ui: &mut Ui, reaction: &Reaction, enabled: bool, presentation: EmojiPres
 fn body(ui: &mut Ui, body: &MessageBody, presentation: EmojiPresentation) -> egui::Response {
     let t = Tokens::get(ui.ctx());
     match body {
-        MessageBody::Text(text) => ui.add(egui::Label::new(emoji::body(text, 14.0, Color32::PLACEHOLDER, presentation)).wrap()),
+        MessageBody::Text(text) => ui.add(egui::Label::new(emoji::body(text, t.body, Color32::PLACEHOLDER, presentation)).wrap()),
         MessageBody::WaitingForKey => {
             egui::Frame::new()
+                .corner_radius(t.radius_surface)
                 .fill(t.sunken)
                 .stroke(t.hairline())
                 .inner_margin(Margin::same(14))
                 .show(ui, |ui| {
                     ui.set_max_width(500.0);
-                    ui.label(RichText::new(tl!("Waiting for the key to this message")).size(14.0));
+                    ui.label(RichText::new(tl!("Waiting for the key to this message")).size(t.body));
                     note(ui, tl!("It was sent before this device could read it. It opens by itself once one of your other devices, or your key backup, shares the key."));
                 })
                 .response
         }
-        MessageBody::Deleted => ui.label(RichText::new(tl!("Message deleted")).italics().size(13.0).color(t.muted)),
-        MessageBody::Loading => ui.label(RichText::new("…").size(14.0).color(t.muted)),
-        MessageBody::Unsupported(kind) => ui.label(RichText::new(unsupported(kind)).italics().size(14.0).color(t.muted)),
+        MessageBody::Deleted => ui.label(RichText::new(tl!("Message deleted")).italics().size(t.body).color(t.muted)),
+        MessageBody::Loading => ui.label(RichText::new("…").size(t.body).color(t.muted)),
+        MessageBody::Unsupported(kind) => ui.label(RichText::new(unsupported(kind)).italics().size(t.body).color(t.muted)),
     }
 }
 
@@ -378,16 +394,19 @@ pub fn delete_sheet(ctx: &egui::Context, messages: &[Message], cx: &Cx<'_>, chat
         [_] => tl!("Delete this message?").to_owned(),
         _ => fmt(tl!("Delete {n} messages?"), &[("n", &messages.len().to_string())]),
     };
-    crate::widgets::sheet(
+    let dismissed = crate::widgets::sheet(
         ctx,
         "delete-message",
         560.0,
-        (&title, &chat_name.to_uppercase()),
+        (&title, chat_name),
         |ui| {
             for message in messages.iter().take(5) {
-                ui.label(emoji::text(&snippet(&message.body), 13.0, Color32::PLACEHOLDER, cx.emoji));
+                ui.label(emoji::text(&snippet(&message.body), Tokens::get(ui.ctx()).body, Color32::PLACEHOLDER, cx.emoji));
             }
-            ui.label(RichText::new(tl!("They are deleted for everyone in this chat, and a “Message deleted” line stays in their place.")).size(14.0));
+            ui.label(
+                RichText::new(tl!("They are deleted for everyone in this chat, and a “Message deleted” line stays in their place."))
+                    .size(Tokens::get(ui.ctx()).body),
+            );
             note(ui, tl!("PingCraft asks the network's bridge to delete them there too. Whether they disappear there depends on the network."));
         },
         |ui| {
@@ -404,6 +423,7 @@ pub fn delete_sheet(ctx: &egui::Context, messages: &[Message], cx: &Cx<'_>, chat
             });
         },
     );
+    close |= dismissed;
     close
 }
 

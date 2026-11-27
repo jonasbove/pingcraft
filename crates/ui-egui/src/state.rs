@@ -64,6 +64,8 @@ pub struct RecoveryForms {
     pub entering: bool,
     pub typed: Zeroizing<String>,
     pub wrong: bool,
+    /// The new key replaces one the account had (asked for in Settings), rather than being the first sign-in's.
+    pub replacing: bool,
 }
 
 /// The tabs in the header, once signed in.
@@ -72,6 +74,83 @@ pub enum Tab {
     #[default]
     Inbox,
     Accounts,
+    Settings,
+}
+
+/// Light, dark, or as the system is: craft-theme's mode choice, for the window's theme.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Appearance {
+    Light,
+    Dark,
+    /// As the operating system says (light where it says nothing).
+    #[default]
+    System,
+}
+
+impl Appearance {
+    /// The name it is saved under on this computer. Never change one.
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Light => "light",
+            Self::Dark => "dark",
+            Self::System => "system",
+        }
+    }
+
+    /// The choice saved under `id`; anything else is the default.
+    pub fn from_id(id: &str) -> Self {
+        [Self::Light, Self::Dark].into_iter().find(|a| a.id() == id).unwrap_or_default()
+    }
+
+    /// As craft-theme's mode choice.
+    pub fn mode(self) -> craft_theme::ModeChoice {
+        match self {
+            Self::Light => craft_theme::ModeChoice::Light,
+            Self::Dark => craft_theme::ModeChoice::Dark,
+            Self::System => craft_theme::ModeChoice::System,
+        }
+    }
+
+    /// From craft-theme's mode choice.
+    pub fn of(mode: craft_theme::ModeChoice) -> Self {
+        match mode {
+            craft_theme::ModeChoice::Light => Self::Light,
+            craft_theme::ModeChoice::Dark => Self::Dark,
+            craft_theme::ModeChoice::System => Self::System,
+        }
+    }
+}
+
+/// A change to the look the user asked for: the mode, a theme for one mode's slot, or whether PingCraft keeps a
+/// choice of its own instead of following the Craft suite's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LookChange {
+    Mode(Appearance),
+    Theme { id: craft_theme::ThemeId, dark: bool },
+    JustHere(bool),
+}
+
+/// The settings kept on this computer only, by the app (the account keeps the others).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Prefs {
+    /// PingCraft's own theme and mode, over the Craft suite's choice (craft-theme's `AppChoice`); all `None` to
+    /// follow the suite.
+    pub look: craft_theme::AppChoice,
+    /// Whether a notification shows the message's text, or only who wrote.
+    pub previews: bool,
+}
+
+impl Default for Prefs {
+    fn default() -> Self {
+        Self { look: crate::themes::follow_suite(), previews: true }
+    }
+}
+
+impl Prefs {
+    /// Whether PingCraft keeps a theme or mode of its own rather than the suite's.
+    pub fn just_here(&self) -> bool {
+        self.look.theme.is_some() || self.look.mode.is_some()
+    }
 }
 
 /// What a network's bridge said, for the ACCOUNTS tab.
@@ -347,15 +426,52 @@ pub struct State {
     pub notifications: Vec<Notification>,
     /// Each network's notification sound and accent colour, as the account keeps them.
     pub network_alerts: BTreeMap<Network, Alerts>,
+    /// The settings kept on this computer; they stay when the user signs out.
+    pub prefs: Prefs,
+    /// Whether PingCraft is unlocked with a passphrase on this computer (no keychain); `None` until the backend says.
+    /// It stays when the user signs out.
+    pub passphrase: Option<bool>,
+    /// The Settings tab's state.
+    pub settings: crate::settings::SettingsState,
+    /// PingCraft's commands asked for this frame by the screens (a tab, a choice on a page), run by the app as a
+    /// shortcut or a menu row runs them.
+    pub requested: Vec<crate::commands::AppCommand>,
+    /// Settings' actions that take a value, asked for this frame, run as `requested` are.
+    pub actions: Vec<crate::commands::SettingAction>,
+    /// The inbox's search field takes the focus next frame.
+    pub focus_search: bool,
+    /// The Craft suite's theme choice, as last read (craft-theme-store); its unset fields are PingCraft's defaults.
+    pub suite: craft_theme::SuiteChoice,
+    /// Changes to the look asked for this frame, applied by the app.
+    pub look_changes: Vec<LookChange>,
 }
 
 impl State {
+    /// The theme selection shown: PingCraft's own choice over the suite's.
+    pub fn selection(&self) -> craft_theme::Selection {
+        crate::themes::selection(&self.suite, &self.prefs.look)
+    }
+
+    /// The mode chosen (light, dark, or the system's).
+    pub fn appearance(&self) -> Appearance {
+        Appearance::of(self.selection().mode)
+    }
+
     pub fn apply(&mut self, event: Event) {
+        self.settings.apply(&event);
         match event {
-            Event::AlreadyRunning => *self = Self { screen: Screen::AlreadyRunning, ..Self::default() },
+            Event::AlreadyRunning => {
+                *self = Self { screen: Screen::AlreadyRunning, prefs: self.prefs.clone(), suite: self.suite.clone(), ..Self::default() }
+            }
             Event::SignedOut => {
                 let server = std::mem::take(&mut self.sign_in.server);
-                *self = Self { screen: Screen::SignIn, ..Self::default() };
+                *self = Self {
+                    screen: Screen::SignIn,
+                    prefs: self.prefs.clone(),
+                    suite: self.suite.clone(),
+                    passphrase: self.passphrase,
+                    ..Self::default()
+                };
                 self.sign_in.server = server;
             }
             Event::Locked { first } => {
@@ -392,7 +508,7 @@ impl State {
                 if let InboxChange::Upsert(chat) = &change
                     && self.inbox_loaded
                     && self.open.as_ref().is_none_or(|o| o.id != chat.id)
-                    && let Some(mut n) = crate::notify::for_inbox_change(self.inbox.get(&chat.id), chat)
+                    && let Some(mut n) = crate::notify::for_inbox_change(self.inbox.get(&chat.id), chat, self.prefs.previews)
                 {
                     n.sound = self.alerts(chat).sounds();
                     self.notifications.push(n);
@@ -403,7 +519,7 @@ impl State {
                 if let Some(open) = self.open.as_mut().filter(|o| o.id == chat) {
                     // The chat is in sight only on the INBOX tab of a window with focus.
                     let seen = self.focused && self.tab == Tab::Inbox;
-                    if let Some(mut n) = crate::notify::for_open_chat(&open.messages, &messages, self.inbox.get(&chat), seen) {
+                    if let Some(mut n) = crate::notify::for_open_chat(&open.messages, &messages, self.inbox.get(&chat), seen, self.prefs.previews) {
                         n.sound = self.inbox.get(&chat).is_none_or(|c| Self::alerts_with(&self.network_alerts, c).sounds());
                         self.notifications.push(n);
                     }
@@ -439,6 +555,11 @@ impl State {
                     open.at_start = true;
                 }
             }
+            Event::Passphrase(on) => self.passphrase = Some(on),
+            Event::Previews(Some(on)) => self.prefs.previews = on,
+            // An account that keeps nothing yet: the app moves this computer's setting up to it.
+            Event::Previews(None) => {}
+            Event::PassphraseChanged(_) | Event::Devices(_) | Event::SignOutRefused { .. } | Event::RecoveryKeyRefused(_) => {}
             Event::NewRecoveryKey(key) => {
                 self.recovery_forms.new_key = Some(key);
                 self.recovery_forms.saved_ticked = false;

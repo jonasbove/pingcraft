@@ -8,64 +8,63 @@ use pingcraft_core::encryption::{CancelReason, RecoveryKey, RecoveryStatus, SasS
 use pingcraft_core::{Chat, ConnectionState, Filter, MessageBody};
 use zeroize::Zeroizing;
 
+use crate::commands::AppCommand;
 use crate::i18n::{fmt, trn};
 use crate::state::{NetworkEntry, Screen, State, Tab};
 use crate::theme::Tokens;
 use crate::time::short_time;
 use crate::tl;
 use crate::widgets::{Kind, avatar, button, field, hud, mark, network_name, note, problem, unread};
+use craft_ui::buttons::ToggleButton;
+use craft_ui::choice::{Checkbox, Segmented};
+use craft_ui::contract::{Bind, Entry, Props as _, Show as _};
+use craft_ui::display::Shade;
 
 /// The commands the screens collected in one frame.
 pub type Out = Vec<Command>;
 
-pub fn header(ui: &mut Ui, state: &mut State, out: &mut Out) {
+pub fn header(ui: &mut Ui, state: &mut State) {
     let t = Tokens::get(ui.ctx());
     ui.horizontal_centered(|ui| {
         ui.add_space(16.0);
         mark(ui, 24.0);
-        ui.label(RichText::new("Ping").size(18.0).strong().color(t.ink_strong));
+        ui.label(RichText::new("Ping").size(t.title).strong().color(t.ink_strong));
         ui.add_space(-ui.spacing().item_spacing.x);
-        ui.label(RichText::new("Craft").size(18.0).strong().color(t.accent_ink));
+        ui.label(RichText::new("Craft").size(t.title).strong().color(t.accent_ink));
         if state.screen == Screen::Inbox {
             ui.add_space(24.0);
-            ui.spacing_mut().item_spacing.x = 2.0;
-            if nav_cell(ui, tl!("Inbox"), state.tab == Tab::Inbox, true).clicked() {
-                state.tab = Tab::Inbox;
+            for (label, tab, command) in [
+                (tl!("Inbox"), Tab::Inbox, AppCommand::Inbox),
+                (tl!("Accounts"), Tab::Accounts, AppCommand::Accounts),
+                (tl!("Settings"), Tab::Settings, AppCommand::Settings),
+            ] {
+                if nav_cell(ui, label, state.tab == tab, true) && state.tab != tab {
+                    state.requested.push(command);
+                }
             }
-            if nav_cell(ui, tl!("Accounts"), state.tab == Tab::Accounts, true).clicked() && state.tab != Tab::Accounts {
-                open_accounts(state, out);
-            }
-            // Settings has no screen yet.
-            nav_cell(ui, tl!("Settings"), false, false);
         }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.add_space(16.0);
             let (word, dot) = status(state, &t);
-            ui.label(RichText::new(word).size(13.0).color(t.ink));
+            ui.label(RichText::new(word).size(t.body).color(t.ink));
             let (rect, _) = ui.allocate_exact_size(Vec2::splat(8.0), Sense::hover());
             ui.painter().circle_filled(rect.center(), 4.0, dot);
             // On every tab: reconnect now, and ask the bridges again.
             if state.screen == Screen::Inbox {
                 ui.add_space(12.0);
                 if button(ui, tl!("Refresh"), Kind::Secondary, true).clicked() {
-                    out.push(Command::Refresh);
+                    state.requested.push(AppCommand::Refresh);
                 }
             }
         });
     });
 }
 
-/// One of the header's tabs: inverted when it is the one shown. Its accessible name is the label; it says whether
-/// it is selected.
-fn nav_cell(ui: &mut Ui, label: &str, on: bool, enabled: bool) -> egui::Response {
-    let t = Tokens::get(ui.ctx());
-    let ink = if on { t.invert_fg } else { t.muted };
-    let cell = egui::Button::new(RichText::new(label.to_uppercase()).monospace().size(11.0).color(ink))
-        .stroke(Stroke::NONE)
-        .corner_radius(egui::CornerRadius::ZERO)
-        .selected(on);
-    let (fill, hover) = if on { (t.invert_bg, t.invert_bg) } else { (Color32::TRANSPARENT, t.line) };
-    crate::widgets::animated(ui, cell, enabled, fill, hover)
+/// One of the header's tabs: a craft-ui toggle button, on while its screen shows. Its accessible name is the label,
+/// and it says whether it is on. Whether it was clicked.
+fn nav_cell(ui: &mut Ui, label: &str, on: bool, enabled: bool) -> bool {
+    let shown = ToggleButton::new(label.to_owned(), Bind::given(on)).enabled(enabled).show(ui);
+    craft_ui::contract::clicked(&shown.response)
 }
 
 /// Shows the ACCOUNTS tab, and asks the bridges what they offer and which accounts the user has.
@@ -95,9 +94,9 @@ pub fn footer(ui: &mut Ui, state: &State) {
     let t = Tokens::get(ui.ctx());
     ui.horizontal_centered(|ui| {
         ui.add_space(20.0);
-        let who = state.user.clone().unwrap_or_else(|| tl!("Not signed in").to_uppercase());
+        let who = state.user.clone().unwrap_or_else(|| tl!("Not signed in").to_owned());
         // Matrix IDs are shown as typed, never in capitals.
-        ui.label(RichText::new(format!("PINGCRAFT {} · {who}", env!("CARGO_PKG_VERSION"))).monospace().size(11.0).color(t.muted));
+        ui.label(RichText::new(format!("PINGCRAFT {} · {who}", env!("CARGO_PKG_VERSION"))).size(t.caption).color(t.muted));
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.add_space(20.0);
             let right = match state.screen {
@@ -106,7 +105,7 @@ pub fn footer(ui: &mut Ui, state: &State) {
                 Screen::Locked { .. } => tl!("Locked").to_owned(),
                 _ => tl!("Your server, your messages").to_owned(),
             };
-            ui.label(RichText::new(right).size(12.0).color(t.muted));
+            ui.label(RichText::new(right).size(t.label).color(t.muted));
         });
     });
 }
@@ -134,7 +133,7 @@ pub fn sign_in(ctx: &egui::Context, state: &mut State, out: &mut Out) {
             );
             field(ui, tl!("Username"), &mut form.username, false, "");
             let password = field(ui, tl!("Password"), &mut form.password, true, "");
-            if password.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            if password.submitted {
                 submit.set(true);
             }
             if let Some(p) = &form.problem {
@@ -212,7 +211,7 @@ pub fn unlock(ctx: &egui::Context, state: &mut State, first: bool, out: &mut Out
                 if !same && !form.again.is_empty() {
                     problem(ui, tl!("The two passphrases are not the same."));
                 }
-            } else if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            } else if response.submitted {
                 submit.set(true);
             }
             let show = if form.show { tl!("Hide") } else { tl!("Show") };
@@ -262,7 +261,7 @@ pub fn already_running(ctx: &egui::Context) {
         520.0,
         (tl!("PingCraft is already open"), tl!("On this computer")),
         |ui| {
-            ui.label(RichText::new(tl!("Another PingCraft window is using your messages on this computer.")).size(14.0));
+            ui.label(RichText::new(tl!("Another PingCraft window is using your messages on this computer.")).size(Tokens::get(ui.ctx()).body));
             note(
                 ui,
                 tl!(
@@ -278,13 +277,16 @@ pub fn already_running(ctx: &egui::Context) {
 fn confirm_forget(ctx: &egui::Context, state: &mut State, out: &mut Out) {
     let mut cancel = false;
     let mut clear = false;
-    crate::widgets::sheet(
+    let dismissed = crate::widgets::sheet(
         ctx,
         "unlock",
         520.0,
         (tl!("Sign out on this computer?"), tl!("No keychain on this computer")),
         |ui| {
-            ui.label(RichText::new(tl!("Without the passphrase, PingCraft can only clear everything it keeps on this computer.")).size(14.0));
+            ui.label(
+                RichText::new(tl!("Without the passphrase, PingCraft can only clear everything it keeps on this computer."))
+                    .size(Tokens::get(ui.ctx()).body),
+            );
             note(
                 ui,
                 tl!(
@@ -299,6 +301,7 @@ fn confirm_forget(ctx: &egui::Context, state: &mut State, out: &mut Out) {
             });
         },
     );
+    cancel |= dismissed;
     if cancel {
         state.unlock.confirm_forget = false;
     } else if clear {
@@ -316,7 +319,8 @@ pub fn inbox(ui: &mut Ui, state: &mut State, out: &mut Out) {
         inbox_list(ui, state, out);
     });
     let mut leave = false;
-    egui::CentralPanel::default().frame(egui::Frame::new().fill(t.bg)).show(ui, |ui| match state.open.as_mut() {
+    // The chat is the window's content, on its background; the inbox list beside it is a panel (craft-ui's surfaces).
+    egui::CentralPanel::default().frame(egui::Frame::new().fill(t.sunken)).show(ui, |ui| match state.open.as_mut() {
         Some(open) => {
             let chat = state.inbox.get(&open.id).cloned();
             let network = chat.as_ref().and_then(|c| state.network_alerts.get(&c.network).copied()).unwrap_or_default();
@@ -330,6 +334,32 @@ pub fn inbox(ui: &mut Ui, state: &mut State, out: &mut Out) {
         state.open = None;
     }
     forward_sheet(ui.ctx(), state, out);
+}
+
+/// Opens the next (`forward`) or previous chat in the inbox's order, with its filter and search, wrapping at the
+/// ends; `unread` skips the read ones. With no chat open, the first or the last. Opening marks it read, as a click
+/// does.
+pub fn step_chat(state: &mut State, forward: bool, unread: bool, out: &mut Out) {
+    let order: Vec<(pingcraft_core::ChatId, bool)> =
+        state.inbox.visible(state.filter, &state.search).map(|c| (c.id.clone(), c.is_unread())).collect();
+    let n = order.len();
+    if n == 0 {
+        return;
+    }
+    let at = state.open.as_ref().and_then(|o| order.iter().position(|(id, _)| *id == o.id));
+    let next = (1..=n).find_map(|step| {
+        let i = match (at, forward) {
+            (Some(at), true) => (at + step) % n,
+            (Some(at), false) => (at + n - step % n) % n,
+            (None, true) => step - 1,
+            (None, false) => n - step,
+        };
+        let (id, is_unread) = &order[i];
+        (!unread || *is_unread).then(|| id.clone())
+    });
+    if let Some(chat) = next.filter(|c| state.open.as_ref().is_none_or(|o| o.id != *c)) {
+        open_chat_from_elsewhere(state, chat, out);
+    }
 }
 
 /// Opens a chat from outside the inbox list (a notification was clicked), as clicking its row would.
@@ -364,7 +394,7 @@ fn forward_sheet(ctx: &egui::Context, state: &mut State, out: &mut Out) {
         .collect();
     let (mut close, mut send) = (false, false);
     let chosen = forwarding.to.is_some();
-    crate::widgets::sheet(
+    let dismissed = crate::widgets::sheet(
         ctx,
         "forward",
         600.0,
@@ -395,6 +425,7 @@ fn forward_sheet(ctx: &egui::Context, state: &mut State, out: &mut Out) {
             });
         },
     );
+    close |= dismissed;
     if send && let Some(to) = forwarding.to.clone() {
         out.push(Command::Forward { from, messages: forwarding.messages.clone(), to });
         open.selected = None;
@@ -408,31 +439,34 @@ fn inbox_list(ui: &mut Ui, state: &mut State, out: &mut Out) {
     let t = Tokens::get(ui.ctx());
     egui::Frame::new().inner_margin(Margin { left: 16, right: 16, top: 16, bottom: 8 }).show(ui, |ui| {
         ui.horizontal(|ui| {
-            let all = format!("{} {}", tl!("All").to_uppercase(), state.inbox.in_inbox());
-            let unread = format!("{} {}", tl!("Unread").to_uppercase(), state.inbox.unread_chats());
-            let archived = format!("{} {}", tl!("Archived").to_uppercase(), state.inbox.archived());
-            for (label, filter) in [(all, Filter::All), (unread, Filter::Unread), (archived, Filter::Archived)] {
-                let on = state.filter == filter;
-                let text = RichText::new(label).monospace().size(11.0).color(if on { t.invert_fg } else { t.muted });
-                let cell = egui::Button::new(text).stroke(Stroke::new(1.0, t.line_strong)).selected(on);
-                let (fill, hover) = if on { (t.invert_bg, t.invert_bg) } else { (Color32::TRANSPARENT, t.line) };
-                if crate::widgets::animated(ui, cell, true, fill, hover).clicked() {
-                    state.filter = filter;
-                }
-            }
+            // craft-ui's segmented control takes words only: the counts are on the line under it and on each row.
+            let entries =
+                [Entry::new(Filter::All, tl!("All")), Entry::new(Filter::Unread, tl!("Unread")), Entry::new(Filter::Archived, tl!("Archived"))];
+            Segmented::new(tl!("Show"), Bind::bound(&mut state.filter), &entries).show(ui);
+        });
+        ui.add_space(8.0);
+        ui.horizontal(|ui| {
             let search = egui::TextEdit::singleline(&mut state.search)
                 .hint_text(tl!("Search chats"))
                 .align(egui::Align2::LEFT_CENTER)
                 .desired_width(f32::INFINITY);
             let search = ui.add(search);
             search.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, tl!("Search chats")));
+            if std::mem::take(&mut state.focus_search) {
+                search.request_focus();
+            }
         });
         ui.add_space(8.0);
-        let (place, count) = match state.filter {
-            Filter::Archived => (tl!("Archive"), state.inbox.archived()),
-            Filter::All | Filter::Unread => (tl!("Inbox"), state.inbox.in_inbox()),
+        let line = match state.filter {
+            Filter::Archived => format!("{} · {}", tl!("Archive"), trn(state.inbox.archived() as u64, "{n} chat", "{n} chats")),
+            Filter::All | Filter::Unread => format!(
+                "{} · {} · {}",
+                tl!("Inbox"),
+                trn(state.inbox.in_inbox() as u64, "{n} chat", "{n} chats"),
+                trn(state.inbox.unread_chats() as u64, "{n} unread", "{n} unread")
+            ),
         };
-        hud(ui, &format!("{} · {}", place, trn(count as u64, "{n} chat", "{n} chats")), t.muted);
+        hud(ui, &line, Shade::Muted);
         if state.recovery == RecoveryStatus::NeedsKey {
             needs_key(ui, state, out);
         }
@@ -472,8 +506,8 @@ fn inbox_list(ui: &mut Ui, state: &mut State, out: &mut Out) {
 fn needs_key(ui: &mut Ui, state: &mut State, out: &mut Out) {
     let t = Tokens::get(ui.ctx());
     ui.add_space(8.0);
-    egui::Frame::new().fill(t.sunken).stroke(t.hairline()).inner_margin(Margin::same(12)).show(ui, |ui| {
-        ui.label(RichText::new(tl!("This device can't read your earlier encrypted messages yet.")).size(13.0));
+    egui::Frame::new().corner_radius(t.radius_surface).fill(t.sunken).stroke(t.hairline()).inner_margin(Margin::same(12)).show(ui, |ui| {
+        ui.label(RichText::new(tl!("This device can't read your earlier encrypted messages yet.")).size(t.body));
         note(ui, tl!("Type your recovery key, or verify this device from another one where you're signed in."));
         ui.horizontal(|ui| {
             if button(ui, tl!("Enter recovery key"), Kind::Secondary, true).clicked() {
@@ -511,10 +545,6 @@ pub(crate) fn unsupported(kind: &str) -> String {
         _ => tl!("A message PingCraft can't show yet").to_owned(),
     }
 }
-
-/// The marks on a pinned and a muted chat's row.
-pub(crate) const PINNED_MARK: &str = "📌";
-pub(crate) const MUTED_MARK: &str = "🔕";
 
 /// One chat in the list. Its accessible name says the chat, its network, the unread count and the last message.
 fn chat_row(ui: &mut Ui, chat: &Chat, accent: Option<pingcraft_core::Accent>, selected: bool) -> egui::Response {
@@ -558,6 +588,7 @@ fn chat_row(ui: &mut Ui, chat: &Chat, accent: Option<pingcraft_core::Accent>, se
         ui.painter().rect_filled(rect, 0.0, t.sunken);
         ui.painter().vline(rect.left() + 1.0, rect.y_range(), Stroke::new(2.0, t.accent_ink));
     } else if response.hovered() {
+        // An edge-to-edge row with a rule under it: square, as a list's rows are (the corner rule).
         ui.painter().rect_filled(rect, 0.0, t.sunken);
     }
     ui.painter().hline(rect.x_range(), rect.bottom() - 0.5, t.hairline());
@@ -572,29 +603,37 @@ fn chat_row(ui: &mut Ui, chat: &Chat, accent: Option<pingcraft_core::Accent>, se
     let two_lines = preview.is_some() || chat.is_unread();
     child.vertical(|ui| {
         let strong = chat.is_unread();
-        // Centre the one or two lines in the row by hand: a vertical block in a centred row starts at the top.
-        let name_h = ui.fonts_mut(|f| f.row_height(&egui::FontId::proportional(14.0)));
-        let preview_h = ui.fonts_mut(|f| f.row_height(&egui::FontId::proportional(12.5)));
-        let height = if two_lines { name_h + 4.0 + preview_h } else { name_h };
-        ui.add_space(((ui.available_height() - height) / 2.0).max(0.0));
+        // One or two lines of equal height, each centred: the network tag and the unread badge are craft-ui badges,
+        // taller than a line of text, so each line is given its height rather than taking the text's.
+        ui.spacing_mut().item_spacing.y = 0.0;
+        let line = if two_lines { ui.available_height() / 2.0 } else { ui.available_height() };
+        let line_size = Vec2::new(ui.available_width(), line);
         // Time and network tag first, from the right, so a long name truncates instead of pushing them down.
-        ui.horizontal(|ui| {
+        ui.allocate_ui_with_layout(line_size, Layout::left_to_right(Align::Center), |ui| {
+            // A nested row (the network tag's) starts as tall as this and centres in it.
+            ui.spacing_mut().interact_size.y = line;
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let when = chat.last_message.as_ref().map(|m| short_time(m.at)).unwrap_or_default();
-                ui.label(RichText::new(when).monospace().size(12.0).color(if strong { t.ink } else { t.muted }));
+                // The time has a column of its own, as wide as its widest form, so the tags line up whether a chat
+                // shows a time or not.
+                let font = egui::FontId::proportional(t.label);
+                let column = ui.fonts_mut(|f| f.layout_no_wrap("00 Mmm".to_owned(), font, t.ink).size().x);
+                ui.allocate_ui_with_layout(Vec2::new(column, line), Layout::right_to_left(Align::Center), |ui| {
+                    ui.set_min_width(column);
+                    ui.label(RichText::new(when).size(t.label).color(if strong { t.ink } else { t.muted }));
+                });
                 crate::widgets::network_tag_in(ui, &chat.network, accent);
-                // Marks drawn from the bundled emoji font (a test checks they have glyphs).
                 if chat.muted.is_some() {
-                    ui.label(RichText::new(MUTED_MARK).size(12.0).color(t.muted));
+                    crate::widgets::mark_icon(ui, crate::widgets::icon::MUTED, tl!("Muted"));
                 }
                 if chat.pinned {
-                    ui.label(RichText::new(PINNED_MARK).size(12.0).color(t.muted));
+                    crate::widgets::mark_icon(ui, crate::widgets::icon::PINNED, tl!("Pinned"));
                 }
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                     ui.add(
                         egui::Label::new(crate::emoji::text(
                             &chat.name,
-                            14.0,
+                            t.body,
                             if strong { t.ink_strong } else { t.ink },
                             chat.network.emoji_presentation(),
                         ))
@@ -606,7 +645,9 @@ fn chat_row(ui: &mut Ui, chat: &Chat, accent: Option<pingcraft_core::Accent>, se
         if !two_lines {
             return;
         }
-        ui.horizontal(|ui| {
+        ui.allocate_ui_with_layout(line_size, Layout::left_to_right(Align::Center), |ui| {
+            // A nested row (the network tag's) starts as tall as this and centres in it.
+            ui.spacing_mut().interact_size.y = line;
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if chat.unread > 0 {
                     unread(ui, chat.unread, chat.muted.is_some());
@@ -616,7 +657,7 @@ fn chat_row(ui: &mut Ui, chat: &Chat, accent: Option<pingcraft_core::Accent>, se
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                     let text = preview.clone().unwrap_or_default();
                     ui.add(
-                        egui::Label::new(crate::emoji::text(&text, 12.5, if strong { t.ink } else { t.muted }, chat.network.emoji_presentation()))
+                        egui::Label::new(crate::emoji::text(&text, t.label, if strong { t.ink } else { t.muted }, chat.network.emoji_presentation()))
                             .truncate(),
                     );
                 });
@@ -631,7 +672,7 @@ fn empty_chat(ui: &mut Ui, state: &mut State, out: &mut Out) {
     ui.add_space(ui.available_height() / 3.0);
     ui.vertical_centered(|ui| {
         if state.inbox_loaded && state.inbox.is_empty() {
-            ui.label(RichText::new(tl!("Your chats, one inbox.")).size(26.0).strong().color(t.ink_strong));
+            ui.label(RichText::new(tl!("Your chats, one inbox.")).size(t.heading).strong().color(t.ink_strong));
             ui.add_space(8.0);
             note(ui, tl!("Networks are connected through bridges, small programs on your server. Connect one, and its chats show up here."));
             ui.add_space(8.0);
@@ -651,7 +692,8 @@ fn empty_chat(ui: &mut Ui, state: &mut State, out: &mut Out) {
 pub fn recovery_key(ctx: &egui::Context, state: &mut State, out: &mut Out) {
     let Some(key) = state.recovery_forms.new_key.clone() else { return };
     let user = state.user.clone().unwrap_or_default();
-    let caption = format!("{} · {user}", tl!("First sign-in").to_uppercase());
+    let first = if state.recovery_forms.replacing { tl!("New recovery key") } else { tl!("First sign-in") };
+    let caption = format!("{first} · {user}");
     let ticked = std::cell::Cell::new(state.recovery_forms.saved_ticked);
     let copied = std::cell::Cell::new(state.recovery_forms.copied);
     let mut done = false;
@@ -662,25 +704,28 @@ pub fn recovery_key(ctx: &egui::Context, state: &mut State, out: &mut Out) {
         (tl!("Save your recovery key"), &caption),
         |ui| {
             let t = Tokens::get(ui.ctx());
-            ui.label(RichText::new(tl!("Your messages are encrypted. This key unlocks them on a new device: PingCraft keeps a backup of your message keys on your server, locked with it.")).size(14.0));
-            egui::Frame::new().fill(t.sunken).stroke(t.hairline()).inner_margin(Margin::symmetric(20, 14)).show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                for row in key.groups().chunks(6) {
-                    ui.label(RichText::new(row.join(" ")).monospace().size(22.0).color(t.ink_strong));
-                }
-            });
+            ui.label(RichText::new(tl!("Your messages are encrypted. This key unlocks them on a new device: PingCraft keeps a backup of your message keys on your server, locked with it.")).size(t.body));
+            egui::Frame::new().corner_radius(t.radius_surface).fill(t.sunken).stroke(t.hairline()).inner_margin(Margin::symmetric(20, 14)).show(
+                ui,
+                |ui| {
+                    ui.set_width(ui.available_width());
+                    for row in key.groups().chunks(6) {
+                        ui.label(RichText::new(row.join(" ")).size(t.heading).color(t.ink_strong));
+                    }
+                },
+            );
             let label = if copied.get() { tl!("Copied") } else { tl!("Copy") };
             if button(ui, label, Kind::Secondary, true).clicked() {
                 ui.ctx().copy_text(key.expose().to_owned());
                 copied.set(true);
             }
-            egui::Frame::new().stroke(t.hairline()).inner_margin(Margin::same(14)).show(ui, |ui| {
+            egui::Frame::new().corner_radius(t.radius_surface).stroke(t.hairline()).inner_margin(Margin::same(14)).show(ui, |ui| {
                 ui.set_width(ui.available_width());
-                hud(ui, tl!("If you lose it"), t.muted);
-                ui.label(RichText::new(tl!("If you lose every device you're signed in on and this key, your encrypted message history is gone for good. Nobody can get it back for you, not even your server's admin.")).size(13.0));
+                hud(ui, tl!("If you lose it"), Shade::Muted);
+                ui.label(RichText::new(tl!("If you lose every device you're signed in on and this key, your encrypted message history is gone for good. Nobody can get it back for you, not even your server's admin.")).size(t.body));
             });
             let mut on = ticked.get();
-            ui.checkbox(&mut on, tl!("I've saved my recovery key somewhere safe, away from this computer."));
+            Checkbox::new(Bind::bound(&mut on)).label(tl!("I've saved my recovery key somewhere safe, away from this computer.")).show(ui);
             ticked.set(on);
         },
         |ui| {
@@ -696,6 +741,7 @@ pub fn recovery_key(ctx: &egui::Context, state: &mut State, out: &mut Out) {
         state.recovery_forms.new_key = None;
         state.recovery_forms.saved_ticked = false;
         state.recovery_forms.copied = false;
+        state.recovery_forms.replacing = false;
         out.push(Command::RecoveryKeySaved);
     }
 }
@@ -709,7 +755,7 @@ pub fn enter_recovery_key(ctx: &egui::Context, state: &mut State, out: &mut Out)
     let mut cancel = false;
     let mut submit = false;
     let ready = !forms.typed.trim().is_empty();
-    crate::widgets::sheet(
+    let dismissed = crate::widgets::sheet(
         ctx,
         "enter-recovery-key",
         560.0,
@@ -733,6 +779,7 @@ pub fn enter_recovery_key(ctx: &egui::Context, state: &mut State, out: &mut Out)
             });
         },
     );
+    cancel |= dismissed;
     if cancel {
         forms.entering = false;
         forms.typed = Zeroizing::default();
@@ -750,7 +797,7 @@ pub fn verification(ctx: &egui::Context, state: &State, out: &mut Out) {
         Verification::Incoming { device } => device.clone(),
         _ => tl!("Your devices").to_owned(),
     };
-    crate::widgets::sheet(
+    let dismissed = crate::widgets::sheet(
         ctx,
         "verify",
         720.0,
@@ -815,20 +862,27 @@ pub fn verification(ctx: &egui::Context, state: &State, out: &mut Out) {
             });
         },
     );
+    // Escape or the close action stops the verification, as Not now, Cancel and Close do.
+    if dismissed {
+        out.push(Command::CancelVerification);
+    }
 }
 
 fn symbol_tiles(ui: &mut Ui, symbols: &[SasSymbol]) {
     let t = Tokens::get(ui.ctx());
     ui.horizontal(|ui| {
         for s in symbols {
-            egui::Frame::new().fill(t.sunken).stroke(t.hairline()).inner_margin(Margin::symmetric(4, 10)).show(ui, |ui| {
-                ui.set_width(80.0);
-                ui.vertical_centered(|ui| {
-                    ui.label(crate::emoji::symbol(&s.symbol, 34.0, egui::Color32::PLACEHOLDER));
-                    // The spec's English name; translated through the catalog like any other text.
-                    ui.label(RichText::new(tl!(&s.name)).size(12.0).color(t.muted));
-                });
-            });
+            egui::Frame::new().corner_radius(t.radius_surface).fill(t.sunken).stroke(t.hairline()).inner_margin(Margin::symmetric(4, 10)).show(
+                ui,
+                |ui| {
+                    ui.set_width(80.0);
+                    ui.vertical_centered(|ui| {
+                        ui.label(crate::emoji::symbol(&s.symbol, 34.0, egui::Color32::PLACEHOLDER));
+                        // The spec's English name; translated through the catalog like any other text.
+                        ui.label(RichText::new(tl!(&s.name)).size(t.label).color(t.muted));
+                    });
+                },
+            );
         }
     });
 }
@@ -839,7 +893,7 @@ pub fn problem_bar(ui: &mut Ui, state: &mut State) {
     let t = Tokens::get(ui.ctx());
     egui::Frame::new().fill(t.sunken).inner_margin(Margin::symmetric(16, 6)).show(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.label(RichText::new(fmt(tl!("Something went wrong: {problem}"), &[("problem", &p)])).size(13.0).color(t.bad));
+            ui.label(RichText::new(fmt(tl!("Something went wrong: {problem}"), &[("problem", &p)])).size(t.body).color(t.bad));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if button(ui, tl!("Close"), Kind::Secondary, true).clicked() {
                     state.problem = None;

@@ -9,6 +9,7 @@ use crate::emoji;
 use crate::theme::Tokens;
 use crate::tl;
 use crate::widgets::hud;
+use craft_ui::display::Shade;
 
 /// How many recently used emoji the picker shows (the account keeps up to 100).
 const RECENT_MAX: usize = 24;
@@ -51,6 +52,18 @@ impl SkinTone {
     /// The tone saved under `id`; the default for a name it does not know.
     pub fn from_id(id: &str) -> Self {
         Self::ALL.into_iter().find(|t| t.id() == id).unwrap_or_default()
+    }
+
+    /// Its name in a list of tones (Settings).
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Default => tl!("Default"),
+            Self::Light => tl!("Light"),
+            Self::MediumLight => tl!("Medium-light"),
+            Self::Medium => tl!("Medium"),
+            Self::MediumDark => tl!("Medium-dark"),
+            Self::Dark => tl!("Dark"),
+        }
     }
 
     /// Its accessible name in the picker.
@@ -197,10 +210,9 @@ fn emoji_button(ui: &mut Ui, emoji: &str, size: f32) -> bool {
 /// The skin tone row: a raised hand in each tone, the one in use marked. Changes the tone in use when one is
 /// clicked.
 fn tone_row(ui: &mut Ui) {
-    let t = Tokens::get(ui.ctx());
     let mut tone = tone(ui.ctx());
     ui.horizontal(|ui| {
-        hud(ui, tl!("Skin tone"), t.muted);
+        hud(ui, tl!("Skin tone"), Shade::Muted);
         for each in SkinTone::ALL {
             let on = each == tone;
             let hand = each.apply("✋");
@@ -208,7 +220,7 @@ fn tone_row(ui: &mut Ui) {
                 egui::Button::new(emoji::symbol(&hand, 16.0, Color32::PLACEHOLDER))
                     .frame(on)
                     .selected(on)
-                    .corner_radius(egui::CornerRadius::ZERO)
+                    .corner_radius(Tokens::get(ui.ctx()).radius_control)
                     .min_size(egui::vec2(26.0, 26.0)),
             );
             response.widget_info(|| egui::WidgetInfo::selected(egui::Role::RadioButton, true, on, each.name()));
@@ -235,7 +247,7 @@ pub fn picker(ui: &mut Ui, id: Id) -> Option<String> {
     if query.is_empty() {
         let recent = recent(ui.ctx());
         if !recent.is_empty() {
-            hud(ui, tl!("Recently used"), t.muted);
+            hud(ui, tl!("Recently used"), Shade::Muted);
             ui.horizontal_wrapped(|ui| {
                 for e in recent.iter().take(PER_ROW * 2) {
                     if emoji_button(ui, e, 20.0) {
@@ -244,11 +256,11 @@ pub fn picker(ui: &mut Ui, id: Id) -> Option<String> {
                 }
             });
         }
-        hud(ui, tl!("All emoji"), t.muted);
+        hud(ui, tl!("All emoji"), Shade::Muted);
     }
     let found = search(&query);
     if found.is_empty() {
-        ui.label(RichText::new(tl!("No emoji found")).size(12.5).color(t.muted));
+        ui.label(RichText::new(tl!("No emoji found")).size(t.label).color(t.muted));
     }
     let rows = found.len().div_ceil(PER_ROW);
     egui::ScrollArea::vertical().id_salt(id.with("grid")).max_height(240.0).auto_shrink([false, true]).show_rows(ui, 30.0, rows, |ui, range| {

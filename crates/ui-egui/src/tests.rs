@@ -64,7 +64,49 @@ impl pingcraft_core::notify::Notifier for FakeNotifier {
 
 fn harness(fake: &Fake) -> Harness<'static, PingCraftApp> {
     let app = PingCraftApp::new(Box::new(fake.clone()));
-    Harness::builder().with_size(egui::vec2(1200.0, 760.0)).build_ui_state(|ui, app: &mut PingCraftApp| app.ui(ui), app)
+    builder().build_ui_state(frame, app)
+}
+
+/// One frame of the interface.
+pub(super) fn frame(ui: &mut egui::Ui, app: &mut PingCraftApp) {
+    app.ui(ui);
+}
+
+/// Runs [`crate::framework::before_input`] before each frame, as the desktop app's `raw_input_hook` does.
+struct BeforeInput;
+
+impl egui::Plugin for BeforeInput {
+    fn debug_name(&self) -> &'static str {
+        "pingcraft-before-input"
+    }
+
+    fn input_hook(&mut self, ctx: &egui::Context, _input: &mut egui::RawInput) {
+        crate::framework::before_input(ctx);
+    }
+}
+
+/// A context with craft-ui's runtime and the interface installed as the app installs them on its window, but with no installed system fonts,
+/// so the tests draw the same on every machine.
+pub(super) fn context() -> egui::Context {
+    let ctx = egui::Context::default();
+    crate::framework::install_headless(&ctx);
+    ctx.add_plugin(BeforeInput);
+    crate::emoji::stack(crate::emoji::EMBEDDED.map(egui::FontData::from_static), craft_ui::fonts::SystemFonts::Off).install(&ctx);
+    ctx
+}
+
+/// A harness builder over [`context`], at the window's size.
+pub(super) fn builder() -> egui_kittest::HarnessBuilder<PingCraftApp> {
+    // Sheets are craft-ui dialogs, which take a few frames to open.
+    Harness::builder().with_context(context()).with_size(egui::vec2(1200.0, 760.0)).with_max_steps(12)
+}
+
+/// Clicks the button labelled `label` in a sheet's footer: the lowest of the nodes with that label, since a craft-ui
+/// dialog's own close action in its title band is labelled "Close" too.
+pub(super) fn click_in_footer(h: &mut Harness<'static, PingCraftApp>, label: &str) {
+    let y = |n: &egui_kittest::Node<'_>| n.accesskit_node().raw_bounds().map_or(f64::MIN, |b| b.y0);
+    let lowest = h.get_all_by_label(label).max_by(|a, b| y(a).total_cmp(&y(b)));
+    lowest.unwrap_or_else(|| panic!("no {label} in the footer")).click();
 }
 
 /// Focuses the text field with this accessible name and types into it, as a user would.
@@ -127,13 +169,13 @@ fn signing_in_sends_what_was_typed_and_says_why_it_failed() {
     fake.tell([Event::SignedOut]);
     h.run();
     h.get_by_label("Not signed in");
-    assert!(h.get_by_label("SIGN IN").accesskit_node().is_disabled(), "nothing to send yet");
+    assert!(h.get_by_role_and_label(egui::accesskit::Role::Button, "Sign in").accesskit_node().is_disabled(), "nothing to send yet");
 
-    type_into(&mut h, "SERVER ADDRESS", "example.org");
-    type_into(&mut h, "USERNAME", "ana");
-    type_into(&mut h, "PASSWORD", "hunter2");
+    type_into(&mut h, "Server address", "example.org");
+    type_into(&mut h, "Username", "ana");
+    type_into(&mut h, "Password", "hunter2");
     h.run();
-    h.get_by_label("SIGN IN").click();
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Sign in").click();
     h.run();
     let sent = fake.take();
     assert!(
@@ -163,7 +205,7 @@ fn a_second_pingcraft_says_one_is_already_open_and_offers_nothing_to_type() {
     let mut h = harness(&fake);
     fake.tell([Event::AlreadyRunning]);
     h.run();
-    h.get_by_label("PingCraft is already open");
+    h.get_by_role_and_label(egui::accesskit::Role::Dialog, "PingCraft is already open");
     h.get_by_label("Another PingCraft window is using your messages on this computer.");
     h.get_by_label("Already open");
     use egui::accesskit::Role;
@@ -178,14 +220,14 @@ fn choosing_a_passphrase_needs_it_twice_and_the_same() {
     fake.tell([Event::Locked { first: true }]);
     h.run();
     assert!(h.query_all_by_label("Locked").count() >= 1, "the header says PingCraft is locked");
-    type_into(&mut h, "PASSPHRASE", "correct horse");
-    type_into(&mut h, "THE SAME PASSPHRASE AGAIN", "correct hors");
+    type_into(&mut h, "Passphrase", "correct horse");
+    type_into(&mut h, "The same passphrase again", "correct hors");
     h.run();
     h.get_by_label("The two passphrases are not the same.");
-    assert!(h.get_by_label("CONTINUE").accesskit_node().is_disabled());
-    type_into(&mut h, "THE SAME PASSPHRASE AGAIN", "e");
+    assert!(h.get_by_label("Continue").accesskit_node().is_disabled());
+    type_into(&mut h, "The same passphrase again", "e");
     h.run();
-    h.get_by_label("CONTINUE").click();
+    h.get_by_label("Continue").click();
     h.run();
     assert!(matches!(&fake.take()[..], [Command::Unlock { passphrase }] if **passphrase == "correct horse"));
 }
@@ -198,16 +240,16 @@ fn a_wrong_unlock_passphrase_is_said_and_signing_out_is_offered() {
     h.run();
     h.get_by_label("That passphrase does not unlock PingCraft.");
     // Signing out here clears this computer, so it is asked first, and can be taken back.
-    h.get_by_label("SIGN OUT").click();
+    h.get_by_label("Sign out").click();
     h.run();
     assert!(fake.take().is_empty(), "nothing is cleared on the first click");
-    h.get_by_label("Sign out on this computer?");
-    h.get_by_label("CANCEL").click();
+    h.get_by_role_and_label(egui::accesskit::Role::Dialog, "Sign out on this computer?");
+    h.get_by_label("Cancel").click();
     h.run();
-    h.get_by_label("Unlock PingCraft");
-    h.get_by_label("SIGN OUT").click();
+    h.get_by_role_and_label(egui::accesskit::Role::Dialog, "Unlock PingCraft");
+    h.get_by_label("Sign out").click();
     h.run();
-    h.get_by_label("CLEAR AND SIGN OUT").click();
+    h.get_by_label("Clear and sign out").click();
     h.run();
     assert!(matches!(&fake.take()[..], [Command::SignOut]));
 }
@@ -219,15 +261,14 @@ fn the_inbox_reads_each_chat_and_opens_one() {
     h.get_by_label("Connected");
     // The footer shows the Matrix ID as typed, not in capitals.
     h.get_by_label_contains("@Ana:example.org");
-    h.get_by_label("ALL 2");
-    h.get_by_label("UNREAD 1");
+    h.get_by_label("Inbox · 2 chats · 1 unread");
     let row = h.get_by_label("Book club, on Telegram, 2 unread. Lars: The ending of chapter 8");
     row.click();
     h.get_by_label("Lars Holm, on Matrix");
     h.run();
     assert!(matches!(&fake.take()[..], [Command::OpenChat(id)] if id.0 == "!book"));
 
-    h.get_by_label("UNREAD 1").click();
+    h.get_by_label("Unread").click();
     h.run();
     assert!(h.query_by_label("Lars Holm, on Matrix").is_none(), "read chats leave the unread filter");
 }
@@ -253,27 +294,27 @@ fn the_open_chat_shows_every_message_state_and_sends() {
     h.get_by_label("Encrypted · via your bridge");
     h.get_by_label("Next meeting on Thursday?");
     h.get_by_label("Waiting for the key to this message");
-    h.get_by_label("SENT");
-    h.get_by_label("NOT SENT");
+    h.get_by_label("Sent");
+    h.get_by_label("Not sent");
     h.get_by_label("An image");
-    h.get_by_label("RETRY").click();
+    h.get_by_label("Retry").click();
     h.run();
     assert!(matches!(&fake.take()[..], [Command::Retry { chat, message }] if chat.0 == "!book" && message.0 == "4"));
 
     // It is at the top of the timeline, which sticks to the newest message: scroll up to it first.
-    h.get_by_label("LOAD OLDER MESSAGES").scroll_to_me();
+    h.get_by_label("Load older messages").scroll_to_me();
     h.run();
-    h.get_by_label("LOAD OLDER MESSAGES").click();
+    h.get_by_label("Load older messages").click();
     h.run();
     let sent = fake.take();
     assert!(matches!(&sent[..], [Command::LoadOlder(chat)] if chat.0 == "!book"), "{sent:?}");
     fake.tell([Event::ReachedStart(ChatId("!book".into()))]);
     h.run();
-    assert!(h.query_by_label("LOAD OLDER MESSAGES").is_none(), "nothing older to load");
+    assert!(h.query_by_label("Load older messages").is_none(), "nothing older to load");
 
     type_into(&mut h, "Message Book club", "See you then");
     h.run();
-    h.get_by_label("SEND").click();
+    h.get_by_label("Send").click();
     h.run();
     assert!(matches!(&fake.take()[..], [Command::SendText { chat, text }] if chat.0 == "!book" && text == "See you then"));
 }
@@ -285,13 +326,13 @@ fn the_recovery_key_must_be_saved_before_continuing() {
     let key = "EsTc 8Jq2 Lm4P vR7x Wn3K hY6d Qa9B tF2s Zp5G kU8e Nr4V jD7w";
     fake.tell([Event::NewRecoveryKey(RecoveryKey::new(key))]);
     h.run();
-    h.get_by_label("Save your recovery key");
+    h.get_by_role_and_label(egui::accesskit::Role::Dialog, "Save your recovery key");
     h.get_by_label("EsTc 8Jq2 Lm4P vR7x Wn3K hY6d");
     h.get_by_label("Qa9B tF2s Zp5G kU8e Nr4V jD7w");
-    assert!(h.get_by_label("CONTINUE").accesskit_node().is_disabled());
+    assert!(h.get_by_label("Continue").accesskit_node().is_disabled());
     h.get_by_label("I've saved my recovery key somewhere safe, away from this computer.").click();
     h.run();
-    h.get_by_label("CONTINUE").click();
+    h.get_by_label("Continue").click();
     h.run();
     assert!(matches!(&fake.take()[..], [Command::RecoveryKeySaved]));
     assert!(h.query_by_label("Save your recovery key").is_none());
@@ -304,19 +345,19 @@ fn a_device_without_the_key_can_type_it_or_be_verified() {
     fake.tell([Event::Recovery(RecoveryStatus::NeedsKey)]);
     h.run();
     h.get_by_label("This device can't read your earlier encrypted messages yet.");
-    h.get_by_label("ENTER RECOVERY KEY").click();
+    h.get_by_label("Enter recovery key").click();
     h.run();
-    type_into(&mut h, "RECOVERY KEY", "EsTc 8Jq2");
+    type_into(&mut h, "Recovery key", "EsTc 8Jq2");
     h.run();
-    h.get_by_label("USE THIS KEY").click();
+    h.get_by_label("Use this key").click();
     h.run();
     assert!(matches!(&fake.take()[..], [Command::Recover(key)] if key.expose() == "EsTc 8Jq2"));
     fake.tell([Event::WrongRecoveryKey]);
     h.run();
     h.get_by_label("That key doesn't open your key backup. Check it and try again.");
-    h.get_by_label("CANCEL").click();
+    h.get_by_label("Cancel").click();
     h.run();
-    h.get_by_label("VERIFY THIS DEVICE").click();
+    h.get_by_label("Verify this device").click();
     h.run();
     assert!(matches!(&fake.take()[..], [Command::VerifyThisDevice]));
 }
@@ -327,10 +368,10 @@ fn verifying_compares_seven_named_symbols() {
     // Every symbol has a glyph in the colour emoji font. Built without it, egui's monochrome emoji face lacks some
     // of the spec's symbols, so missing glyphs are allowed only then.
     let app = PingCraftApp::new(Box::new(fake.clone()));
-    let builder = Harness::builder().with_size(egui::vec2(1200.0, 760.0));
+    let builder = builder();
     #[cfg(not(color_emoji))]
     let builder = builder.allow_missing_glyphs();
-    let mut h = builder.build_ui_state(|ui, app: &mut PingCraftApp| app.ui(ui), app);
+    let mut h = builder.build_ui_state(frame, app);
     fake.tell([Event::SignedIn { user: "@ana:example.org".into() }, Event::Inbox(InboxChange::Reset(vec![]))]);
     h.run();
     let names = ["Dog", "Cat", "Lion", "Horse", "Unicorn", "Pig", "Elephant"];
@@ -340,7 +381,7 @@ fn verifying_compares_seven_named_symbols() {
     fake.tell([Event::Verification(Some(Verification::Incoming { device: "Laptop".into() }))]);
     h.run();
     h.get_by_label("Your device Laptop asks to be verified. Start only if you asked for it yourself, on that device.");
-    h.get_by_label("START").click();
+    h.get_by_label("Start").click();
     h.run();
     assert!(matches!(&fake.take()[..], [Command::AcceptVerification]));
 
@@ -349,11 +390,11 @@ fn verifying_compares_seven_named_symbols() {
     for name in names {
         h.get_by_label(name);
     }
-    h.get_by_label("THEY DON'T MATCH");
+    h.get_by_label("They don't match");
     // One more frame: the sheet grew with the symbols and re-centres a frame later, so the button moves once
     // more after run() settles. (Found by testing: without it the click lands where the button was.)
     h.step();
-    h.get_by_label("THEY MATCH").click();
+    h.get_by_label("They match").click();
     h.run();
     let sent = fake.take();
     assert!(matches!(&sent[..], [Command::SymbolsMatch]), "{sent:?}");
@@ -361,7 +402,7 @@ fn verifying_compares_seven_named_symbols() {
     fake.tell([Event::Verification(Some(Verification::Cancelled(CancelReason::Mismatch)))]);
     h.run();
     h.get_by_label("Stopped: the symbols didn't match. Nothing was shared.");
-    h.get_by_label("CLOSE").click();
+    click_in_footer(&mut h, "Close");
     h.run();
     assert!(matches!(&fake.take()[..], [Command::CancelVerification]));
 }
@@ -372,10 +413,10 @@ fn copying_the_recovery_key_says_so() {
     let mut h = signed_in(&fake);
     fake.tell([Event::NewRecoveryKey(RecoveryKey::new("EsTc 8Jq2 Lm4P vR7x Wn3K hY6d Qa9B tF2s Zp5G kU8e Nr4V jD7w"))]);
     h.run();
-    assert!(h.query_by_label("COPIED").is_none());
-    h.get_by_label("COPY").click();
+    assert!(h.query_by_label("Copied").is_none());
+    h.get_by_label("Copy").click();
     h.run();
-    h.get_by_label("COPIED");
+    h.get_by_label("Copied");
 }
 
 #[test]
@@ -386,7 +427,7 @@ fn a_long_chat_name_truncates_and_keeps_its_network_tag_on_the_same_line() {
     fake.tell([Event::Inbox(InboxChange::Upsert(Box::new(chat("!admin", long, "matrix", 0, None))))]);
     h.run();
     let row = h.get_by_label(&format!("{long}, on Matrix")).accesskit_node().raw_bounds().unwrap();
-    let tag = h.get_all_by_label("MATRIX").map(|n| n.accesskit_node().raw_bounds().unwrap()).find(|r| r.y0 >= row.y0 && r.y1 <= row.y1).unwrap();
+    let tag = h.get_all_by_label("Matrix").map(|n| n.accesskit_node().raw_bounds().unwrap()).find(|r| r.y0 >= row.y0 && r.y1 <= row.y1).unwrap();
     assert!(tag.x1 <= row.x1, "the tag stays inside the row");
     let middle = (row.y0 + row.y1) / 2.0;
     assert!(tag.y0 < middle && tag.y1 > middle, "a row without a preview centres its one line: tag {tag:?}, row {row:?}");
@@ -425,7 +466,7 @@ fn the_chat_header_centres_the_name_and_network_on_the_avatar() {
     let badge = h.get_by_label("Encrypted · via your bridge").accesskit_node().raw_bounds().unwrap();
     let name =
         h.get_all_by_label("Book club").map(|n| n.accesskit_node().raw_bounds().unwrap()).find(|r| r.y0 < badge.y1 + 20.0 && r.x0 > 400.0).unwrap();
-    let tag = h.get_all_by_label("TELEGRAM").map(|n| n.accesskit_node().raw_bounds().unwrap()).find(|r| r.x0 > 400.0).unwrap();
+    let tag = h.get_all_by_label("Telegram").map(|n| n.accesskit_node().raw_bounds().unwrap()).find(|r| r.x0 > 400.0).unwrap();
     let block = (name.y0 + tag.y1) / 2.0;
     let line = (badge.y0 + badge.y1) / 2.0;
     assert!((block - line).abs() <= 2.0, "name and tag centred at {block}, the header's centre line is {line}");
@@ -435,6 +476,9 @@ mod accounts;
 mod chats;
 mod emoji;
 mod messages;
+mod settings;
+mod shortcuts;
+mod shots;
 
 #[test]
 fn an_unencrypted_chat_offers_to_turn_encryption_on() {
@@ -449,13 +493,13 @@ fn an_unencrypted_chat_offers_to_turn_encryption_on() {
     fake.take();
     h.get_by_label("Not encrypted: turn on encryption").click();
     h.run();
-    h.get_by_label("Turn on encryption");
-    h.get_by_label("CANCEL").click();
+    h.get_by_role_and_label(egui::accesskit::Role::Dialog, "Turn on encryption");
+    h.get_by_label("Cancel").click();
     h.run();
     assert!(fake.take().is_empty(), "cancelling changes nothing");
     h.get_by_label("Not encrypted: turn on encryption").click();
     h.run();
-    h.get_by_label("TURN ON ENCRYPTION").click();
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Turn on encryption").click();
     h.run();
     assert!(matches!(&fake.take()[..], [Command::EnableEncryption(id)] if id.0 == "!plain"));
 }
@@ -486,7 +530,7 @@ fn a_new_message_notifies_and_clicking_the_notification_opens_its_chat() {
     assert_eq!(shown.len(), 1, "{shown:?}");
     assert_eq!((shown[0].title.as_str(), shown[0].body.as_str()), ("Book club", "Mei: Bringing snacks"));
 
-    h.get_by_label("ACCOUNTS").click();
+    h.get_by_label("Accounts").click();
     h.run();
     fake.take();
     notifier.clicks.borrow_mut().push(ChatId("!book".into()));
@@ -494,4 +538,43 @@ fn a_new_message_notifies_and_clicking_the_notification_opens_its_chat() {
     let sent = fake.take();
     assert!(matches!(&sent[..], [Command::OpenChat(chat)] if chat.0 == "!book"), "{sent:?}");
     assert_eq!(h.state().state.tab, crate::Tab::Inbox);
+}
+
+/// Enter in the password field signs in, as the button does, and the password is in no node's name or value.
+#[test]
+fn enter_in_the_password_signs_in() {
+    let fake = Fake::default();
+    let mut h = harness(&fake);
+    fake.tell([Event::SignedOut]);
+    h.run();
+    type_into(&mut h, "Server address", "example.org");
+    type_into(&mut h, "Username", "ana");
+    type_into(&mut h, "Password", "hunter2");
+    let shown = h.query_all_by(|n| n.label().is_some_and(|l| l.contains("hunter2")) || n.value().is_some_and(|v| v.contains("hunter2"))).count();
+    assert_eq!(shown, 0, "the password is never in the tree");
+    h.key_press(egui::Key::Enter);
+    h.run();
+    let sent = fake.take();
+    assert!(matches!(&sent[..], [Command::SignIn { password, .. }] if **password == "hunter2"), "{sent:?}");
+}
+
+/// Escape on the sign-in sheet, which has nothing to cancel, leaves the sheet open; in a field it takes back that
+/// field's edit (craft-ui's text field), and signing in still works afterwards.
+#[test]
+fn escape_leaves_the_sign_in_sheet_open() {
+    let fake = Fake::default();
+    let mut h = harness(&fake);
+    fake.tell([Event::SignedOut]);
+    h.run();
+    type_into(&mut h, "Server address", "example.org");
+    h.key_press(egui::Key::Escape);
+    h.run();
+    h.get_by_role_and_label(egui::accesskit::Role::Dialog, "Sign in");
+    type_into(&mut h, "Server address", "example.org");
+    type_into(&mut h, "Username", "ana");
+    type_into(&mut h, "Password", "hunter2");
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Sign in").click();
+    h.run();
+    let sent = fake.take();
+    assert!(matches!(&sent[..], [Command::SignIn { server, .. }] if server.ends_with("example.org")), "{sent:?}");
 }

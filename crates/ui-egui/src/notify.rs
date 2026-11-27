@@ -17,20 +17,21 @@ use crate::tl;
 /// The longest preview a notification shows, in characters.
 const PREVIEW: usize = 120;
 
-/// A notification for a change to a chat that is not open, if it brings a new message to tell about.
-pub fn for_inbox_change(before: Option<&Chat>, after: &Chat) -> Option<Notification> {
+/// A notification for a change to a chat that is not open, if it brings a new message to tell about. Without
+/// `previews`, it says who wrote but not what.
+pub fn for_inbox_change(before: Option<&Chat>, after: &Chat, previews: bool) -> Option<Notification> {
     if after.muted.is_some() {
         return None;
     }
     let message = after.last_message.as_ref().filter(|m| !m.own)?;
     let more_unread = after.unread > before.map_or(0, |b| b.unread);
     let newer = before.and_then(|b| b.last_message.as_ref()).is_none_or(|b| b.at < message.at);
-    (more_unread && newer).then(|| notification(after, &message.sender, &message.body))
+    (more_unread && newer).then(|| notification(after, &message.sender, &message.body, previews))
 }
 
 /// A notification for a new list of the open chat's messages, if its newest is new and from someone else and the
-/// window does not have focus.
-pub fn for_open_chat(before: &[Message], after: &[Message], chat: Option<&Chat>, focused: bool) -> Option<Notification> {
+/// window does not have focus. Without `previews`, it says who wrote but not what.
+pub fn for_open_chat(before: &[Message], after: &[Message], chat: Option<&Chat>, focused: bool, previews: bool) -> Option<Notification> {
     let chat = chat?;
     if focused || before.is_empty() || chat.muted.is_some() {
         return None;
@@ -39,17 +40,21 @@ pub fn for_open_chat(before: &[Message], after: &[Message], chat: Option<&Chat>,
     if before.iter().any(|m| m.id == newest.id) {
         return None;
     }
-    Some(notification(chat, &newest.sender, &newest.body))
+    Some(notification(chat, &newest.sender, &newest.body, previews))
 }
 
-fn notification(chat: &Chat, sender: &str, body: &MessageBody) -> Notification {
+fn notification(chat: &Chat, sender: &str, body: &MessageBody, previews: bool) -> Notification {
+    let sound = chat.alerts.sounds();
+    if !previews {
+        let body = fmt(tl!("New message from {sender}"), &[("sender", sender)]);
+        return Notification { chat: chat.id.clone(), title: chat.name.clone(), body, sound };
+    }
     let line = crate::view::preview_text(body);
     let mut preview: String = line.chars().take(PREVIEW).collect();
     if line.chars().count() > PREVIEW {
         preview.push('…');
     }
     // The chat's own sound setting; the caller applies its network's (`State::alerts`).
-    let sound = chat.alerts.sounds();
     Notification {
         chat: chat.id.clone(),
         title: chat.name.clone(),
@@ -93,11 +98,11 @@ mod tests {
 
     #[test]
     fn a_new_unread_message_in_a_closed_chat_notifies() {
-        let n = for_inbox_change(Some(&chat(1, Some(("Lars", false, 10)))), &chat(2, Some(("Lars", false, 20)))).unwrap();
+        let n = for_inbox_change(Some(&chat(1, Some(("Lars", false, 10)))), &chat(2, Some(("Lars", false, 20))), true).unwrap();
         assert_eq!(n.chat.0, "!book");
         assert_eq!(n.title, "Book club");
         assert_eq!(n.body, "Lars: See you at eight");
-        assert!(for_inbox_change(None, &chat(1, Some(("Lars", false, 20)))).is_some(), "a chat that just appeared");
+        assert!(for_inbox_change(None, &chat(1, Some(("Lars", false, 20))), true).is_some(), "a chat that just appeared");
     }
 
     #[test]
@@ -109,11 +114,11 @@ mod tests {
             ("pinned, a draft kept, or opened", chat(1, Some(("Lars", false, 10))), chat(1, Some(("Lars", false, 10)))),
         ];
         for (what, before, after) in cases {
-            assert!(for_inbox_change(Some(&before), &after).is_none(), "{what}");
+            assert!(for_inbox_change(Some(&before), &after, true).is_none(), "{what}");
         }
         let mut muted = chat(2, Some(("Lars", false, 20)));
         muted.muted = Some(Mute::UntilUnmuted);
-        assert!(for_inbox_change(Some(&chat(1, Some(("Lars", false, 10)))), &muted).is_none(), "muted");
+        assert!(for_inbox_change(Some(&chat(1, Some(("Lars", false, 10)))), &muted, true).is_none(), "muted");
     }
 
     #[test]
@@ -121,14 +126,24 @@ mod tests {
         let c = chat(0, None);
         let before = [message("1", false)];
         let after = [message("1", false), message("2", false)];
-        let n = for_open_chat(&before, &after, Some(&c), false).unwrap();
+        let n = for_open_chat(&before, &after, Some(&c), false, true).unwrap();
         assert_eq!(n.body, "Lars Holm: message 2");
-        assert!(for_open_chat(&before, &after, Some(&c), true).is_none(), "the window has focus");
-        assert!(for_open_chat(&[], &after, Some(&c), false).is_none(), "the first list after opening");
-        assert!(for_open_chat(&after, &after, Some(&c), false).is_none(), "nothing new");
-        assert!(for_open_chat(&before, &[message("1", false), message("2", true)], Some(&c), false).is_none(), "the user's own");
+        assert!(for_open_chat(&before, &after, Some(&c), true, true).is_none(), "the window has focus");
+        assert!(for_open_chat(&[], &after, Some(&c), false, true).is_none(), "the first list after opening");
+        assert!(for_open_chat(&after, &after, Some(&c), false, true).is_none(), "nothing new");
+        assert!(for_open_chat(&before, &[message("1", false), message("2", true)], Some(&c), false, true).is_none(), "the user's own");
         let mut muted = c.clone();
         muted.muted = Some(Mute::UntilUnmuted);
-        assert!(for_open_chat(&before, &after, Some(&muted), false).is_none(), "muted");
+        assert!(for_open_chat(&before, &after, Some(&muted), false, true).is_none(), "muted");
+    }
+
+    /// With previews off (Settings), a notification says who wrote and leaves the text out.
+    #[test]
+    fn without_previews_the_text_is_left_out() {
+        let n = for_inbox_change(Some(&chat(1, Some(("Lars", false, 10)))), &chat(2, Some(("Lars", false, 20))), false).unwrap();
+        assert!(n.body.contains("Lars") && !n.body.contains("eight"), "{}", n.body);
+        let after = [message("1", false), message("2", false)];
+        let n = for_open_chat(&[message("1", false)], &after, Some(&chat(0, None)), false, false).unwrap();
+        assert!(n.body.contains("Lars Holm") && !n.body.contains("message 2"), "{}", n.body);
     }
 }

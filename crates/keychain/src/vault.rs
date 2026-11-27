@@ -111,9 +111,15 @@ type Secrets = BTreeMap<String, Zeroizing<Vec<u8>>>;
 pub struct PassphraseVault {
     path: PathBuf,
     params: KdfParams,
+    /// The salt and the key derived with it; both change when the passphrase does.
+    keying: Mutex<Keying>,
+    secrets: Mutex<Secrets>,
+}
+
+/// A salt and the key derived from the passphrase with it.
+struct Keying {
     salt: [u8; SALT_LEN],
     key: Zeroizing<[u8; KEY_LEN]>,
-    secrets: Mutex<Secrets>,
 }
 
 impl std::fmt::Debug for PassphraseVault {
@@ -148,7 +154,7 @@ impl PassphraseVault {
         let mut salt = [0u8; SALT_LEN];
         getrandom::fill(&mut salt).map_err(|e| VaultError::Crypto(e.to_string()))?;
         let key = derive(passphrase, &salt, params)?;
-        let vault = Self { path: path.to_owned(), params, salt, key, secrets: Mutex::new(Secrets::new()) };
+        let vault = Self { path: path.to_owned(), params, keying: Mutex::new(Keying { salt, key }), secrets: Mutex::new(Secrets::new()) };
         vault.save(&Secrets::new())?;
         Ok(vault)
     }
@@ -169,26 +175,54 @@ impl PassphraseVault {
             .map(Zeroizing::new)
             .map_err(|_| VaultError::WrongPassphrase)?;
         let secrets = decode(&plain)?;
-        Ok(Self { path: path.to_owned(), params, salt, key, secrets: Mutex::new(secrets) })
+        Ok(Self { path: path.to_owned(), params, keying: Mutex::new(Keying { salt, key }), secrets: Mutex::new(secrets) })
+    }
+
+    /// Changes the passphrase: checks `current` against the one the vault was opened with, then writes the same
+    /// secrets under a key derived from `new` with a new salt. On any failure nothing changes, on disk or in memory:
+    /// the new key is used only once the file holding it is written.
+    pub fn change_passphrase(&self, current: &str, new: &str) -> Result<(), VaultError> {
+        if current.is_empty() || new.is_empty() {
+            return Err(VaultError::EmptyPassphrase);
+        }
+        let secrets = self.secrets.lock().map_err(|_| VaultError::Crypto("vault poisoned".into()))?;
+        let mut keying = self.keying.lock().map_err(|_| VaultError::Crypto("vault poisoned".into()))?;
+        let check = derive(current, &keying.salt, self.params)?;
+        // Compared without stopping at the first difference.
+        if check.iter().zip(keying.key.iter()).fold(0u8, |d, (a, b)| d | (a ^ b)) != 0 {
+            return Err(VaultError::WrongPassphrase);
+        }
+        let mut salt = [0u8; SALT_LEN];
+        getrandom::fill(&mut salt).map_err(|e| VaultError::Crypto(e.to_string()))?;
+        let next = Keying { salt, key: derive(new, &salt, self.params)? };
+        self.save_with(&secrets, &next)?;
+        *keying = next;
+        Ok(())
     }
 
     fn lock(&self) -> Result<std::sync::MutexGuard<'_, Secrets>, KeychainError> {
         self.secrets.lock().map_err(|_| KeychainError::Unavailable("vault poisoned".into()))
     }
 
-    fn header(&self) -> [u8; HEADER_LEN] {
+    fn header(&self, salt: &[u8; SALT_LEN]) -> [u8; HEADER_LEN] {
         let mut h = [0u8; HEADER_LEN];
         h[..8].copy_from_slice(MAGIC);
         h[8..12].copy_from_slice(&self.params.memory_kib.to_le_bytes());
         h[12..16].copy_from_slice(&self.params.iterations.to_le_bytes());
         h[16..20].copy_from_slice(&self.params.lanes.to_le_bytes());
-        h[20..].copy_from_slice(&self.salt);
+        h[20..].copy_from_slice(salt);
         h
     }
 
     /// Encrypts `secrets` with a new nonce and replaces the file. Refuses, changing nothing, when the file would be
     /// one [`PassphraseVault::unlock`] does not open.
     fn save(&self, secrets: &Secrets) -> Result<(), VaultError> {
+        let keying = self.keying.lock().map_err(|_| VaultError::Crypto("vault poisoned".into()))?;
+        self.save_with(secrets, &keying)
+    }
+
+    /// [`Self::save`] under `keying`.
+    fn save_with(&self, secrets: &Secrets, keying: &Keying) -> Result<(), VaultError> {
         if secrets.len() > MAX_ENTRIES {
             return Err(VaultError::TooLarge);
         }
@@ -198,10 +232,10 @@ impl PassphraseVault {
             return Err(VaultError::TooLarge);
         }
         let plain = encode(secrets);
-        let header = self.header();
+        let header = self.header(&keying.salt);
         let mut nonce = [0u8; NONCE_LEN];
         getrandom::fill(&mut nonce).map_err(|e| VaultError::Crypto(e.to_string()))?;
-        let cipher = XChaCha20Poly1305::new_from_slice(self.key.as_ref()).map_err(|e| VaultError::Crypto(e.to_string()))?;
+        let cipher = XChaCha20Poly1305::new_from_slice(keying.key.as_ref()).map_err(|e| VaultError::Crypto(e.to_string()))?;
         let ciphertext =
             cipher.encrypt(&XNonce::from(nonce), Payload { msg: &plain, aad: &header }).map_err(|e| VaultError::Crypto(e.to_string()))?;
         let mut file = Vec::with_capacity(HEADER_LEN + NONCE_LEN + ciphertext.len());
@@ -368,6 +402,27 @@ mod tests {
         again.delete("session:profile").unwrap();
         let third = PassphraseVault::unlock(&path, "correct horse").unwrap();
         assert!(third.get("session:profile").unwrap().is_none());
+    }
+
+    /// After a change, the new passphrase opens the vault with the same secrets, the old one no longer does, and the
+    /// open vault goes on writing under the new one. A wrong current passphrase changes nothing.
+    #[test]
+    fn the_passphrase_changes_and_the_secrets_stay() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("vault");
+        let vault = PassphraseVault::create_with(&path, "old words", CHEAP).unwrap();
+        vault.set("a", b"secret").unwrap();
+        let before = std::fs::read(&path).unwrap();
+        assert!(matches!(vault.change_passphrase("not it", "new words"), Err(VaultError::WrongPassphrase)));
+        assert!(matches!(vault.change_passphrase("old words", ""), Err(VaultError::EmptyPassphrase)));
+        assert_eq!(std::fs::read(&path).unwrap(), before, "a refused change writes nothing");
+        vault.change_passphrase("old words", "new words").unwrap();
+        vault.set("b", b"later").unwrap();
+        drop(vault);
+        assert!(matches!(PassphraseVault::unlock(&path, "old words"), Err(VaultError::WrongPassphrase)));
+        let again = PassphraseVault::unlock(&path, "new words").unwrap();
+        assert_eq!(again.get("a").unwrap().unwrap().as_slice(), b"secret");
+        assert_eq!(again.get("b").unwrap().unwrap().as_slice(), b"later", "written under the new passphrase");
     }
 
     #[test]

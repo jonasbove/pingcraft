@@ -1,12 +1,12 @@
 //! Colour emoji: what the fonts draw, the picker and `:name:` shortcodes.
 
+use craft_ui::fonts::SystemFonts;
 use egui::epaint::text::Glyph;
 
 /// The glyphs `text` is drawn with in the app's fonts, laid out as the app lays it out (`colour_family`) or as plain
 /// text, and the font atlas they were drawn into.
 fn glyphs(text: &str, colour_family: bool) -> (Vec<Glyph>, egui::ColorImage) {
-    let ctx = egui::Context::default();
-    crate::theme::install(&ctx);
+    let ctx = super::context();
     let mut out = ctx.run_ui(egui::RawInput::default(), |_| {});
     out.textures_delta.clear();
     let job = if colour_family {
@@ -51,7 +51,7 @@ fn emoji_sequences_are_single_colour_glyphs() {
 
 /// Laid out as plain text, a keycap starts in the text face (egui picks the face by the first character, and the
 /// text face has the digits), which is why messages lay emoji out in their own family. (`❤️` would too with a text
-/// face that has U+2764; egui's Ubuntu Light has not.)
+/// face that has U+2764.)
 #[test]
 #[cfg_attr(not(color_emoji), ignore = "built without the colour emoji font: cargo xtask fonts")]
 fn plain_layout_would_draw_keycaps_as_text() {
@@ -104,13 +104,13 @@ fn the_picker_finds_an_emoji_and_puts_it_in_the_message() {
     h.get_by_label("thumbs up").click();
     h.run();
     assert!(h.query_by_label("Search emoji").is_none(), "the picker closes");
-    h.get_by_label("SEND").click();
+    h.get_by_label("Send").click();
     h.run();
     assert_eq!(sent_texts(&fake), ["text Great 👍"]);
     // Recently used, at the top of the picker next time.
     h.get_by_label("Emoji").click();
     h.run();
-    h.get_by_label("RECENTLY USED");
+    h.get_by_label("Recently used");
 }
 
 #[test]
@@ -122,7 +122,7 @@ fn a_shortcode_becomes_its_emoji_as_it_is_finished() {
     // Suggestions while it is typed.
     h.get_by_label("Insert 😄 :smile:");
     super::type_into(&mut h, "Message Book club", "le: all");
-    h.get_by_label("SEND").click();
+    h.get_by_label("Send").click();
     h.run();
     assert_eq!(sent_texts(&fake), ["text hi 😄 all"]);
 }
@@ -160,10 +160,10 @@ fn glyphs_in(ctx: &egui::Context, text: &str) -> Vec<Glyph> {
 #[cfg_attr(not(color_emoji), ignore = "built without the colour emoji font: cargo xtask fonts")]
 fn the_colour_font_can_arrive_after_the_first_frame() {
     let ctx = egui::Context::default();
-    ctx.set_fonts(crate::emoji::monochrome_definitions());
+    crate::emoji::stack(None, SystemFonts::Off).install(&ctx);
     assert!(glyphs_in(&ctx, "👍").iter().all(|g| !g.is_color), "monochrome before the font arrives");
     let bytes = crate::emoji::EMBEDDED.map(<[u8]>::to_vec).unwrap_or_default();
-    assert_eq!(crate::emoji::install_color_font(&ctx, bytes), Ok(()));
+    assert_eq!(crate::emoji::install_color_font(&ctx, bytes, SystemFonts::Off), Ok(()));
     assert!(glyphs_in(&ctx, "👍").iter().any(|g| g.is_color), "colour once it is installed");
 }
 
@@ -173,9 +173,9 @@ fn the_colour_font_can_arrive_after_the_first_frame() {
 fn a_font_that_is_not_the_pinned_one_is_refused() {
     use crate::emoji::FontRefused;
     let ctx = egui::Context::default();
-    ctx.set_fonts(crate::emoji::monochrome_definitions());
-    assert_eq!(crate::emoji::install_color_font(&ctx, b"<html>not found</html>".to_vec()), Err(FontRefused::NotPinned));
-    assert_eq!(crate::emoji::install_color_font(&ctx, vec![0; 6_000_000]), Err(FontRefused::TooBig));
+    crate::emoji::stack(None, SystemFonts::Off).install(&ctx);
+    assert_eq!(crate::emoji::install_color_font(&ctx, b"<html>not found</html>".to_vec(), SystemFonts::Off), Err(FontRefused::NotPinned));
+    assert_eq!(crate::emoji::install_color_font(&ctx, vec![0; 6_000_000], SystemFonts::Off), Err(FontRefused::TooBig));
     assert!(glyphs_in(&ctx, "👍").iter().all(|g| !g.is_color), "still monochrome");
 }
 
@@ -243,7 +243,7 @@ fn a_skin_tone_is_chosen_in_the_picker_and_applies_to_its_emoji() {
     super::type_into(&mut h, "Search emoji", "thumbs up");
     h.get_by_label("thumbs up: medium skin tone").click();
     h.run();
-    h.get_by_label("SEND").click();
+    h.get_by_label("Send").click();
     h.run();
     assert_eq!(sent_texts(&fake), ["text 👍🏽"]);
 }
@@ -270,7 +270,7 @@ fn a_saved_skin_tone_applies_to_quick_reactions_and_shortcodes() {
     super::type_into(&mut h, "Message Book club", "ok :+1");
     h.get_by_label("Insert 👍🏿 :+1:");
     super::type_into(&mut h, "Message Book club", ": :wave: :smile:");
-    h.get_by_label("SEND").click();
+    h.get_by_label("Send").click();
     h.run();
     assert_eq!(sent_texts(&fake), ["text ok 👍🏿 👋🏿 😄"]);
 }
@@ -360,10 +360,9 @@ fn the_account_tone_decides_over_the_local_one() {
 #[test]
 #[cfg_attr(not(color_emoji), ignore = "built without the colour emoji font: cargo xtask fonts")]
 fn emoji_a_size_up_fit_even_lines() {
-    let ctx = egui::Context::default();
-    crate::theme::install(&ctx);
+    let ctx = super::context();
     ctx.run_ui(egui::RawInput::default(), |_| {}).textures_delta.clear();
-    for size in [12.5, 14.0, 16.0] {
+    for size in theme_sizes() {
         let galley = ctx.fonts_mut(|f| {
             f.layout_job(crate::emoji::body(
                 "Hg 😀 ❤\u{fe0f}\nHg only text\n👍🏽 Hg",
@@ -425,11 +424,10 @@ fn an_emoji_only_message_is_large_and_keeps_its_text() {
 #[test]
 #[cfg_attr(not(color_emoji), ignore = "built without the colour emoji font: cargo xtask fonts")]
 fn emoji_a_size_up_keep_one_line_as_tall() {
-    let ctx = egui::Context::default();
-    crate::theme::install(&ctx);
+    let ctx = super::context();
     ctx.run_ui(egui::RawInput::default(), |_| {}).textures_delta.clear();
     let unicode = pingcraft_core::EmojiPresentation::Unicode;
-    for size in [12.5, 13.0, 14.0, 16.0] {
+    for size in theme_sizes() {
         let with = ctx.fonts_mut(|f| f.layout_job(crate::emoji::text("Hg 😀 👍🏽", size, egui::Color32::WHITE, unicode)));
         let without = ctx.fonts_mut(|f| f.layout_job(crate::emoji::text("Hg é", size, egui::Color32::WHITE, unicode)));
         assert_eq!(with.size().y, without.size().y, "a line with an emoji is as tall as one without at {size}");
@@ -460,4 +458,38 @@ fn the_composer_keeps_its_height_with_an_emoji() {
     let before = height(&h);
     super::type_into(&mut h, "Message Book club", "Great 👍🏽");
     assert_eq!(height(&h), before);
+}
+
+/// The reaction picker is a sheet over the chat: with a control inside it focused, Tab keeps the keyboard inside the
+/// sheet, and Escape closes it. (craft-ui's runtime takes Tab and Escape from egui for the whole window, so this is
+/// what tells whether a sheet still gets them.)
+#[test]
+fn the_reaction_picker_keeps_tab_inside_and_closes_on_escape() {
+    use egui_kittest::kittest::{NodeT, Queryable};
+    let fake = super::Fake::default();
+    let mut h = super::messages::book_club(&fake);
+    h.get_by_label("Message actions: Lars Holm, Next meeting on Thursday?").click();
+    h.run();
+    h.get_by_label("More reactions…").click();
+    h.run();
+    h.get_by_role_and_label(egui::accesskit::Role::TextInput, "Search emoji").focus();
+    h.run();
+    let picker = h.get_by_role_and_label(egui::accesskit::Role::TextInput, "Search emoji").accesskit_node().raw_bounds().map(|b| (b.x0, b.x1));
+    for _ in 0..3 {
+        h.key_press(egui::Key::Tab);
+        h.run();
+        let focused = h.query_all_by(|node| node.is_focused()).next().map(|n| n.accesskit_node().raw_bounds());
+        let (Some((x0, x1)), Some(Some(b))) = (picker, focused) else { panic!("something in the sheet has the keyboard: {focused:?}") };
+        assert!(b.x0 >= x0 - 1.0 && b.x1 <= x1 + 1.0, "Tab stays inside the sheet: {b:?} against {x0}..{x1}");
+    }
+    h.key_press(egui::Key::Escape);
+    h.run();
+    assert!(h.query_by_role_and_label(egui::accesskit::Role::TextInput, "Search emoji").is_none(), "Escape closes the sheet");
+}
+
+/// The text sizes the app lays emoji out at: craft-ui's default theme's caption, label, body and title roles.
+fn theme_sizes() -> [f32; 4] {
+    let resolved = craft_ui::testing::style::tokens(craft_theme::Mode::Dark, craft_theme::Contrast::Standard);
+    let t = crate::theme::Tokens::from_resolved(resolved.tokens(), craft_theme::Mode::Dark);
+    [t.caption, t.label, t.body, t.title]
 }
