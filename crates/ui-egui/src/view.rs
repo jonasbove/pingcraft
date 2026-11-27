@@ -614,7 +614,14 @@ fn chat_row(ui: &mut Ui, chat: &Chat, accent: Option<pingcraft_core::Accent>, se
             ui.spacing_mut().interact_size.y = line;
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let when = chat.last_message.as_ref().map(|m| short_time(m.at)).unwrap_or_default();
-                ui.label(RichText::new(when).size(t.label).color(if strong { t.ink } else { t.muted }));
+                // The time has a column of its own, as wide as its widest form, so the tags line up whether a chat
+                // shows a time or not.
+                let font = egui::FontId::proportional(t.label);
+                let column = ui.fonts_mut(|f| f.layout_no_wrap("00 Mmm".to_owned(), font, t.ink).size().x);
+                ui.allocate_ui_with_layout(Vec2::new(column, line), Layout::right_to_left(Align::Center), |ui| {
+                    ui.set_min_width(column);
+                    ui.label(RichText::new(when).size(t.label).color(if strong { t.ink } else { t.muted }));
+                });
                 crate::widgets::network_tag_in(ui, &chat.network, accent);
                 if chat.muted.is_some() {
                     crate::widgets::mark_icon(ui, crate::widgets::icon::MUTED, tl!("Muted"));
